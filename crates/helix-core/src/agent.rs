@@ -100,7 +100,7 @@ impl SourceContext {
             Some(suffix) => format!("{}.{}", kind_base, suffix),
             None => kind_base.to_string(),
         };
-        let event = Event::new(self.agent_id.clone(), event_payload);
+        let event = Event::new(self.agent_id, event_payload);
        
         tracing::info!(event_id = %event.id, agent_id = %self.agent_id, "Emitting event");
         // In real implementation: self.nats_client.publish(...).await?;
@@ -209,7 +209,7 @@ impl MockSourceAgent {
 #[async_trait]
 impl Agent for MockSourceAgent {
     fn id(&self) -> AgentId {
-        self.agent_id.clone()
+        self.agent_id
     }
 
     fn config(&self) -> &AgentConfig {
@@ -222,7 +222,7 @@ impl SourceAgent for MockSourceAgent {
     async fn run(&mut self, ctx: SourceContext) -> Result<(), HelixError> {
         self.count += 1;
         let event_payload = json!({ "count": self.count, "message": "Tick" });
-        let event = Event::new(self.agent_id.clone(), event_payload); 
+        let event = Event::new(self.agent_id, event_payload); 
         ctx.event_tx.send(event).await?;
         Ok(())
     }

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 // --- Placeholder Traits for Context Dependencies ---
 
@@ -158,17 +159,33 @@ mod tests {
     // Add tests for agent structures and traits
     use super::*;
     use serde_json::json;
+    use tokio::sync::mpsc;
+    use uuid::Uuid;
+    use crate::event::Event;
+    use crate::types::{AgentId, ProfileId};
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_source_context_emit() {
+        let (tx, _rx) = mpsc::channel::<Event>(10);
+        let agent_id = Uuid::new_v4(); // Use Uuid
+        let profile_id = Uuid::new_v4(); // Use Uuid
+
+        // Create mock providers (adjust as necessary if they have state/methods)
+        let mock_cred_provider = Arc::new(MockCredentialProvider); 
+        let mock_state_store = Arc::new(MockStateStore);
+
         let ctx = SourceContext {
-            agent_id: "test-agent".to_string(),
-            profile_id: "test-profile".to_string(),
-            credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
-            event_tx: mpsc::channel(100).1,
+            agent_id, // Use Uuid variable
+            profile_id, // Use Uuid variable
+            // These need actual mock implementations conforming to the traits
+            credential_provider: mock_cred_provider, 
+            state_store: mock_state_store, 
+            event_tx: tx, // Use sender tx (channel.0)
         };
-        let result = ctx.emit(json!({ "data": "test" }), None).await;
+
+        let payload = json!({ "message": "hello" });
+        let result = ctx.emit(payload, None).await;
         assert!(result.is_ok());
     }
 }

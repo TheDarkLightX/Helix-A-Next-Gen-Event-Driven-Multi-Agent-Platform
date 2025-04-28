@@ -64,6 +64,10 @@ pub enum HelixError {
     /// Error sending an event via MPSC channel.
     #[error("MPSC send error: {0}")]
     MpscSendError(String), // Add variant to hold MPSC error string
+
+    /// Represents an encryption error.
+    #[error("Encryption error: {0}")]
+    EncryptionError(String),
 }
 
 // Implement From for MPSC SendError

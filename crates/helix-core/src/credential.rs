@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use crate::HelixError;
 use async_trait::async_trait;
-use base64;
 
 /// Represents a stored credential for accessing external services.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -112,6 +111,8 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use uuid::Uuid;
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
 
     // Mock CredentialStore Implementation
     struct MockCredentialStore {
@@ -152,7 +153,7 @@ mod tests {
         ) -> Result<String, HelixError> {
             // Super simple mock: assume base64 encoded, just decode it
             // In reality, this would involve keys and proper crypto.
-            base64::decode(encrypted_data)
+            STANDARD.decode(encrypted_data)
                 .map_err(|e| HelixError::EncryptionError(format!("Mock decrypt failed: {}", e)))
                 .and_then(|bytes| {
                     String::from_utf8(bytes).map_err(|e| {
@@ -172,7 +173,7 @@ mod tests {
         let profile_id = Uuid::new_v4();
         let cred_id = Uuid::new_v4();
         let secret_data = "my_secret_api_key";
-        let encrypted_data = base64::encode(secret_data);
+        let encrypted_data = STANDARD.encode(secret_data);
 
         let cred = Credential::new(
             cred_id,

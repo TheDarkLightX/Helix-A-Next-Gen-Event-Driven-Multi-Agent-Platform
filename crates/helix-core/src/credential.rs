@@ -1,10 +1,10 @@
 // crates/helix-core/src/credential.rs
 
 use crate::types::{CredentialId, ProfileId};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use crate::HelixError;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 /// Represents a stored credential for accessing external services.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -59,7 +59,7 @@ impl Credential {
     // TODO: Add methods for updating (requires re-encryption logic)?
 }
 
-// --- Placeholder Service Traits --- 
+// --- Placeholder Service Traits ---
 // Define interfaces needed by CredentialProvider implementations.
 
 /// Placeholder trait for fetching raw Credential objects.
@@ -77,7 +77,7 @@ pub trait CredentialStore: Send + Sync {
 #[async_trait]
 pub trait EncryptionService: Send + Sync {
     /// Decrypts data associated with a specific profile.
-    /// 
+    ///
     /// SECURITY: Implementation MUST ensure appropriate key management.
     async fn decrypt(
         &self,
@@ -88,7 +88,7 @@ pub trait EncryptionService: Send + Sync {
 
 /// Provides access to decrypted credentials for agent execution contexts.
 ///
-/// This trait abstracts the underlying storage (`CredentialStore`) and 
+/// This trait abstracts the underlying storage (`CredentialStore`) and
 /// decryption (`EncryptionService`) mechanisms.
 #[async_trait]
 pub trait CredentialProvider: Send + Sync {
@@ -108,11 +108,11 @@ pub trait CredentialProvider: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine as _;
     use std::collections::HashMap;
     use std::sync::Mutex;
     use uuid::Uuid;
-    use base64::Engine as _;
-    use base64::engine::general_purpose::STANDARD;
 
     // Mock CredentialStore Implementation
     struct MockCredentialStore {
@@ -121,7 +121,9 @@ mod tests {
 
     impl MockCredentialStore {
         fn new() -> Self {
-            Self { creds: Mutex::new(HashMap::new()) }
+            Self {
+                creds: Mutex::new(HashMap::new()),
+            }
         }
         fn add_cred(&self, cred: Credential) {
             let mut store = self.creds.lock().unwrap();
@@ -153,7 +155,8 @@ mod tests {
         ) -> Result<String, HelixError> {
             // Super simple mock: assume base64 encoded, just decode it
             // In reality, this would involve keys and proper crypto.
-            STANDARD.decode(encrypted_data)
+            STANDARD
+                .decode(encrypted_data)
                 .map_err(|e| HelixError::EncryptionError(format!("Mock decrypt failed: {}", e)))
                 .and_then(|bytes| {
                     String::from_utf8(bytes).map_err(|e| {
@@ -167,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_placeholder_credential_provider_logic() {
-        // This test doesn't test the provider trait directly yet, 
+        // This test doesn't test the provider trait directly yet,
         // but sets up mocks needed for a potential provider implementation test.
 
         let profile_id = Uuid::new_v4();
@@ -188,18 +191,15 @@ mod tests {
 
         let service = MockEncryptionService;
 
-        // --- Test CredentialStore --- 
+        // --- Test CredentialStore ---
         let fetched_cred = store
             .get_credential_by_id(&profile_id, &cred_id)
             .await
             .unwrap();
         assert_eq!(fetched_cred, Some(cred));
 
-        // --- Test EncryptionService --- 
-        let decrypted = service
-            .decrypt(&profile_id, &encrypted_data)
-            .await
-            .unwrap();
+        // --- Test EncryptionService ---
+        let decrypted = service.decrypt(&profile_id, &encrypted_data).await.unwrap();
         assert_eq!(decrypted, secret_data);
 
         // Next step would be to implement a ConcreteCredentialProvider

@@ -2,8 +2,8 @@
 
 //! The core runtime engine for Helix, managing agent execution and event flow.
 
-pub mod messaging;
-
+// TODO: Remove this placeholder function
+/// Adds two numbers together (placeholder).
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
@@ -18,3 +18,5 @@ mod tests {
         assert_eq!(result, 4);
     }
 }
+
+pub mod messaging;

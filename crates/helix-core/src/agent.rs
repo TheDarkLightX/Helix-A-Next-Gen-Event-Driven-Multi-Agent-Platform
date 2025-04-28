@@ -5,10 +5,9 @@ use crate::types::{AgentId, CredentialId, ProfileId};
 use crate::HelixError;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 // --- Placeholder Traits for Context Dependencies ---
 
@@ -53,7 +52,9 @@ pub struct AgentConfig {
     pub enabled: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// Core trait representing a unit of behavior in Helix.
 /// Agents can be sources, transformers, or actions.
@@ -94,12 +95,20 @@ pub struct SourceContext {
 
 impl SourceContext {
     /// Emits an event from the source agent.
-    pub async fn emit(&self, event_payload: JsonValue, event_type_override: Option<String>) -> Result<(), HelixError> {
+    pub async fn emit(
+        &self,
+        event_payload: JsonValue,
+        event_type_override: Option<String>,
+    ) -> Result<(), HelixError> {
         // Use override or generate a default type based on agent ID?
-        let event_type = event_type_override.unwrap_or_else(|| format!("agent.{}.emit", self.agent_id));
+        let event_type =
+            event_type_override.unwrap_or_else(|| format!("agent.{}.emit", self.agent_id));
         let event = Event::new(self.agent_id, self.profile_id, event_type, event_payload); // Pass profile_id and event_type
-        // Send the event through the channel
-        self.event_tx.send(event).await.map_err(|e| HelixError::MpscSendError(e.to_string()))?; // Handle potential send error
+                                                                                           // Send the event through the channel
+        self.event_tx
+            .send(event)
+            .await
+            .map_err(|e| HelixError::MpscSendError(e.to_string()))?; // Handle potential send error
         Ok(())
     }
 }
@@ -127,7 +136,11 @@ pub struct TransformerContext {
 #[async_trait]
 pub trait TransformerAgent: Agent {
     /// Processes an incoming event and returns zero or more transformed events.
-    async fn transform(&mut self, ctx: TransformerContext, event: Event) -> Result<Vec<Event>, HelixError>;
+    async fn transform(
+        &mut self,
+        ctx: TransformerContext,
+        event: Event,
+    ) -> Result<Vec<Event>, HelixError>;
 }
 
 /// Context provided to Action agents.
@@ -153,12 +166,11 @@ pub trait ActionAgent: Agent {
 mod tests {
     // Add tests for agent structures and traits
     use super::*;
-    use serde_json::json;
-    use tokio::sync::mpsc;
-    use uuid::Uuid;
     use crate::event::Event;
     use crate::types::{AgentId, ProfileId};
+    use serde_json::json;
     use std::sync::Arc;
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_source_context_emit() {
@@ -167,15 +179,15 @@ mod tests {
         let profile_id = Uuid::new_v4(); // Use Uuid
 
         // Create mock providers (adjust as necessary if they have state/methods)
-        let mock_cred_provider = Arc::new(MockCredentialProvider); 
+        let mock_cred_provider = Arc::new(MockCredentialProvider);
         let mock_state_store = Arc::new(MockStateStore);
 
         let ctx = SourceContext {
-            agent_id, // Use Uuid variable
+            agent_id,   // Use Uuid variable
             profile_id, // Use Uuid variable
             // These need actual mock implementations conforming to the traits
-            credential_provider: mock_cred_provider, 
-            state_store: mock_state_store, 
+            credential_provider: mock_cred_provider,
+            state_store: mock_state_store,
             event_tx: tx, // Use sender tx (channel.0)
         };
 
@@ -191,92 +203,113 @@ mod tests {
         let mut agent = MockActionAgent;
         let event_payload = json!({ "data": "process me" });
         // Create the event with the new required fields
-        let event = Event::new(Uuid::new_v4(), profile_id, "test.trigger".to_string(), event_payload); // Added profile_id and event_type
+        let event = Event::new(
+            Uuid::new_v4(),
+            profile_id,
+            "test.trigger".to_string(),
+            event_payload,
+        ); // Added profile_id and event_type
 
         let ctx = ActionContext {
-            agent_id, // Use Uuid variable
+            agent_id,   // Use Uuid variable
             profile_id, // Use Uuid variable
             // These need actual mock implementations conforming to the traits
-            credential_provider: Arc::new(MockCredentialProvider), 
-            state_store: Arc::new(MockStateStore), 
+            credential_provider: Arc::new(MockCredentialProvider),
+            state_store: Arc::new(MockStateStore),
         };
 
         let result = agent.execute(ctx, event).await;
         assert!(result.is_ok());
     }
-}
 
-struct MockCredentialProvider;
+    // --- Mock Implementations for Testing ---
+    #[derive(Debug)]
+    #[allow(dead_code)] // Allowed for test mock
+    struct MockCredentialProvider;
 
-#[async_trait]
-impl CredentialProvider for MockCredentialProvider {
-    async fn get_credential(&self, _id: &str) -> Result<Option<String>, HelixError> {
-        Ok(None)
-    }
-}
-
-struct MockStateStore;
-
-#[async_trait]
-impl StateStore for MockStateStore {
-    async fn get_state(&self, _key: &str) -> Result<Option<Vec<u8>>, HelixError> {
-        Ok(None)
+    #[async_trait]
+    impl CredentialProvider for MockCredentialProvider {
+        async fn get_credential(&self, _id: &str) -> Result<Option<String>, HelixError> {
+            Ok(None)
+        }
     }
 
-    async fn set_state(&self, _key: &str, _value: &[u8]) -> Result<(), HelixError> {
-        Ok(())
-    }
-}
+    #[derive(Debug)]
+    #[allow(dead_code)] // Allowed for test mock
+    struct MockStateStore;
 
-struct MockSourceAgent {
-    agent_id: AgentId,
-    count: u32,
-}
+    #[async_trait]
+    impl StateStore for MockStateStore {
+        async fn get_state(&self, _key: &str) -> Result<Option<Vec<u8>>, HelixError> {
+            Ok(None)
+        }
 
-impl MockSourceAgent {
-    fn new(agent_id: AgentId) -> Self {
-        Self { agent_id, count: 0 }
-    }
-}
-
-#[async_trait]
-impl Agent for MockSourceAgent {
-    fn id(&self) -> AgentId {
-        self.agent_id
+        async fn set_state(&self, _key: &str, _value: &[u8]) -> Result<(), HelixError> {
+            Ok(())
+        }
     }
 
-    fn config(&self) -> &AgentConfig {
-        unimplemented!()
-    }
-}
-
-#[async_trait]
-impl SourceAgent for MockSourceAgent {
-    async fn run(&mut self, ctx: SourceContext) -> Result<(), HelixError> {
-        self.count += 1;
-        let event_payload = json!({ "count": self.count, "message": "Tick" });
-        let event = Event::new(self.agent_id, ctx.profile_id, "source.tick".to_string(), event_payload); // Pass profile_id and event_type
-        ctx.event_tx.send(event).await?;
-        Ok(())
-    }
-}
-
-struct MockActionAgent;
-
-#[async_trait]
-impl Agent for MockActionAgent {
-    fn id(&self) -> AgentId {
-        Uuid::new_v4()
+    #[derive(Debug)]
+    #[allow(dead_code)] // Allowed for test mock
+    struct MockSourceAgent {
+        agent_id: AgentId,
+        count: u32,
     }
 
-    fn config(&self) -> &AgentConfig {
-        unimplemented!()
+    #[allow(dead_code)] // Allowed for test mock helper
+    impl MockSourceAgent {
+        #[allow(dead_code)] // Allowed for test mock helper
+        fn new(agent_id: AgentId) -> Self {
+            Self { agent_id, count: 0 }
+        }
     }
-}
 
-#[async_trait]
-impl ActionAgent for MockActionAgent {
-    async fn execute(&mut self, _ctx: ActionContext, _event: Event) -> Result<(), HelixError> {
-        Ok(())
+    #[async_trait]
+    impl Agent for MockSourceAgent {
+        fn id(&self) -> AgentId {
+            self.agent_id
+        }
+
+        fn config(&self) -> &AgentConfig {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl SourceAgent for MockSourceAgent {
+        async fn run(&mut self, ctx: SourceContext) -> Result<(), HelixError> {
+            self.count += 1;
+            let event_payload = json!({ "count": self.count, "message": "Tick" });
+            let event = Event::new(
+                self.agent_id,
+                ctx.profile_id,
+                "source.tick".to_string(),
+                event_payload,
+            ); // Pass profile_id and event_type
+            ctx.event_tx.send(event).await?;
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    #[allow(dead_code)] // Allowed for test mock
+    struct MockActionAgent;
+
+    #[async_trait]
+    impl Agent for MockActionAgent {
+        fn id(&self) -> AgentId {
+            Uuid::new_v4()
+        }
+
+        fn config(&self) -> &AgentConfig {
+            unimplemented!()
+        }
+    }
+
+    #[async_trait]
+    impl ActionAgent for MockActionAgent {
+        async fn execute(&mut self, _ctx: ActionContext, _event: Event) -> Result<(), HelixError> {
+            Ok(())
+        }
     }
 }

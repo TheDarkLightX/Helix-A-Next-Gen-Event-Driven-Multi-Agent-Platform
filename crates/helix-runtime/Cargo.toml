@@ -13,6 +13,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 async-nats = { workspace = true } # Inherit from workspace
+chrono = { version = "0.4", features = ["serde"] } # Added dependency
+uuid = { version = "0.8", features = ["v4", "serde"] } # Added dependency
+futures = "0.3" # Added dependency for TryStreamExt
 
 # Add specific runtime dependencies like tokio, nats, etc. later
 

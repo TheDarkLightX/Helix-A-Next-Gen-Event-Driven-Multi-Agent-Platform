@@ -119,7 +119,6 @@ impl Event {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,7 +132,12 @@ mod tests {
         let event_type = "test.event".to_string();
         let payload = json!({ "data": "test_payload" });
 
-        let event = Event::new(source_agent_id, profile_id, event_type.clone(), payload.clone());
+        let event = Event::new(
+            source_agent_id,
+            profile_id,
+            event_type.clone(),
+            payload.clone(),
+        );
 
         assert_eq!(event.source_agent_id, source_agent_id);
         assert_eq!(event.profile_id, profile_id);
@@ -156,11 +160,16 @@ mod tests {
         let correlation_id = Uuid::new_v4();
         let causation_id = Uuid::new_v4();
 
-        let event = Event::new(source_agent_id, profile_id, event_type.clone(), payload.clone())
-            .with_subject("test-subject")
-            .with_correlation_id(correlation_id)
-            .with_causation_id(causation_id)
-            .with_data_schema("schema://test");
+        let event = Event::new(
+            source_agent_id,
+            profile_id,
+            event_type.clone(),
+            payload.clone(),
+        )
+        .with_subject("test-subject")
+        .with_correlation_id(correlation_id)
+        .with_causation_id(causation_id)
+        .with_data_schema("schema://test");
 
         assert_eq!(event.source_agent_id, source_agent_id);
         assert_eq!(event.profile_id, profile_id);
@@ -191,13 +200,19 @@ mod tests {
         println!("Serialized: {}", serialized); // For debugging
 
         // Deserialize
-        let deserialized_event: Event = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized_event: Event =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         // Assert equality
         assert_eq!(original_event, deserialized_event);
 
         // Check that optional fields omitted in creation are None after deserialization
-        let minimal_event = Event::new(Uuid::new_v4(), Uuid::new_v4(), "minimal".to_string(), json!({}));
+        let minimal_event = Event::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "minimal".to_string(),
+            json!({}),
+        );
         let minimal_serialized = serde_json::to_string(&minimal_event).unwrap();
         assert!(!minimal_serialized.contains("subject"));
         assert!(!minimal_serialized.contains("correlation_id"));

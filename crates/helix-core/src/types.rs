@@ -1,8 +1,8 @@
 //! Common type definitions used throughout Helix.
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use std::fmt;
+use uuid::Uuid;
 
 /// Unique identifier for an Agent.
 pub type AgentId = Uuid;

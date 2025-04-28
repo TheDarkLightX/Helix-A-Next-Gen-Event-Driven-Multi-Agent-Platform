@@ -2,12 +2,12 @@
 
 //! Defines structures related to agent state persistence.
 
+use crate::errors::HelixError;
 use crate::types::{AgentId, ProfileId};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use async_trait::async_trait;
-use crate::errors::HelixError;
 
 /// Represents the persisted state of an agent retrieved from a StateStore.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -44,12 +44,12 @@ impl StoredState {
 }
 
 /// Trait defining the interface for agent state persistence.
-/// 
+///
 /// Implementations will handle the actual storage mechanism (e.g., database, in-memory).
 #[async_trait]
 pub trait StateStore: Send + Sync {
     /// Retrieves the persisted state for a given agent within a profile.
-    /// 
+    ///
     /// Returns `Ok(None)` if no state is found for the agent.
     async fn get_state(
         &self,
@@ -58,7 +58,7 @@ pub trait StateStore: Send + Sync {
     ) -> Result<Option<JsonValue>, HelixError>;
 
     /// Persists the state for a given agent within a profile.
-    /// 
+    ///
     /// This typically overwrites any existing state for the agent.
     async fn set_state(
         &self,
@@ -92,7 +92,9 @@ mod tests {
 
     impl MockStateStore {
         fn new() -> Self {
-            Self { states: Mutex::new(HashMap::new()) }
+            Self {
+                states: Mutex::new(HashMap::new()),
+            }
         }
     }
 

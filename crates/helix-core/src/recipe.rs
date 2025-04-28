@@ -41,7 +41,7 @@ pub struct Recipe {
 
 impl Recipe {
     /// Validates the recipe structure.
-    /// 
+    ///
     /// Checks for:
     /// - At least one agent.
     /// - All connection agent IDs exist within the recipe's agents list.
@@ -57,7 +57,7 @@ impl Recipe {
 
         // TODO: Validate agent IDs in connections
         // TODO: Validate DAG structure (no cycles)
-        
+
         Ok(())
     }
 }

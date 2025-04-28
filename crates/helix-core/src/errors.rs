@@ -1,8 +1,8 @@
 //! Defines common error types for the Helix Core library.
 
+use crate::event::Event;
 use thiserror::Error;
 use tokio::sync::mpsc;
-use crate::event::Event;
 
 /// The primary error type for Helix operations.
 #[derive(Error, Debug)]

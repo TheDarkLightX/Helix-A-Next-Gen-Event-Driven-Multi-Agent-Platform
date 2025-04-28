@@ -103,7 +103,7 @@ impl SourceContext {
         // Use override or generate a default type based on agent ID?
         let event_type =
             event_type_override.unwrap_or_else(|| format!("agent.{}.emit", self.agent_id));
-        let event = Event::new(self.agent_id, self.profile_id, event_type, event_payload); // Pass profile_id and event_type
+        let event = Event::new(self.agent_id.to_string(), event_type, Some(event_payload)); // Pass profile_id and event_type
                                                                                            // Send the event through the channel
         self.event_tx
             .send(event)
@@ -198,21 +198,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_action_agent_execute() {
+        let (tx, mut rx) = mpsc::channel(10);
         let agent_id = Uuid::new_v4();
-        let profile_id = Uuid::new_v4();
-        let mut agent = MockActionAgent;
-        let event_payload = json!({ "data": "process me" });
-        // Create the event with the new required fields
+        let profile_id = Uuid::new_v4(); // Keep profile_id for context if needed
+        let mut agent = MockActionAgent::new(agent_id, tx);
+
+        let event_payload = json!({ "action": "test" });
+        // Create the event with the correct signature
         let event = Event::new(
-            Uuid::new_v4(),
-            profile_id,
+            agent_id.to_string(), // Use agent_id as source for this test
             "test.trigger".to_string(),
-            event_payload,
-        ); // Added profile_id and event_type
+            Some(event_payload),
+        );
 
         let ctx = ActionContext {
-            agent_id,   // Use Uuid variable
-            profile_id, // Use Uuid variable
+            agent_id,
+            profile_id,
             // These need actual mock implementations conforming to the traits
             credential_provider: Arc::new(MockCredentialProvider),
             state_store: Arc::new(MockStateStore),
@@ -280,12 +281,7 @@ mod tests {
         async fn run(&mut self, ctx: SourceContext) -> Result<(), HelixError> {
             self.count += 1;
             let event_payload = json!({ "count": self.count, "message": "Tick" });
-            let event = Event::new(
-                self.agent_id,
-                ctx.profile_id,
-                "source.tick".to_string(),
-                event_payload,
-            ); // Pass profile_id and event_type
+            let event = Event::new(self.agent_id.to_string(), "source.tick".to_string(), Some(event_payload)); // Pass profile_id and event_type
             ctx.event_tx.send(event).await?;
             Ok(())
         }
@@ -293,12 +289,23 @@ mod tests {
 
     #[derive(Debug)]
     #[allow(dead_code)] // Allowed for test mock
-    struct MockActionAgent;
+    struct MockActionAgent {
+        agent_id: AgentId,
+        event_tx: mpsc::Sender<Event>,
+    }
+
+    #[allow(dead_code)] // Allowed for test mock helper
+    impl MockActionAgent {
+        #[allow(dead_code)] // Allowed for test mock helper
+        fn new(agent_id: AgentId, event_tx: mpsc::Sender<Event>) -> Self {
+            Self { agent_id, event_tx }
+        }
+    }
 
     #[async_trait]
     impl Agent for MockActionAgent {
         fn id(&self) -> AgentId {
-            Uuid::new_v4()
+            self.agent_id
         }
 
         fn config(&self) -> &AgentConfig {

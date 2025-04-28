@@ -1,4 +1,4 @@
-🛠️ **Project Codename: “Helix” – A Next-Gen Event-Driven Agent Platform (Huginn 2.0+)**  
+🛠️ **Project Codename: “Helix” – A Next-Gen Event-Driven Agent Platform**  
 *(Everything below is directly paste-able into your architecture repo as `docs/specification.md`)*  
 
 ---

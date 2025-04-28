@@ -1,6 +1,6 @@
 # Project Codename: Helix
 
-A Next-Gen Event-Driven Agent Platform (Huginn 2.0+).
+Self-hosted personal event-automation (like IFTTT, but smarter).
 
 See `docs/specification.md` for detailed requirements.
 

@@ -32,10 +32,16 @@
 - Fixed `E0433` (missing `mpsc` import) in `agent.rs`.
 - Fixed `E0277` (missing `From<mpsc::SendError>` impl) by updating `HelixError` in `errors.rs`.
 - Resolved `unused_variables` warning for `kind` in `agent.rs`.
+- Defined `CredentialProvider` trait and mock tests in `credential.rs`.
+- Defined `StateStore` trait and mock tests in `state.rs`.
+- Refined `Event` schema with more metadata (CloudEvents inspired) and updated tests/docs in `event.rs`.
 
 ## Next
 
-- Design and implement `CredentialProvider` logic (defined placeholder `CredentialStore` and `EncryptionService` traits in `helix-core/src/credential.rs`; implementation blocked by `helix-runtime` `.gitignore` issue - see `troubleshooting.md`).
-- Design and implement `StateStore` logic (defined supporting `StoredState` struct in `helix-core/src/state.rs`; implementation likely blocked by `.gitignore` issue - see `troubleshooting.md`).
+- Integrate NATS JetStream for event messaging (`helix-runtime/src/messaging.rs`).
+- Implement concrete `CredentialProvider` (e.g., using environment variables, HashiCorp Vault).
+- Implement concrete `StateStore` (e.g., using PostgreSQL, Redis, SurrealDB).
 - Implement credential encryption/decryption mechanism.
-- Define standard event format/schema.
+- Begin work on the Agent lifecycle management within `helix-runtime`.
+- Define basic Recipe structure (DAG definition).
+- Define Policy structure and integration points (e.g., Cedar).

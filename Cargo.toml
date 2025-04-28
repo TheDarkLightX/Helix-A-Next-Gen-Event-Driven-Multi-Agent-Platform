@@ -1,0 +1,29 @@
+[workspace]
+members = [
+    "crates/helix-core",
+    "crates/helix-runtime",
+    "crates/helix-api",
+    "crates/helix-agent-sdk",
+    "crates/helix-rule-engine",
+    "crates/helix-storage",
+    # Add other core crates as needed
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Common dependencies shared across the workspace
+chrono = { version = "0.4", features = ["serde"] } # Fixed spelling and added for workspace
+serde = { version = "1.0", features = ["derive"] } 
+serde_json = "1.0" 
+tokio = { version = "1", features = ["full"] } 
+tracing = "0.1"
+thiserror = "1.0"
+async-trait = "0.1"
+async-nats = { version = "0.38.0" } # Try latest version 0.38.0
+
+# Add other shared dependencies here
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

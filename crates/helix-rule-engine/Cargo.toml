@@ -1,0 +1,9 @@
+[package]
+name = "helix-rule-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+
+# Add rule engine dependencies (cedar, rete implementation) later

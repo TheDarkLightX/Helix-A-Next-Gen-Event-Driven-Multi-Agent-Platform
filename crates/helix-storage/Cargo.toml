@@ -1,0 +1,9 @@
+[package]
+name = "helix-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+
+# Add storage dependencies (sqlx, redis, surrealdb clients) later

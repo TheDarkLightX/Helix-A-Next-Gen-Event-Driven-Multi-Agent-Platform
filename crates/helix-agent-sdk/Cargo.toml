@@ -1,0 +1,9 @@
+[package]
+name = "helix-agent-sdk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+
+# Add SDK-specific dependencies (macros, wasm tooling) later

@@ -1,0 +1,25 @@
+[package]
+name = "helix-runtime"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] } # Ensure runtime features
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+async-nats = { workspace = true } # Inherit from workspace
+
+# Add specific runtime dependencies like tokio, nats, etc. later
+
+[dev-dependencies]
+mockall = "0.12"
+wiremock = "0.6"
+serde_json = { workspace = true }
+
+[features]
+test = []

@@ -16,6 +16,10 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 uuid = { version = "1.8", features = ["v4", "serde"] } # Keep explicit for now
 
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+base64 = "0.22.1" # Added for mock encryption service in tests
+
 [lib]
 name = "helix_core"
 path = "src/lib.rs"

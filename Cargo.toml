@@ -14,6 +14,11 @@ members = [
     "crates/helix-agent-sdk-macros", # Added new macros crate
     # Add other core crates as needed
 ]
+
+[workspace.package]
+license = "Apache-2.0"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
+edition = "2021"
 resolver = "2"
 
 [workspace.dependencies]

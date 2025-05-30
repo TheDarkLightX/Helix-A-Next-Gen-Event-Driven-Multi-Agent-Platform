@@ -2,6 +2,9 @@
 name = "helix-core"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "Core functionality for the Helix multi-agent platform with zkVM capabilities"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 
 [[bin]]
 name = "quality_analyzer"

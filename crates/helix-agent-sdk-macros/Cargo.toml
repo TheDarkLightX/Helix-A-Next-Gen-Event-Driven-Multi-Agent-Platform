@@ -2,6 +2,9 @@
 name = "helix-agent-sdk-macros"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "Procedural macros for the Helix agent SDK"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 
 [lib]
 proc-macro = true

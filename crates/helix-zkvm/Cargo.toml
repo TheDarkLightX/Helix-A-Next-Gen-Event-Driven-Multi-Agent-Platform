@@ -2,7 +2,9 @@
 name = "helix-zkvm"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 description = "Zero-knowledge virtual machine integration for Helix agents"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 
 [dependencies]
 helix-core = { path = "../helix-core" }

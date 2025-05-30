@@ -2,6 +2,9 @@
 name = "helix-storage"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
+description = "Storage abstractions and implementations for Helix platform"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 
 [dependencies]
 helix-core = { path = "../helix-core" }

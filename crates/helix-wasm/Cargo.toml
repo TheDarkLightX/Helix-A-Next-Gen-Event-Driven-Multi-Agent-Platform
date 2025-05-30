@@ -1,0 +1,22 @@
+[package]
+name = "helix-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM runtime and plugin system for Helix agents"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+rmp-serde = "1.1" # For MessagePack with host functions
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

@@ -14,3 +14,32 @@ Thumbs.db
 
 # Windsurf rules
 .windsurfrules
+
+# AI/Development tools and temporary files
+*rules*
+*private*
+*secret*
+*temp*
+*.tmp
+*.log
+*.bak
+*~
+
+# Analysis artifacts (temporary analysis scripts)
+complexity_test*
+analyze_complexity*
+detailed_complexity*
+
+# Personal/Internal files
+.env
+.env.local
+*.personal
+*.internal
+
+# TODO and planning files (internal development)
+*TODO*
+*todo*
+PROJECT_TODO_LIST.md
+progress.md
+troubleshooting.md
+COMPREHENSIVE_*_PLAN.md

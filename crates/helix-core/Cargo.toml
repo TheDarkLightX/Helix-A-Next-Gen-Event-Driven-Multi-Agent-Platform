@@ -3,6 +3,11 @@ name = "helix-core"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "quality_analyzer"
+path = "src/bin/quality_analyzer.rs"
+required-features = ["mutation-testing"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -15,10 +20,21 @@ serde_json = "1.0"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = { workspace = true }
+sqlx = { workspace = true }
+
+# Mutation testing dependencies
+regex = { version = "1.10", optional = true }
+rand = { version = "0.8", optional = true }
+tempfile = { version = "3.8", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 base64 = "0.22.1" # Added for mock encryption service in tests
+futures = "0.3"
+
+[features]
+default = []
+mutation-testing = ["regex", "rand", "tempfile"]
 
 [lib]
 name = "helix_core"

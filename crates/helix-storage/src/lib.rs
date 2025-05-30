@@ -1,16 +1,4 @@
-//! Provides abstractions for interacting with storage backends (Postgres, Redpanda, SurrealDB, Qdrant).
+pub mod postgres_state_store;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+// Re-export Postgres-based StateStore implementation
+pub use postgres_state_store::PostgresStateStore;

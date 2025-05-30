@@ -1,0 +1,21 @@
+[package]
+name = "helix-embeddings"
+version = "0.1.0"
+edition = "2021"
+description = "Vector embeddings and similarity search for Helix"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# qdrant-client = { workspace = true }  # Commented out for now
+# fastembed = { workspace = true }      # Commented out for now
+uuid = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

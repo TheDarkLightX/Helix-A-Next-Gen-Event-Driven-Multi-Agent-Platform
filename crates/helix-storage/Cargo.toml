@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 helix-core = { path = "../helix-core" }
-
-# Add storage dependencies (sqlx, redis, surrealdb clients) later
+async-trait = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "json", "uuid"] }
+tokio = { workspace = true }
+serde_json = { workspace = true }

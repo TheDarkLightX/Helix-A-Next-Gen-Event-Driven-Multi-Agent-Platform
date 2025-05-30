@@ -1,0 +1,29 @@
+[package]
+name = "helix-llm"
+version = "0.1.0"
+edition = "2021"
+description = "LLM integration and natural language processing for Helix agents"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+# tiktoken-rs = { workspace = true }  # Commented out for now
+# candle-core = { workspace = true }  # Commented out for now
+# candle-nn = { workspace = true }    # Commented out for now
+# candle-transformers = { workspace = true }  # Commented out for now
+# hf-hub = { workspace = true }       # Commented out for now
+# tokenizers = { workspace = true }   # Commented out for now
+regex = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"

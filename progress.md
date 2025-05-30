@@ -35,6 +35,12 @@
 - Defined `CredentialProvider` trait and mock tests in `credential.rs`.
 - Defined `StateStore` trait and mock tests in `state.rs`.
 - Refined `Event` schema with more metadata (CloudEvents inspired) and updated tests/docs in `event.rs`.
+- Initial project scaffolding.
+- Basic NATS JetStream client integration in `helix-runtime`.
+  - Implemented connect, ensure_stream, publish, subscribe (pull consumer).
+  - Fixed compilation and `clippy` warnings (FetchBuilder usage, missing docs).
+  - Pushed changes to GitHub.
+- Defined core `Event` structure in `helix-core` based on CloudEvents v1.0.
 
 ## Next
 

@@ -6,22 +6,66 @@ members = [
     "crates/helix-agent-sdk",
     "crates/helix-rule-engine",
     "crates/helix-storage",
+    "crates/helix-llm",
+    "crates/helix-zkvm",
+    "crates/helix-wasm",
+    "crates/helix-security",
+    "crates/helix-embeddings",
+    "crates/helix-agent-sdk-macros", # Added new macros crate
     # Add other core crates as needed
 ]
 resolver = "2"
 
 [workspace.dependencies]
 # Common dependencies shared across the workspace
-chrono = { version = "0.4", features = ["serde"] } # Fixed spelling and added for workspace
-serde = { version = "1.0", features = ["derive"] } 
-serde_json = "1.0" 
-tokio = { version = "1", features = ["full"] } 
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 thiserror = "1.0"
 async-trait = "0.1"
-async-nats = { version = "0.38.0" } # Try latest version 0.38.0
+async-nats = { version = "0.38.0" }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "json", "uuid"] }
 
-# Add other shared dependencies here
+# LLM and AI dependencies
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+# tiktoken-rs = "0.5"  # Commented out for now
+# candle-core = "0.6"  # Commented out for now
+# candle-nn = "0.6"    # Commented out for now
+# candle-transformers = "0.6"  # Commented out for now
+# hf-hub = "0.3"       # Commented out for now
+# tokenizers = "0.19"  # Commented out for now
+
+# zkVM dependencies (commented out for now due to compilation complexity)
+# risc0-zkvm = "1.0"
+# risc0-build = "1.0"
+# sp1-sdk = "2.0"
+
+# Vector database and embeddings
+# qdrant-client = "1.9"  # Commented out for now
+# fastembed = "3.0"      # Commented out for now
+
+# WASM runtime
+wasmtime = "24.0"
+wasmtime-wasi = "24.0"
+
+# Security and encryption
+# age = "0.10"           # Commented out for now
+# ring = "0.17"          # Commented out for now
+# cedar-policy = "4.0"   # Commented out for now
+
+# Rule engine and pattern matching
+# rete = "0.3"           # Commented out for now
+regex = "1.10"
+# cron = "0.12"          # Commented out for now
+
+# Additional utilities
+uuid = { version = "1.8", features = ["v4", "serde"] }
+base64 = "0.22"
+url = "2.5"
+sha2 = "0.10"
+futures = "0.3"
 
 [profile.release]
 lto = true

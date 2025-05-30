@@ -5,5 +5,9 @@ edition = "2021"
 
 [dependencies]
 helix-core = { path = "../helix-core" }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+rmp-serde = "1.1" # For MessagePack serialization
 
 # Add SDK-specific dependencies (macros, wasm tooling) later

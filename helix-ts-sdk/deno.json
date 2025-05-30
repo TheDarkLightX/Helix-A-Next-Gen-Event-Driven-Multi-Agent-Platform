@@ -1,0 +1,8 @@
+{
+  "tasks": {
+    "build:wasm": "deno compile --unstable --allow-env --allow-read --output agent.wasm --target wasm32-wasi src/exports.ts"
+  },
+  "compilerOptions": {
+    "lib": ["deno.ns", "esnext"]
+  }
+}

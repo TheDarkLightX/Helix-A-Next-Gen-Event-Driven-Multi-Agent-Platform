@@ -7,15 +7,20 @@ edition = "2021"
 
 [dependencies]
 helix-core = { path = "../helix-core" }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] } # Ensure runtime features
-tracing = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+helix-agent-sdk = { path = "../helix-agent-sdk" }
+helix-agent-sdk-macros = { path = "../helix-agent-sdk-macros" }
+linkme = "0.3"
+helix-wasm = { path = "../helix-wasm" } # Added helix-wasm
+async-nats = "0.35.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = [ "runtime-tokio-rustls", "postgres", "json" ] }
 thiserror = { workspace = true }
-async-nats = { workspace = true } # Inherit from workspace
-chrono = { version = "0.4", features = ["serde"] } # Added dependency
-uuid = { version = "0.8", features = ["v4", "serde"] } # Added dependency
-futures = "0.3" # Added dependency for TryStreamExt
+chrono = { version = "0.4", features = ["serde"] } 
+uuid = { version = "0.8", features = ["v4", "serde"] } 
+futures = "0.3" 
 
 # Add specific runtime dependencies like tokio, nats, etc. later
 
@@ -23,6 +28,9 @@ futures = "0.3" # Added dependency for TryStreamExt
 mockall = "0.12"
 wiremock = "0.6"
 serde_json = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+testcontainers = "0.15" # Check for latest version
+testcontainers-modules = { version = "0.3", features = ["postgres"] } # Check for latest version
 
 [features]
 test = []

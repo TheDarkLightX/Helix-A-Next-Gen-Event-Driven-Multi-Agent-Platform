@@ -389,7 +389,7 @@ impl LlmProvider for OpenAiProvider {
         // Make a simple API call to check health
         let response = self
             .client
-            .get(&format!("{}/models", self.base_url))
+            .get(format!("{}/models", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await?;
@@ -407,16 +407,16 @@ impl LlmProvider for OpenAiProvider {
 
 /// Anthropic provider implementation
 pub struct AnthropicProvider {
-    api_key: String,
-    client: reqwest::Client,
+    _api_key: String,
+    _client: reqwest::Client,
 }
 
 impl AnthropicProvider {
     /// Create a new Anthropic provider
     pub fn new(api_key: String) -> Self {
         Self {
-            api_key,
-            client: reqwest::Client::new(),
+            _api_key: api_key,
+            _client: reqwest::Client::new(),
         }
     }
 }

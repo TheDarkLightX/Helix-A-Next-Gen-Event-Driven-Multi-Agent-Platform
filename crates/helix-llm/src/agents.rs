@@ -27,7 +27,6 @@ use helix_core::{
     types::AgentId,
     HelixError,
 };
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 /// An LLM-powered source agent that can generate events based on natural language instructions
@@ -35,7 +34,6 @@ pub struct LlmSourceAgent {
     config: AgentConfig,
     llm_config: LlmAgentConfig,
     provider: Arc<dyn LlmProvider>,
-    context: AgentContext,
 }
 
 impl LlmSourceAgent {
@@ -45,13 +43,10 @@ impl LlmSourceAgent {
         llm_config: LlmAgentConfig,
         provider: Arc<dyn LlmProvider>,
     ) -> Self {
-        let context = AgentContext::new(config.id, config.profile_id);
-
         Self {
             config,
             llm_config,
             provider,
-            context,
         }
     }
 }
@@ -109,7 +104,7 @@ impl LlmAgent for LlmSourceAgent {
     async fn process_natural_language(
         &mut self,
         input: &str,
-        context: &AgentContext,
+        _context: &AgentContext,
     ) -> Result<LlmResponse, LlmError> {
         let request = LlmRequest {
             system_prompt: Some(self.llm_config.system_prompt.clone()),
@@ -130,8 +125,8 @@ impl LlmAgent for LlmSourceAgent {
 
     async fn synthesize_recipe(
         &mut self,
-        description: &str,
-        context: &AgentContext,
+        _description: &str,
+        _context: &AgentContext,
     ) -> Result<helix_core::recipe::Recipe, LlmError> {
         // Use LLM to generate recipe from description
         // This would involve prompt engineering and parsing
@@ -165,7 +160,6 @@ pub struct LlmTransformerAgent {
     config: AgentConfig,
     llm_config: LlmAgentConfig,
     provider: Arc<dyn LlmProvider>,
-    context: AgentContext,
 }
 
 impl LlmTransformerAgent {
@@ -175,13 +169,10 @@ impl LlmTransformerAgent {
         llm_config: LlmAgentConfig,
         provider: Arc<dyn LlmProvider>,
     ) -> Self {
-        let context = AgentContext::new(config.id, config.profile_id);
-
         Self {
             config,
             llm_config,
             provider,
-            context,
         }
     }
 }
@@ -201,7 +192,7 @@ impl Agent for LlmTransformerAgent {
 impl TransformerAgent for LlmTransformerAgent {
     async fn transform(
         &mut self,
-        ctx: TransformerContext,
+        _ctx: TransformerContext,
         event: Event,
     ) -> Result<Vec<Event>, HelixError> {
         // Use LLM to transform the event
@@ -251,7 +242,7 @@ impl LlmAgent for LlmTransformerAgent {
     async fn process_natural_language(
         &mut self,
         input: &str,
-        context: &AgentContext,
+        _context: &AgentContext,
     ) -> Result<LlmResponse, LlmError> {
         let request = LlmRequest {
             system_prompt: Some(self.llm_config.system_prompt.clone()),
@@ -272,16 +263,16 @@ impl LlmAgent for LlmTransformerAgent {
 
     async fn synthesize_recipe(
         &mut self,
-        description: &str,
-        context: &AgentContext,
+        _description: &str,
+        _context: &AgentContext,
     ) -> Result<helix_core::recipe::Recipe, LlmError> {
         todo!("Implement recipe synthesis for transformer")
     }
 
     async fn analyze_event(
         &mut self,
-        event: &Event,
-        context: &AgentContext,
+        _event: &Event,
+        _context: &AgentContext,
     ) -> Result<Vec<String>, LlmError> {
         todo!("Implement event analysis for transformer")
     }
@@ -292,7 +283,6 @@ pub struct LlmActionAgent {
     config: AgentConfig,
     llm_config: LlmAgentConfig,
     provider: Arc<dyn LlmProvider>,
-    context: AgentContext,
 }
 
 impl LlmActionAgent {
@@ -302,13 +292,10 @@ impl LlmActionAgent {
         llm_config: LlmAgentConfig,
         provider: Arc<dyn LlmProvider>,
     ) -> Self {
-        let context = AgentContext::new(config.id, config.profile_id);
-
         Self {
             config,
             llm_config,
             provider,
-            context,
         }
     }
 }
@@ -326,7 +313,7 @@ impl Agent for LlmActionAgent {
 
 #[async_trait]
 impl ActionAgent for LlmActionAgent {
-    async fn execute(&mut self, ctx: ActionContext, event: Event) -> Result<(), HelixError> {
+    async fn execute(&mut self, _ctx: ActionContext, event: Event) -> Result<(), HelixError> {
         // Use LLM to determine what action to take
         let event_json = serde_json::to_string_pretty(&event)
             .map_err(|e| HelixError::InternalError(e.to_string()))?;
@@ -375,7 +362,7 @@ impl LlmAgent for LlmActionAgent {
     async fn process_natural_language(
         &mut self,
         input: &str,
-        context: &AgentContext,
+        _context: &AgentContext,
     ) -> Result<LlmResponse, LlmError> {
         let request = LlmRequest {
             system_prompt: Some(self.llm_config.system_prompt.clone()),
@@ -396,16 +383,16 @@ impl LlmAgent for LlmActionAgent {
 
     async fn synthesize_recipe(
         &mut self,
-        description: &str,
-        context: &AgentContext,
+        _description: &str,
+        _context: &AgentContext,
     ) -> Result<helix_core::recipe::Recipe, LlmError> {
         todo!("Implement recipe synthesis for action agent")
     }
 
     async fn analyze_event(
         &mut self,
-        event: &Event,
-        context: &AgentContext,
+        _event: &Event,
+        _context: &AgentContext,
     ) -> Result<Vec<String>, LlmError> {
         todo!("Implement event analysis for action agent")
     }

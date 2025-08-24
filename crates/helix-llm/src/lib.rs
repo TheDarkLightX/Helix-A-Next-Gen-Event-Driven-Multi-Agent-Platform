@@ -36,7 +36,7 @@ pub use errors::LlmError;
 pub use providers::{LlmProvider, LlmRequest, LlmResponse, ModelConfig};
 
 use async_trait::async_trait;
-use helix_core::{agent::Agent, event::Event, HelixError};
+use helix_core::{agent::Agent, event::Event};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -105,8 +105,7 @@ impl LlmAgentFactory {
         &self,
         config: LlmAgentConfig,
     ) -> Result<Box<dyn LlmAgent>, LlmError> {
-        let provider = self
-            .providers
+        self.providers
             .get(&config.provider)
             .ok_or_else(|| LlmError::ProviderNotFound(config.provider.clone()))?;
 

@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+use once_cell::sync::Lazy;
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
 use regex::Regex;
 
 /// Temporal relationship between condition and outcome.
@@ -25,6 +29,13 @@ pub enum QuantifierFacet {
 pub enum GuardFacet {
     /// Implication/if-then relationship.
     IfThen,
+<<<<<<< HEAD
+=======
+    /// Negated guard expressed with "unless".
+    Unless,
+    /// Restrictive guard expressed with "only if".
+    OnlyIf,
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
 }
 
 /// Facets extracted from natural language.
@@ -34,6 +45,10 @@ pub struct IntentFacets {
     pub temporal: Option<TemporalFacet>,
     /// Quantifier aspect.
     pub quantifier: Option<QuantifierFacet>,
+        /// Negated guard expressed with "unless".
+        Unless,
+        /// Restrictive guard expressed with "only if".
+        OnlyIf,
     /// Guard/condition aspect.
     pub guard: Option<GuardFacet>,
 }
@@ -52,6 +67,7 @@ impl IntentFacets {
             facets.temporal = Some(TemporalFacet::Immediate);
         }
 
+<<<<<<< HEAD
         let universal = Regex::new(r"\b(all|every|each)\b").unwrap();
         let existential = Regex::new(r"\b(some|any|there exists|exists)\b").unwrap();
         if universal.is_match(&lower) {
@@ -60,7 +76,45 @@ impl IntentFacets {
             facets.quantifier = Some(QuantifierFacet::Existential);
         }
 
+            static UNIVERSAL: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(all|every|each)\b").unwrap());
+            static EXISTENTIAL: Lazy<Regex> =
+                Lazy::new(|| Regex::new(r"\b(some|any|there exists|exists)\b").unwrap());
+            if UNIVERSAL.is_match(&lower) {
+                facets.quantifier = Some(QuantifierFacet::Universal);
+            } else if EXISTENTIAL.is_match(&lower) {
+                facets.quantifier = Some(QuantifierFacet::Existential);
+            }
+
+            static IF_THEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(if|when)\b").unwrap());
+            static UNLESS: Lazy<Regex> = Lazy::new(|| Regex::new(r"\bunless\b").unwrap());
+            static ONLY_IF: Lazy<Regex> = Lazy::new(|| Regex::new(r"\bonly if\b").unwrap());
+
+            if ONLY_IF.is_match(&lower) {
+                facets.guard = Some(GuardFacet::OnlyIf);
+            } else if UNLESS.is_match(&lower) {
+                facets.guard = Some(GuardFacet::Unless);
+            } else if IF_THEN.is_match(&lower) {
         if lower.contains("if") || lower.contains("when") {
+=======
+        static UNIVERSAL: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(all|every|each)\b").unwrap());
+        static EXISTENTIAL: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"\b(some|any|there exists|exists)\b").unwrap());
+        if UNIVERSAL.is_match(&lower) {
+            facets.quantifier = Some(QuantifierFacet::Universal);
+        } else if EXISTENTIAL.is_match(&lower) {
+            facets.quantifier = Some(QuantifierFacet::Existential);
+        }
+
+        static IF_THEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b(if|when)\b").unwrap());
+        static UNLESS: Lazy<Regex> = Lazy::new(|| Regex::new(r"\bunless\b").unwrap());
+        static ONLY_IF: Lazy<Regex> = Lazy::new(|| Regex::new(r"\bonly if\b").unwrap());
+
+        if ONLY_IF.is_match(&lower) {
+            facets.guard = Some(GuardFacet::OnlyIf);
+        } else if UNLESS.is_match(&lower) {
+            facets.guard = Some(GuardFacet::Unless);
+        } else if IF_THEN.is_match(&lower) {
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
             facets.guard = Some(GuardFacet::IfThen);
         }
 
@@ -71,13 +125,35 @@ impl IntentFacets {
     pub fn clarifying_questions(&self) -> Vec<String> {
         let mut qs = Vec::new();
         if self.temporal.is_none() {
+<<<<<<< HEAD
             qs.push("Is this rule always true, eventually true, or immediately after the condition?".to_string());
+=======
+            qs.push(
+                "Is this rule always true, eventually true, or immediately after the condition?"
+                    .to_string(),
+            );
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
         }
         if self.quantifier.is_none() {
+    
+        #[test]
+        fn recognizes_guard_keywords() {
+            let unless = IntentFacets::parse("Turn on the alarm unless the system is in maintenance");
+            assert_eq!(unless.guard, Some(GuardFacet::Unless));
+        
+            let only_if = IntentFacets::parse("Alert only if the sensor fails");
+            assert_eq!(only_if.guard, Some(GuardFacet::OnlyIf));
+        }
             qs.push("Should the rule apply to all cases or only to some?".to_string());
         }
         if self.guard.is_none() {
+<<<<<<< HEAD
             qs.push("Does the statement have a condition like 'if' or 'when'?".to_string());
+=======
+            qs.push(
+                "Does the statement include a condition such as 'if', 'when', 'unless', or 'only if'?".to_string(),
+            );
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
         }
         qs
     }
@@ -97,5 +173,18 @@ mod tests {
         let qs = facets.clarifying_questions();
         assert!(qs.iter().any(|q| q.contains("apply to all")));
     }
+<<<<<<< HEAD
 }
 
+=======
+
+    #[test]
+    fn recognizes_guard_keywords() {
+        let unless = IntentFacets::parse("Turn on the alarm unless the system is in maintenance");
+        assert_eq!(unless.guard, Some(GuardFacet::Unless));
+
+        let only_if = IntentFacets::parse("Alert only if the sensor fails");
+        assert_eq!(only_if.guard, Some(GuardFacet::OnlyIf));
+    }
+}
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92

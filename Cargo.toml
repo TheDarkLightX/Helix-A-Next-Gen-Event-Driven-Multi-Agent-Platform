@@ -63,6 +63,7 @@ wasmtime-wasi = "24.0"
 # Rule engine and pattern matching
 # rete = "0.3"           # Commented out for now
 regex = "1.10"
+once_cell = "1.19"
 # cron = "0.12"          # Commented out for now
 
 # Additional utilities

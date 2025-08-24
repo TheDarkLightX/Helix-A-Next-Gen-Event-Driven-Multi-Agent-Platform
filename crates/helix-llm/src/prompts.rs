@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Prompt templates and engineering utilities
 
 use serde::{Deserialize, Serialize};
@@ -80,11 +79,11 @@ impl PromptTemplate {
     /// Render the template with provided values
     pub fn render(&self, values: &HashMap<String, String>) -> Result<String, String> {
         let mut result = self.template.clone();
-        
+
         // Replace all variables in the template
         for (name, definition) in &self.variables {
             let placeholder = format!("{{{}}}", name);
-            
+
             if let Some(value) = values.get(name) {
                 result = result.replace(&placeholder, value);
             } else if definition.required {
@@ -95,7 +94,7 @@ impl PromptTemplate {
                 result = result.replace(&placeholder, "");
             }
         }
-        
+
         Ok(result)
     }
 }
@@ -180,7 +179,8 @@ Analyze this event and provide:
 3. Any anomalies or concerns
 4. Suggested follow-up actions
 
-Format your response as structured JSON."#.to_string(),
+Format your response as structured JSON."#
+                .to_string(),
         );
 
         template.add_variable(VariableDefinition {
@@ -251,7 +251,8 @@ Analyze the error and provide:
 3. Prevention strategies
 4. Code changes if applicable
 
-Be specific and actionable in your recommendations."#.to_string(),
+Be specific and actionable in your recommendations."#
+                .to_string(),
         );
 
         // Add variable definitions...
@@ -321,11 +322,8 @@ mod tests {
 
     #[test]
     fn test_prompt_template_creation() {
-        let template = PromptTemplate::new(
-            "test".to_string(),
-            "Hello {name}!".to_string(),
-        );
-        
+        let template = PromptTemplate::new("test".to_string(), "Hello {name}!".to_string());
+
         assert_eq!(template.name, "test");
         assert_eq!(template.template, "Hello {name}!");
     }
@@ -362,10 +360,7 @@ mod tests {
 
     #[test]
     fn test_missing_required_variable() {
-        let mut template = PromptTemplate::new(
-            "test".to_string(),
-            "Hello {name}!".to_string(),
-        );
+        let mut template = PromptTemplate::new("test".to_string(), "Hello {name}!".to_string());
 
         template.add_variable(VariableDefinition {
             name: "name".to_string(),
@@ -378,6 +373,8 @@ mod tests {
         let values = HashMap::new();
         let result = template.render(&values);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Required variable 'name' not provided"));
+        assert!(result
+            .unwrap_err()
+            .contains("Required variable 'name' not provided"));
     }
 }

@@ -11,12 +11,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Context management for LLM interactions
 
+use helix_core::{
+    event::Event,
+    types::{AgentId, ProfileId},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use helix_core::{event::Event, types::{AgentId, ProfileId}};
 
 /// Context for LLM agent operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,7 +117,7 @@ impl AgentContext {
     /// Add an event to the context
     pub fn add_event(&mut self, event: Event) {
         self.recent_events.push(event);
-        
+
         // Keep only the last 10 events to prevent context bloat
         if self.recent_events.len() > 10 {
             self.recent_events.remove(0);
@@ -159,7 +161,7 @@ impl ConversationContext {
     pub fn add_message(&mut self, role: MessageRole, content: String) -> String {
         let message_id = uuid::Uuid::new_v4().to_string();
         let token_count = estimate_token_count(&content);
-        
+
         let message = ConversationMessage {
             id: message_id.clone(),
             role,
@@ -201,9 +203,11 @@ impl ConversationContext {
 
         let recent = self.get_recent_messages(5);
         let mut summary = String::new();
-        
+
         for msg in recent {
-            summary.push_str(&format!("{:?}: {}\n", msg.role, 
+            summary.push_str(&format!(
+                "{:?}: {}\n",
+                msg.role,
                 if msg.content.len() > 100 {
                     format!("{}...", &msg.content[..100])
                 } else {
@@ -225,7 +229,7 @@ impl Default for ConversationContext {
 /// Estimate token count for a text string (rough approximation)
 fn estimate_token_count(text: &str) -> usize {
     // Rough approximation: 1 token ≈ 4 characters for English text
-    (text.len() + 3) / 4
+    text.len().div_ceil(4)
 }
 
 #[cfg(test)]
@@ -247,7 +251,7 @@ mod tests {
     #[test]
     fn test_conversation_context() {
         let mut conv = ConversationContext::new();
-        
+
         let msg_id = conv.add_message(MessageRole::User, "Hello".to_string());
         assert!(!msg_id.is_empty());
         assert_eq!(conv.messages.len(), 1);
@@ -266,12 +270,12 @@ mod tests {
     fn test_conversation_trimming() {
         let mut conv = ConversationContext::new();
         conv.max_messages = 3;
-        
+
         // Add more messages than the limit
         for i in 0..5 {
             conv.add_message(MessageRole::User, format!("Message {}", i));
         }
-        
+
         assert_eq!(conv.messages.len(), 3);
         // Should keep the last 3 messages
         assert_eq!(conv.messages[0].content, "Message 2");

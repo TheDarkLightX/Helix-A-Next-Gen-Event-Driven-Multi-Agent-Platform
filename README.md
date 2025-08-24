@@ -30,11 +30,17 @@ cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that
 # Using OpenAI
 OPENAI_API_KEY=your_key_here \
 cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
+=======
+# Using a custom OpenAI-compatible endpoint
+LLM_API_KEY=your_key_here LLM_BASE_URL=https://my-llm.example/v1 \
+cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
 ```
 
 The model will respond with a Quint specification based on the provided prompt.
 
 Before issuing a request to the model, the translator performs a lightweight **intent-facet** analysis to highlight potential ambiguities. If aspects like temporal scope or quantifier are missing, clarifying questions are printed to help refine the prompt.
+=======
+Before issuing a request to the model, the translator performs a lightweight **intent-facet** analysis to highlight potential ambiguities. If aspects like temporal scope, quantifier, or guard keywords (e.g. `if`, `when`, `unless`, `only if`) are missing, clarifying questions are printed to help refine the prompt.
 
 You can customize the model or write output to a file:
 
@@ -50,14 +56,11 @@ OPENAI_API_KEY=your_key_here \
 cargo run -p helix-llm --bin quint_translator --prompt-file spec.txt
 ```
 
+=======
+If no API key is detected the translator now exits with a non-zero status so automated scripts can surface configuration issues.
 ## Project Structure
 
-- `/crates`: Core Rust libraries and potentially Rust-based plugins.
   - `/helix-core`: The main runtime logic, agent traits, event definitions.
-- `/plugins`: WASM-compiled plugins (TypeScript, Rust, etc.).
-- `/ui`: Frontend React application.
-- `/ops`: DevOps configurations (Helm, Docker, etc.).
-- `/docs`: Project documentation, including the specification.
 
 ## Contributing
 

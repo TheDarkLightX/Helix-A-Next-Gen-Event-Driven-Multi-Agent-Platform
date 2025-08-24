@@ -25,17 +25,12 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 /// Specifies the runtime environment for an agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::Type, Default)]
 #[sqlx(type_name = "agent_runtime_type", rename_all = "lowercase")] // For PostgreSQL enum mapping
 pub enum AgentRuntime {
+    #[default]
     Native,
     Wasm,
-}
-
-impl Default for AgentRuntime {
-    fn default() -> Self {
-        AgentRuntime::Native
-    }
 }
 
 // --- Placeholder Traits for Context Dependencies ---

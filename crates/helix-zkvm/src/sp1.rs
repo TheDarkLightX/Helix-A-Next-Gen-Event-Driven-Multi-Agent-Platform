@@ -11,15 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! SP1 zkVM integration
 
-use async_trait::async_trait;
 use crate::{
-    ZkVmSystem, ZkVmAgent, ZkVmAgentConfig, ZkVmCapabilities, 
-    ProgramLanguage, ZkVmExecutionResult, ExecutionStats,
-    ZkProof, ProofSystem, VerificationResult, errors::ZkVmError
+    errors::ZkVmError, ExecutionStats, ProgramLanguage, ProofSystem, VerificationResult, ZkProof,
+    ZkVmAgent, ZkVmAgentConfig, ZkVmCapabilities, ZkVmExecutionResult, ZkVmSystem,
 };
+use async_trait::async_trait;
 
 /// SP1 zkVM system implementation
 pub struct Sp1System {
@@ -52,10 +50,7 @@ impl ZkVmSystem for Sp1System {
         "sp1"
     }
 
-    async fn create_agent(
-        &self,
-        config: ZkVmAgentConfig,
-    ) -> Result<Box<dyn ZkVmAgent>, ZkVmError> {
+    async fn create_agent(&self, config: ZkVmAgentConfig) -> Result<Box<dyn ZkVmAgent>, ZkVmError> {
         Ok(Box::new(Sp1Agent::new(config, self.config.clone())))
     }
 
@@ -71,7 +66,7 @@ impl ZkVmSystem for Sp1System {
                 // 1. Setting up SP1 build environment
                 // 2. Compiling Rust code to SP1 bytecode
                 // 3. Optimizing for SP1 execution
-                
+
                 // For now, return mock bytecode
                 Ok(source_code.as_bytes().to_vec())
             }
@@ -83,9 +78,9 @@ impl ZkVmSystem for Sp1System {
                 // Already compiled
                 Ok(source_code.as_bytes().to_vec())
             }
-            ProgramLanguage::C => {
-                Err(ZkVmError::UnsupportedOperation("C compilation not supported in SP1".to_string()))
-            }
+            ProgramLanguage::C => Err(ZkVmError::UnsupportedOperation(
+                "C compilation not supported in SP1".to_string(),
+            )),
         }
     }
 
@@ -108,15 +103,26 @@ impl ZkVmSystem for Sp1System {
 /// SP1 agent implementation
 pub struct Sp1Agent {
     config: ZkVmAgentConfig,
-    system_config: Sp1Config,
+    _system_config: Sp1Config,
+    /// Core agent configuration used for integration with helix-core
+    agent_config: helix_core::agent::AgentConfig,
 }
 
 impl Sp1Agent {
     /// Create a new SP1 agent
     pub fn new(config: ZkVmAgentConfig, system_config: Sp1Config) -> Self {
+        let agent_config = helix_core::agent::AgentConfig::new(
+            uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
+            None,
+            "sp1".to_string(),
+            serde_json::json!({}),
+        );
+
         Self {
             config,
-            system_config,
+            _system_config: system_config,
+            agent_config,
         }
     }
 }
@@ -129,8 +135,7 @@ impl crate::agent::Agent for Sp1Agent {
     }
 
     fn config(&self) -> &helix_core::agent::AgentConfig {
-        // This would need proper integration
-        todo!("Implement proper agent config integration")
+        &self.agent_config
     }
 }
 
@@ -150,12 +155,16 @@ impl ZkVmAgent for Sp1Agent {
         // 2. Setting up the SP1 runtime
         // 3. Executing with inputs
         // 4. Optionally generating PLONK proof
-        
+
         // For now, return a mock result
         let execution_time = start_time.elapsed().as_millis() as u64;
-        
-        let output = format!("SP1 execution result for program of {} bytes with {} bytes input", 
-                           program.len(), inputs.len()).into_bytes();
+
+        let output = format!(
+            "SP1 execution result for program of {} bytes with {} bytes input",
+            program.len(),
+            inputs.len()
+        )
+        .into_bytes();
 
         let proof = if generate_proof {
             Some(ZkProof::new(
@@ -175,7 +184,11 @@ impl ZkVmAgent for Sp1Agent {
                 cycles: 2000, // Mock cycle count (SP1 might have different cycle counting)
                 memory_used: inputs.len() as u64 + program.len() as u64,
                 execution_time_ms: execution_time,
-                proof_time_ms: if generate_proof { Some(execution_time * 2) } else { None }, // PLONK proofs take longer
+                proof_time_ms: if generate_proof {
+                    Some(execution_time * 2)
+                } else {
+                    None
+                }, // PLONK proofs take longer
             },
             proof,
             receipt: Some(vec![0u8; 128]), // Mock receipt
@@ -192,22 +205,32 @@ impl ZkVmAgent for Sp1Agent {
         // 1. Parsing the PLONK proof
         // 2. Verifying the polynomial commitments
         // 3. Checking the constraint system
-        
+
         let start_time = std::time::Instant::now();
-        
+
         // Mock verification - SP1 uses PLONK
-        let is_valid = matches!(proof.system, ProofSystem::Plonk) 
-            && proof.proof_data.len() > 200 
+        let is_valid = matches!(proof.system, ProofSystem::Plonk)
+            && proof.proof_data.len() > 200
             && !expected_output.is_empty();
-        
+
         Ok(VerificationResult {
             is_valid,
             verification_time_ms: start_time.elapsed().as_millis() as u64,
-            error: if is_valid { None } else { Some("SP1 verification failed".to_string()) },
+            error: if is_valid {
+                None
+            } else {
+                Some("SP1 verification failed".to_string())
+            },
             metadata: {
                 let mut meta = std::collections::HashMap::new();
-                meta.insert("proof_system".to_string(), serde_json::Value::String("PLONK".to_string()));
-                meta.insert("sp1_version".to_string(), serde_json::Value::String("2.0".to_string()));
+                meta.insert(
+                    "proof_system".to_string(),
+                    serde_json::Value::String("PLONK".to_string()),
+                );
+                meta.insert(
+                    "sp1_version".to_string(),
+                    serde_json::Value::String("2.0".to_string()),
+                );
                 meta
             },
         })
@@ -215,7 +238,7 @@ impl ZkVmAgent for Sp1Agent {
 
     async fn get_state_commitment(&self) -> Result<Vec<u8>, ZkVmError> {
         // Return a mock state commitment
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(b"sp1_agent_state");
         hasher.update(&self.config.program_id);
@@ -232,7 +255,7 @@ impl ZkVmAgent for Sp1Agent {
     ) -> Result<ZkProof, ZkVmError> {
         // TODO: Implement SP1 state transition proof
         // SP1 might have different approaches to state transitions
-        
+
         // For now, return a mock PLONK proof
         let mut proof_data = Vec::new();
         proof_data.extend_from_slice(old_state);
@@ -240,7 +263,7 @@ impl ZkVmAgent for Sp1Agent {
         proof_data.extend_from_slice(transition_proof);
         // Add some SP1-specific data
         proof_data.extend_from_slice(b"sp1_transition_proof");
-        
+
         Ok(ZkProof::new(
             ProofSystem::Plonk,
             proof_data,
@@ -254,7 +277,7 @@ impl ZkVmAgent for Sp1Agent {
 impl Default for Sp1Config {
     fn default() -> Self {
         Self {
-            max_cycles: 10_000_000, // SP1 might support more cycles
+            max_cycles: 10_000_000,          // SP1 might support more cycles
             memory_limit: 128 * 1024 * 1024, // 128MB
             enable_proofs: true,
             sp1_config: std::collections::HashMap::new(),
@@ -270,7 +293,7 @@ mod tests {
     fn test_sp1_system_creation() {
         let system = Sp1System::new(Sp1Config::default());
         assert_eq!(system.name(), "sp1");
-        
+
         let capabilities = system.get_capabilities();
         assert!(capabilities.supports_proofs);
         assert!(capabilities.supports_recursion);
@@ -280,18 +303,22 @@ mod tests {
     #[tokio::test]
     async fn test_sp1_program_compilation() {
         let system = Sp1System::new(Sp1Config::default());
-        
+
         let rust_code = r#"
             fn main() {
                 println!("Hello, SP1!");
             }
         "#;
-        
-        let result = system.compile_program(rust_code, ProgramLanguage::Rust).await;
+
+        let result = system
+            .compile_program(rust_code, ProgramLanguage::Rust)
+            .await;
         assert!(result.is_ok());
-        
+
         // Test unsupported language
-        let c_result = system.compile_program("int main() { return 0; }", ProgramLanguage::C).await;
+        let c_result = system
+            .compile_program("int main() { return 0; }", ProgramLanguage::C)
+            .await;
         assert!(c_result.is_err());
     }
 
@@ -305,17 +332,17 @@ mod tests {
             max_cycles: 50000,
             memory_limit: 2 * 1024 * 1024,
         };
-        
+
         let mut agent = Sp1Agent::new(config, Sp1Config::default());
-        
+
         let program = b"mock_sp1_program";
         let inputs = b"test_sp1_input";
-        
+
         let result = agent.execute_zkvm(program, inputs, true).await.unwrap();
         assert!(!result.output.is_empty());
         assert!(result.proof.is_some());
         assert!(result.stats.cycles > 0);
-        
+
         // Verify the proof
         let proof = result.proof.unwrap();
         let verify_result = agent.verify_proof(&proof, &result.output).await.unwrap();
@@ -332,14 +359,17 @@ mod tests {
             max_cycles: 10000,
             memory_limit: 1024 * 1024,
         };
-        
+
         let mut agent = Sp1Agent::new(config, Sp1Config::default());
-        
+
         let old_state = b"old_state_data";
         let new_state = b"new_state_data";
         let transition = b"transition_proof";
-        
-        let proof = agent.prove_state_transition(old_state, new_state, transition).await.unwrap();
+
+        let proof = agent
+            .prove_state_transition(old_state, new_state, transition)
+            .await
+            .unwrap();
         assert!(matches!(proof.system, ProofSystem::Plonk));
         assert!(!proof.proof_data.is_empty());
     }

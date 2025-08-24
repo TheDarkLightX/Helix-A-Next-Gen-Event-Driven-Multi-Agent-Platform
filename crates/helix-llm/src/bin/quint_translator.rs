@@ -86,6 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+<<<<<<< HEAD
     let (api_key, mut base_url) = match get_api_credentials() {
         Ok(v) => v,
         Err(e) => {
@@ -93,19 +94,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
+=======
+    let (api_key, mut base_url) = get_api_credentials().unwrap_or_else(|e| {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    });
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
 
     if let Some(url) = args.base_url {
         base_url = url;
     }
 
     let provider = OpenAiProvider::with_base_url(api_key, base_url);
-
-    let mut parameters = HashMap::new();
-    parameters.insert("model".to_string(), serde_json::json!(args.model));
-
-    let request = LlmRequest {
-        system_prompt: Some(
-            "You are a translation agent that converts plain English descriptions into Quint specifications following the Quint design principles found at https://quint-lang.org/docs/design-principles.".to_string(),
+            let (api_key, mut base_url) = get_api_credentials().unwrap_or_else(|e| {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            });
         ),
         messages: vec![Message {
             role: MessageRole::User,
@@ -129,3 +133,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+<<<<<<< HEAD
+=======
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn selects_openai_key() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        env::remove_var("OPENROUTER_API_KEY");
+        env::remove_var("LLM_API_KEY");
+        env::set_var("OPENAI_API_KEY", "k");
+        env::set_var("OPENAI_BASE_URL", "https://x");
+        let creds = get_api_credentials().unwrap();
+        assert_eq!(creds.0, "k");
+        assert_eq!(creds.1, "https://x");
+        env::remove_var("OPENAI_API_KEY");
+        env::remove_var("OPENAI_BASE_URL");
+    }
+
+    #[test]
+    fn errors_when_missing_key() {
+        let _lock = ENV_MUTEX.lock().unwrap();
+        env::remove_var("OPENROUTER_API_KEY");
+        env::remove_var("OPENAI_API_KEY");
+        env::remove_var("LLM_API_KEY");
+        assert!(get_api_credentials().is_err());
+    }
+}
+>>>>>>> codex/create-app-to-translate-english-to-quint-o73u92

@@ -5,7 +5,6 @@ edition = "2021"
 license = "Apache-2.0"
 description = "Vector embeddings and semantic search for Helix platform"
 repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
-description = "Vector embeddings and similarity search for Helix"
 
 [dependencies]
 helix-core = { path = "../helix-core" }

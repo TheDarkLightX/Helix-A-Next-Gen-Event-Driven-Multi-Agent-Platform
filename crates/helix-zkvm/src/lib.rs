@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #![warn(missing_docs)]
 
 //! Zero-knowledge virtual machine integration for Helix.
@@ -23,29 +22,32 @@
 //! - Verifiable computation results
 //! - Integration with RISC0 and SP1 zkVM systems
 
+pub mod circuits;
+pub mod errors;
+pub mod proofs;
 pub mod risc0;
 pub mod sp1;
-pub mod proofs;
-pub mod circuits;
 pub mod verifier;
-pub mod errors;
 
 pub use errors::ZkVmError;
-pub use proofs::{ZkProof, ProofSystem, ProofRequest, ProofResponse};
+pub use proofs::{ProofRequest, ProofResponse, ProofSystem, ZkProof};
 pub use verifier::{ProofVerifier, VerificationResult};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// Temporary agent trait to avoid circular dependency
+/// Temporary agent trait to avoid a circular dependency with `helix-core`.
 pub mod agent {
     use async_trait::async_trait;
-    use crate::errors::ZkVmError;
 
+    /// Basic agent functionality exposed to zkVM integrations.
     #[async_trait]
     pub trait Agent: Send + Sync {
+        /// Unique identifier for the agent.
         fn id(&self) -> helix_core::types::AgentId;
+
+        /// Returns the core agent configuration.
         fn config(&self) -> &helix_core::agent::AgentConfig;
     }
 }
@@ -146,7 +148,9 @@ impl ZkVmAgentFactory {
         &self,
         config: ZkVmAgentConfig,
     ) -> Result<Box<dyn ZkVmAgent>, ZkVmError> {
-        let system = self.systems.get(&config.system)
+        let system = self
+            .systems
+            .get(&config.system)
             .ok_or_else(|| ZkVmError::SystemNotFound(config.system.clone()))?;
 
         // Create agent implementation based on system
@@ -167,10 +171,7 @@ pub trait ZkVmSystem: Send + Sync {
     fn name(&self) -> &str;
 
     /// Create an agent using this zkVM system
-    async fn create_agent(
-        &self,
-        config: ZkVmAgentConfig,
-    ) -> Result<Box<dyn ZkVmAgent>, ZkVmError>;
+    async fn create_agent(&self, config: ZkVmAgentConfig) -> Result<Box<dyn ZkVmAgent>, ZkVmError>;
 
     /// Compile a program for this zkVM system
     async fn compile_program(
@@ -219,7 +220,7 @@ pub mod utils {
 
     /// Hash data using a cryptographically secure hash function
     pub fn hash_data(data: &[u8]) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(data);
         hasher.finalize().to_vec()
@@ -228,15 +229,15 @@ pub mod utils {
     /// Serialize data for zkVM input
     pub fn serialize_for_zkvm<T: Serialize>(data: &T) -> Result<Vec<u8>, ZkVmError> {
         // For now, use JSON serialization as bincode is not in dependencies
-        serde_json::to_vec(data)
-            .map_err(|e| ZkVmError::SerializationError(e.to_string()))
+        serde_json::to_vec(data).map_err(|e| ZkVmError::SerializationError(e.to_string()))
     }
 
     /// Deserialize data from zkVM output
-    pub fn deserialize_from_zkvm<T: for<'de> Deserialize<'de>>(data: &[u8]) -> Result<T, ZkVmError> {
+    pub fn deserialize_from_zkvm<T: for<'de> Deserialize<'de>>(
+        data: &[u8],
+    ) -> Result<T, ZkVmError> {
         // For now, use JSON serialization as bincode is not in dependencies
-        serde_json::from_slice(data)
-            .map_err(|e| ZkVmError::SerializationError(e.to_string()))
+        serde_json::from_slice(data).map_err(|e| ZkVmError::SerializationError(e.to_string()))
     }
 
     /// Generate a commitment to a value using a Merkle tree
@@ -251,7 +252,7 @@ pub mod utils {
 
         // Simple binary Merkle tree implementation
         let mut level = values.iter().map(|v| hash_data(v)).collect::<Vec<_>>();
-        
+
         while level.len() > 1 {
             let mut next_level = Vec::new();
             for chunk in level.chunks(2) {
@@ -287,7 +288,7 @@ mod tests {
 
         let serialized = serde_json::to_string(&config).unwrap();
         let deserialized: ZkVmAgentConfig = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(config.system, deserialized.system);
         assert_eq!(config.program_id, deserialized.program_id);
         assert_eq!(config.generate_proofs, deserialized.generate_proofs);
@@ -298,22 +299,18 @@ mod tests {
         let data = b"hello world";
         let hash1 = utils::hash_data(data);
         let hash2 = utils::hash_data(data);
-        
+
         assert_eq!(hash1, hash2);
         assert_eq!(hash1.len(), 32); // SHA256 produces 32-byte hashes
     }
 
     #[test]
     fn test_generate_commitment() {
-        let values = vec![
-            b"value1".to_vec(),
-            b"value2".to_vec(),
-            b"value3".to_vec(),
-        ];
-        
+        let values = vec![b"value1".to_vec(), b"value2".to_vec(), b"value3".to_vec()];
+
         let commitment = utils::generate_commitment(&values);
         assert_eq!(commitment.len(), 32);
-        
+
         // Same values should produce same commitment
         let commitment2 = utils::generate_commitment(&values);
         assert_eq!(commitment, commitment2);

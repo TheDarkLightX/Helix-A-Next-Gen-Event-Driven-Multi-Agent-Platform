@@ -11,12 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Natural language parsing utilities for Helix
 
+use crate::errors::LlmError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::errors::LlmError;
 
 /// Parsed intent from natural language input
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,28 +77,37 @@ impl AutomationParser {
     /// Create a new automation parser
     pub fn new() -> Self {
         let mut patterns = HashMap::new();
-        
+
         // Email automation patterns
-        patterns.insert("email".to_string(), vec![
-            r"send.*email".to_string(),
-            r"email.*when".to_string(),
-            r"notify.*email".to_string(),
-        ]);
+        patterns.insert(
+            "email".to_string(),
+            vec![
+                r"send.*email".to_string(),
+                r"email.*when".to_string(),
+                r"notify.*email".to_string(),
+            ],
+        );
 
         // Webhook patterns
-        patterns.insert("webhook".to_string(), vec![
-            r"when.*webhook".to_string(),
-            r"http.*request".to_string(),
-            r"api.*call".to_string(),
-        ]);
+        patterns.insert(
+            "webhook".to_string(),
+            vec![
+                r"when.*webhook".to_string(),
+                r"http.*request".to_string(),
+                r"api.*call".to_string(),
+            ],
+        );
 
         // Schedule patterns
-        patterns.insert("schedule".to_string(), vec![
-            r"every.*\d+.*minutes?".to_string(),
-            r"daily.*at".to_string(),
-            r"weekly.*on".to_string(),
-            r"cron".to_string(),
-        ]);
+        patterns.insert(
+            "schedule".to_string(),
+            vec![
+                r"every.*\d+.*minutes?".to_string(),
+                r"daily.*at".to_string(),
+                r"weekly.*on".to_string(),
+                r"cron".to_string(),
+            ],
+        );
 
         Self { patterns }
     }
@@ -127,7 +135,7 @@ impl AutomationParser {
 
         // Extract entities (simplified)
         let entities = self.extract_entities(&input_lower)?;
-        
+
         // Extract conditions (simplified)
         let conditions = self.extract_conditions(&input_lower)?;
 
@@ -148,32 +156,40 @@ impl AutomationParser {
         if let Ok(time_regex) = regex::Regex::new(r"\b(\d{1,2}:\d{2})\b") {
             for cap in time_regex.captures_iter(input) {
                 if let Some(time_match) = cap.get(1) {
-                    entities.insert("time".to_string(), Entity {
-                        entity_type: "time".to_string(),
-                        value: time_match.as_str().to_string(),
-                        confidence: 0.9,
-                        span: TextSpan {
-                            start: time_match.start(),
-                            end: time_match.end(),
+                    entities.insert(
+                        "time".to_string(),
+                        Entity {
+                            entity_type: "time".to_string(),
+                            value: time_match.as_str().to_string(),
+                            confidence: 0.9,
+                            span: TextSpan {
+                                start: time_match.start(),
+                                end: time_match.end(),
+                            },
                         },
-                    });
+                    );
                 }
             }
         }
 
         // Extract email addresses
-        if let Ok(email_regex) = regex::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b") {
+        if let Ok(email_regex) =
+            regex::Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+        {
             for cap in email_regex.captures_iter(input) {
                 if let Some(email_match) = cap.get(0) {
-                    entities.insert("email".to_string(), Entity {
-                        entity_type: "email".to_string(),
-                        value: email_match.as_str().to_string(),
-                        confidence: 0.95,
-                        span: TextSpan {
-                            start: email_match.start(),
-                            end: email_match.end(),
+                    entities.insert(
+                        "email".to_string(),
+                        Entity {
+                            entity_type: "email".to_string(),
+                            value: email_match.as_str().to_string(),
+                            confidence: 0.95,
+                            span: TextSpan {
+                                start: email_match.start(),
+                                end: email_match.end(),
+                            },
                         },
-                    });
+                    );
                 }
             }
         }
@@ -182,15 +198,18 @@ impl AutomationParser {
         if let Ok(number_regex) = regex::Regex::new(r"\b\d+\b") {
             for cap in number_regex.captures_iter(input) {
                 if let Some(number_match) = cap.get(0) {
-                    entities.insert("number".to_string(), Entity {
-                        entity_type: "number".to_string(),
-                        value: number_match.as_str().to_string(),
-                        confidence: 0.8,
-                        span: TextSpan {
-                            start: number_match.start(),
-                            end: number_match.end(),
+                    entities.insert(
+                        "number".to_string(),
+                        Entity {
+                            entity_type: "number".to_string(),
+                            value: number_match.as_str().to_string(),
+                            confidence: 0.8,
+                            span: TextSpan {
+                                start: number_match.start(),
+                                end: number_match.end(),
+                            },
                         },
-                    });
+                    );
                 }
             }
         }
@@ -312,7 +331,7 @@ impl RecipeGenerator {
 
                 config
             }
-            _ => serde_json::json!({})
+            _ => serde_json::json!({}),
         }
     }
 }
@@ -330,8 +349,10 @@ mod tests {
     #[test]
     fn test_email_pattern_matching() {
         let parser = AutomationParser::new();
-        let result = parser.parse("Send me an email when the price changes").unwrap();
-        
+        let result = parser
+            .parse("Send me an email when the price changes")
+            .unwrap();
+
         assert!(result.suggested_agents.contains(&"email".to_string()));
         assert!(result.confidence > 0.0);
     }
@@ -339,14 +360,16 @@ mod tests {
     #[test]
     fn test_entity_extraction() {
         let parser = AutomationParser::new();
-        let result = parser.parse("Send email to user@example.com at 15:30").unwrap();
-        
+        let result = parser
+            .parse("Send email to user@example.com at 15:30")
+            .unwrap();
+
         assert!(result.entities.contains_key("email"));
         assert!(result.entities.contains_key("time"));
-        
+
         let email_entity = &result.entities["email"];
         assert_eq!(email_entity.value, "user@example.com");
-        
+
         let time_entity = &result.entities["time"];
         assert_eq!(time_entity.value, "15:30");
     }

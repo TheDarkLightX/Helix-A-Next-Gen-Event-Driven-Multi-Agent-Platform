@@ -11,15 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! RISC0 zkVM integration
 
-use async_trait::async_trait;
 use crate::{
-    ZkVmSystem, ZkVmAgent, ZkVmAgentConfig, ZkVmCapabilities, 
-    ProgramLanguage, ZkVmExecutionResult, ExecutionStats,
-    ZkProof, ProofSystem, VerificationResult, errors::ZkVmError
+    errors::ZkVmError, ExecutionStats, ProgramLanguage, ProofSystem, VerificationResult, ZkProof,
+    ZkVmAgent, ZkVmAgentConfig, ZkVmCapabilities, ZkVmExecutionResult, ZkVmSystem,
 };
+use async_trait::async_trait;
 
 /// RISC0 zkVM system implementation
 pub struct Risc0System {
@@ -50,10 +48,7 @@ impl ZkVmSystem for Risc0System {
         "risc0"
     }
 
-    async fn create_agent(
-        &self,
-        config: ZkVmAgentConfig,
-    ) -> Result<Box<dyn ZkVmAgent>, ZkVmError> {
+    async fn create_agent(&self, config: ZkVmAgentConfig) -> Result<Box<dyn ZkVmAgent>, ZkVmError> {
         Ok(Box::new(Risc0Agent::new(config, self.config.clone())))
     }
 
@@ -70,17 +65,21 @@ impl ZkVmSystem for Risc0System {
                 // 2. Adding RISC0 dependencies
                 // 3. Compiling to RISC-V target
                 // 4. Extracting the ELF binary
-                
+
                 // For now, return mock bytecode
                 Ok(source_code.as_bytes().to_vec())
             }
             ProgramLanguage::C => {
                 // TODO: Implement C compilation
-                Err(ZkVmError::UnsupportedOperation("C compilation not yet implemented".to_string()))
+                Err(ZkVmError::UnsupportedOperation(
+                    "C compilation not yet implemented".to_string(),
+                ))
             }
             ProgramLanguage::Assembly => {
                 // TODO: Implement assembly compilation
-                Err(ZkVmError::UnsupportedOperation("Assembly compilation not yet implemented".to_string()))
+                Err(ZkVmError::UnsupportedOperation(
+                    "Assembly compilation not yet implemented".to_string(),
+                ))
             }
             ProgramLanguage::Bytecode => {
                 // Already compiled
@@ -109,15 +108,26 @@ impl ZkVmSystem for Risc0System {
 /// RISC0 agent implementation
 pub struct Risc0Agent {
     config: ZkVmAgentConfig,
-    system_config: Risc0Config,
+    _system_config: Risc0Config,
+    /// Core agent configuration used for integration with helix-core
+    agent_config: helix_core::agent::AgentConfig,
 }
 
 impl Risc0Agent {
     /// Create a new RISC0 agent
     pub fn new(config: ZkVmAgentConfig, system_config: Risc0Config) -> Self {
+        let agent_config = helix_core::agent::AgentConfig::new(
+            uuid::Uuid::new_v4(),
+            uuid::Uuid::new_v4(),
+            None,
+            "risc0".to_string(),
+            serde_json::json!({}),
+        );
+
         Self {
             config,
-            system_config,
+            _system_config: system_config,
+            agent_config,
         }
     }
 }
@@ -130,8 +140,7 @@ impl crate::agent::Agent for Risc0Agent {
     }
 
     fn config(&self) -> &helix_core::agent::AgentConfig {
-        // This would need proper integration
-        todo!("Implement proper agent config integration")
+        &self.agent_config
     }
 }
 
@@ -151,12 +160,16 @@ impl ZkVmAgent for Risc0Agent {
         // 2. Setting up the execution environment
         // 3. Running the program with inputs
         // 4. Optionally generating a proof
-        
+
         // For now, return a mock result
         let execution_time = start_time.elapsed().as_millis() as u64;
-        
-        let output = format!("RISC0 execution result for program of {} bytes with {} bytes input", 
-                           program.len(), inputs.len()).into_bytes();
+
+        let output = format!(
+            "RISC0 execution result for program of {} bytes with {} bytes input",
+            program.len(),
+            inputs.len()
+        )
+        .into_bytes();
 
         let proof = if generate_proof {
             Some(ZkProof::new(
@@ -176,7 +189,11 @@ impl ZkVmAgent for Risc0Agent {
                 cycles: 1000, // Mock cycle count
                 memory_used: inputs.len() as u64 + program.len() as u64,
                 execution_time_ms: execution_time,
-                proof_time_ms: if generate_proof { Some(execution_time / 2) } else { None },
+                proof_time_ms: if generate_proof {
+                    Some(execution_time / 2)
+                } else {
+                    None
+                },
             },
             proof,
             receipt: Some(vec![0u8; 256]), // Mock receipt
@@ -193,23 +210,27 @@ impl ZkVmAgent for Risc0Agent {
         // 1. Parsing the STARK proof
         // 2. Verifying the execution trace
         // 3. Checking the output commitment
-        
+
         let start_time = std::time::Instant::now();
-        
+
         // Mock verification
         let is_valid = proof.proof_data.len() > 100 && !expected_output.is_empty();
-        
+
         Ok(VerificationResult {
             is_valid,
             verification_time_ms: start_time.elapsed().as_millis() as u64,
-            error: if is_valid { None } else { Some("Mock verification failed".to_string()) },
+            error: if is_valid {
+                None
+            } else {
+                Some("Mock verification failed".to_string())
+            },
             metadata: std::collections::HashMap::new(),
         })
     }
 
     async fn get_state_commitment(&self) -> Result<Vec<u8>, ZkVmError> {
         // Return a mock state commitment
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(b"risc0_agent_state");
         hasher.update(&self.config.program_id);
@@ -227,13 +248,13 @@ impl ZkVmAgent for Risc0Agent {
         // 1. Creating a circuit that verifies the state transition
         // 2. Generating a proof of the transition
         // 3. Including both old and new state commitments
-        
+
         // For now, return a mock proof
         let mut proof_data = Vec::new();
         proof_data.extend_from_slice(old_state);
         proof_data.extend_from_slice(new_state);
         proof_data.extend_from_slice(transition_proof);
-        
+
         Ok(ZkProof::new(
             ProofSystem::Stark,
             proof_data,
@@ -262,7 +283,7 @@ mod tests {
     fn test_risc0_system_creation() {
         let system = Risc0System::new(Risc0Config::default());
         assert_eq!(system.name(), "risc0");
-        
+
         let capabilities = system.get_capabilities();
         assert!(capabilities.supports_proofs);
         assert!(capabilities.supports_recursion);
@@ -272,14 +293,16 @@ mod tests {
     #[tokio::test]
     async fn test_risc0_program_compilation() {
         let system = Risc0System::new(Risc0Config::default());
-        
+
         let rust_code = r#"
             fn main() {
                 println!("Hello, RISC0!");
             }
         "#;
-        
-        let result = system.compile_program(rust_code, ProgramLanguage::Rust).await;
+
+        let result = system
+            .compile_program(rust_code, ProgramLanguage::Rust)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -293,12 +316,12 @@ mod tests {
             max_cycles: 10000,
             memory_limit: 1024 * 1024,
         };
-        
+
         let mut agent = Risc0Agent::new(config, Risc0Config::default());
-        
+
         let program = b"mock_program";
         let inputs = b"test_input";
-        
+
         let result = agent.execute_zkvm(program, inputs, true).await.unwrap();
         assert!(!result.output.is_empty());
         assert!(result.proof.is_some());

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 #![deny(unsafe_code)]
-#![warn(missing_docs)] // TODO: Enforce this later
+#![allow(missing_docs)] // Documentation is incomplete; re-enable once ready
 
 //! Core Helix types, traits, and utilities shared across the platform.
 

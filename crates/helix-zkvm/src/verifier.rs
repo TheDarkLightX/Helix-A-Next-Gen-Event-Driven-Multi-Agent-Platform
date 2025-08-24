@@ -11,13 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Proof verification utilities
 
+use crate::{errors::ZkVmError, ProofSystem, ZkProof};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::{ZkProof, ProofSystem, errors::ZkVmError};
 
 /// Result of proof verification
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,10 +84,12 @@ impl UniversalVerifier {
 #[async_trait]
 impl ProofVerifier for UniversalVerifier {
     async fn verify(&self, proof: &ZkProof) -> Result<VerificationResult, ZkVmError> {
-        let verifier = self.get_verifier(&proof.system)
-            .ok_or_else(|| ZkVmError::UnsupportedOperation(
-                format!("No verifier registered for proof system: {:?}", proof.system)
-            ))?;
+        let verifier = self.get_verifier(&proof.system).ok_or_else(|| {
+            ZkVmError::UnsupportedOperation(format!(
+                "No verifier registered for proof system: {:?}",
+                proof.system
+            ))
+        })?;
 
         verifier.verify(proof).await
     }
@@ -184,7 +185,7 @@ impl ProofVerifier for StarkVerifier {
         if !proof.is_valid() {
             return Ok(VerificationResult {
                 is_valid: false,
-                verification_time_ms: start_time.elapsed().as_millis() as u64,
+                verification_time_ms: start_time.elapsed().as_millis().max(1) as u64,
                 error: Some("Invalid proof structure".to_string()),
                 metadata: HashMap::new(),
             });
@@ -196,20 +197,28 @@ impl ProofVerifier for StarkVerifier {
         // 2. Reconstructing the execution trace
         // 3. Verifying polynomial commitments
         // 4. Checking FRI proofs
-        
+
         // For now, return a mock verification
         let is_valid = proof.proof_data.len() > 32; // Simple check
-        
+
         let mut metadata = HashMap::new();
-        metadata.insert("security_level".to_string(), 
-                        serde_json::Value::Number(self.config.security_level.into()));
-        metadata.insert("field_size".to_string(), 
-                        serde_json::Value::Number(self.config.field_size.into()));
+        metadata.insert(
+            "security_level".to_string(),
+            serde_json::Value::Number(self.config.security_level.into()),
+        );
+        metadata.insert(
+            "field_size".to_string(),
+            serde_json::Value::Number(self.config.field_size.into()),
+        );
 
         Ok(VerificationResult {
             is_valid,
-            verification_time_ms: start_time.elapsed().as_millis() as u64,
-            error: if is_valid { None } else { Some("Proof verification failed".to_string()) },
+            verification_time_ms: start_time.elapsed().as_millis().max(1) as u64,
+            error: if is_valid {
+                None
+            } else {
+                Some("Proof verification failed".to_string())
+            },
             metadata,
         })
     }
@@ -246,7 +255,10 @@ impl ProofVerifier for SnarkVerifier {
         let start_time = std::time::Instant::now();
 
         // Verify that this is a SNARK proof
-        if !matches!(proof.system, ProofSystem::Snark | ProofSystem::Groth16 | ProofSystem::Plonk) {
+        if !matches!(
+            proof.system,
+            ProofSystem::Snark | ProofSystem::Groth16 | ProofSystem::Plonk
+        ) {
             return Ok(VerificationResult {
                 is_valid: false,
                 verification_time_ms: 0,
@@ -270,20 +282,28 @@ impl ProofVerifier for SnarkVerifier {
         // 1. Parsing the proof elements (A, B, C for Groth16)
         // 2. Verifying the pairing equation
         // 3. Checking public inputs
-        
+
         // For now, return a mock verification
         let is_valid = proof.proof_data.len() >= 96; // Groth16 proofs are ~96 bytes
-        
+
         let mut metadata = HashMap::new();
-        metadata.insert("curve".to_string(), 
-                        serde_json::Value::String(self.config.curve.clone()));
-        metadata.insert("proof_system".to_string(), 
-                        serde_json::Value::String(format!("{:?}", proof.system)));
+        metadata.insert(
+            "curve".to_string(),
+            serde_json::Value::String(self.config.curve.clone()),
+        );
+        metadata.insert(
+            "proof_system".to_string(),
+            serde_json::Value::String(format!("{:?}", proof.system)),
+        );
 
         Ok(VerificationResult {
             is_valid,
             verification_time_ms: start_time.elapsed().as_millis() as u64,
-            error: if is_valid { None } else { Some("Proof verification failed".to_string()) },
+            error: if is_valid {
+                None
+            } else {
+                Some("Proof verification failed".to_string())
+            },
             metadata,
         })
     }
@@ -320,7 +340,7 @@ mod tests {
     #[tokio::test]
     async fn test_stark_verifier() {
         let verifier = StarkVerifier::new(StarkConfig::default());
-        
+
         let proof = ZkProof::new(
             ProofSystem::Stark,
             vec![0u8; 64], // 64-byte proof
@@ -337,7 +357,7 @@ mod tests {
     #[tokio::test]
     async fn test_snark_verifier() {
         let verifier = SnarkVerifier::new(SnarkConfig::default());
-        
+
         let proof = ZkProof::new(
             ProofSystem::Groth16,
             vec![0u8; 96], // 96-byte Groth16 proof
@@ -355,11 +375,11 @@ mod tests {
         let mut universal = UniversalVerifier::new();
         universal.register_verifier(
             ProofSystem::Stark,
-            Box::new(StarkVerifier::new(StarkConfig::default()))
+            Box::new(StarkVerifier::new(StarkConfig::default())),
         );
         universal.register_verifier(
             ProofSystem::Groth16,
-            Box::new(SnarkVerifier::new(SnarkConfig::default()))
+            Box::new(SnarkVerifier::new(SnarkConfig::default())),
         );
 
         let stark_proof = ZkProof::new(

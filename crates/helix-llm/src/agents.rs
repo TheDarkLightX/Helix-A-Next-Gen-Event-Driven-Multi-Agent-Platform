@@ -11,19 +11,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! LLM-powered agent implementations
 
+use crate::{
+    context::AgentContext, errors::LlmError, LlmAgent, LlmAgentConfig, LlmProvider, LlmRequest,
+    LlmResponse,
+};
 use async_trait::async_trait;
 use helix_core::{
-    agent::{Agent, AgentConfig, SourceAgent, TransformerAgent, ActionAgent, SourceContext, TransformerContext, ActionContext},
+    agent::{
+        ActionAgent, ActionContext, Agent, AgentConfig, SourceAgent, SourceContext,
+        TransformerAgent, TransformerContext,
+    },
     event::Event,
     types::AgentId,
     HelixError,
-};
-use crate::{
-    LlmAgent, LlmAgentConfig, LlmProvider, LlmRequest, LlmResponse, 
-    context::AgentContext, errors::LlmError,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -44,7 +46,7 @@ impl LlmSourceAgent {
         provider: Arc<dyn LlmProvider>,
     ) -> Self {
         let context = AgentContext::new(config.id, config.profile_id);
-        
+
         Self {
             config,
             llm_config,
@@ -79,7 +81,10 @@ impl SourceAgent for LlmSourceAgent {
             parameters: self.llm_config.parameters.clone(),
         };
 
-        let response = self.provider.complete(request).await
+        let response = self
+            .provider
+            .complete(request)
+            .await
             .map_err(|e| HelixError::InternalError(format!("LLM error: {}", e)))?;
 
         // Parse LLM response and generate events
@@ -91,7 +96,8 @@ impl SourceAgent for LlmSourceAgent {
                 "usage": response.usage
             });
 
-            ctx.emit(event_data, Some("llm.generated".to_string())).await?;
+            ctx.emit(event_data, Some("llm.generated".to_string()))
+                .await?;
         }
 
         Ok(())
@@ -147,7 +153,7 @@ impl LlmAgent for LlmSourceAgent {
         );
 
         let response = self.process_natural_language(&prompt, context).await?;
-        
+
         // Parse response to extract action suggestions
         // This is simplified - would need better parsing
         Ok(vec![response.content])
@@ -170,7 +176,7 @@ impl LlmTransformerAgent {
         provider: Arc<dyn LlmProvider>,
     ) -> Self {
         let context = AgentContext::new(config.id, config.profile_id);
-        
+
         Self {
             config,
             llm_config,
@@ -204,12 +210,13 @@ impl TransformerAgent for LlmTransformerAgent {
 
         let prompt = format!(
             "Transform this event according to the instructions: {}\n\nEvent: {}",
-            self.llm_config.system_prompt,
-            event_json
+            self.llm_config.system_prompt, event_json
         );
 
         let request = LlmRequest {
-            system_prompt: Some("You are an event transformer. Return transformed events as JSON.".to_string()),
+            system_prompt: Some(
+                "You are an event transformer. Return transformed events as JSON.".to_string(),
+            ),
             messages: vec![crate::providers::Message {
                 role: crate::providers::MessageRole::User,
                 content: prompt,
@@ -222,7 +229,10 @@ impl TransformerAgent for LlmTransformerAgent {
             parameters: self.llm_config.parameters.clone(),
         };
 
-        let response = self.provider.complete(request).await
+        let response = self
+            .provider
+            .complete(request)
+            .await
             .map_err(|e| HelixError::InternalError(format!("LLM error: {}", e)))?;
 
         // Parse LLM response and create transformed events
@@ -293,7 +303,7 @@ impl LlmActionAgent {
         provider: Arc<dyn LlmProvider>,
     ) -> Self {
         let context = AgentContext::new(config.id, config.profile_id);
-        
+
         Self {
             config,
             llm_config,
@@ -323,12 +333,14 @@ impl ActionAgent for LlmActionAgent {
 
         let prompt = format!(
             "Execute an action based on this event: {}\n\nEvent: {}",
-            self.llm_config.system_prompt,
-            event_json
+            self.llm_config.system_prompt, event_json
         );
 
         let request = LlmRequest {
-            system_prompt: Some("You are an action executor. Determine and describe the action to take.".to_string()),
+            system_prompt: Some(
+                "You are an action executor. Determine and describe the action to take."
+                    .to_string(),
+            ),
             messages: vec![crate::providers::Message {
                 role: crate::providers::MessageRole::User,
                 content: prompt,
@@ -341,7 +353,10 @@ impl ActionAgent for LlmActionAgent {
             parameters: self.llm_config.parameters.clone(),
         };
 
-        let response = self.provider.complete(request).await
+        let response = self
+            .provider
+            .complete(request)
+            .await
             .map_err(|e| HelixError::InternalError(format!("LLM error: {}", e)))?;
 
         // Log the action that would be taken

@@ -11,11 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #![warn(missing_docs)]
 
 //! LLM integration and natural language processing capabilities for Helix.
-//! 
+//!
 //! This crate provides:
 //! - Multiple LLM provider integrations (OpenAI, Anthropic, local models)
 //! - Natural language rule parsing and generation
@@ -23,16 +22,18 @@
 //! - Context-aware prompt engineering
 //! - Token management and cost optimization
 
-pub mod providers;
-pub mod prompts;
-pub mod parsers;
 pub mod agents;
 pub mod context;
 pub mod errors;
+/// Utilities for parsing intent facets from natural language prompts.
+pub mod intent_lattice;
+pub mod parsers;
+pub mod prompts;
+pub mod providers;
 
+pub use context::{AgentContext, ConversationContext};
 pub use errors::LlmError;
 pub use providers::{LlmProvider, LlmRequest, LlmResponse, ModelConfig};
-pub use context::{AgentContext, ConversationContext};
 
 use async_trait::async_trait;
 use helix_core::{agent::Agent, event::Event, HelixError};
@@ -104,7 +105,9 @@ impl LlmAgentFactory {
         &self,
         config: LlmAgentConfig,
     ) -> Result<Box<dyn LlmAgent>, LlmError> {
-        let provider = self.providers.get(&config.provider)
+        let provider = self
+            .providers
+            .get(&config.provider)
             .ok_or_else(|| LlmError::ProviderNotFound(config.provider.clone()))?;
 
         // Create agent implementation based on provider
@@ -127,11 +130,15 @@ pub mod utils {
     pub fn count_tokens(text: &str, _model: &str) -> Result<usize, LlmError> {
         // Rough approximation: 1 token ≈ 4 characters for English text
         // This would be replaced with actual tiktoken implementation when available
-        Ok((text.len() + 3) / 4)
+        Ok(text.len().div_ceil(4))
     }
 
     /// Truncate text to fit within token limit
-    pub fn truncate_to_tokens(text: &str, model: &str, max_tokens: usize) -> Result<String, LlmError> {
+    pub fn truncate_to_tokens(
+        text: &str,
+        model: &str,
+        max_tokens: usize,
+    ) -> Result<String, LlmError> {
         let estimated_tokens = count_tokens(text, model)?;
 
         if estimated_tokens <= max_tokens {
@@ -155,7 +162,7 @@ pub mod utils {
         patterns: &HashMap<String, String>,
     ) -> HashMap<String, String> {
         let mut extracted = HashMap::new();
-        
+
         for (key, pattern) in patterns {
             if let Ok(regex) = regex::Regex::new(pattern) {
                 if let Some(captures) = regex.captures(response) {
@@ -165,7 +172,7 @@ pub mod utils {
                 }
             }
         }
-        
+
         extracted
     }
 }
@@ -187,7 +194,7 @@ mod tests {
 
         let serialized = serde_json::to_string(&config).unwrap();
         let deserialized: LlmAgentConfig = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(config.provider, deserialized.provider);
         assert_eq!(config.model, deserialized.model);
     }

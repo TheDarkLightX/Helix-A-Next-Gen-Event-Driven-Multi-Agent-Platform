@@ -14,7 +14,7 @@
 
 //! Defines the structure and components of a Recipe.
 
-use crate::agent::{AgentConfig, AgentRuntime};
+use crate::agent::AgentConfig;
 use crate::types::{AgentId, ProfileId, RecipeId};
 use crate::HelixError;
 use std::collections::{HashMap, HashSet, VecDeque};

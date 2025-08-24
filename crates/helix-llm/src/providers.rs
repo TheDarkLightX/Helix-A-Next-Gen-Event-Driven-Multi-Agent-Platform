@@ -17,6 +17,7 @@ use crate::errors::LlmError;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// Configuration for an LLM model
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,7 +179,10 @@ impl OpenAiProvider {
         Self {
             api_key,
             base_url: "https://api.openai.com/v1".to_string(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("failed to build HTTP client"),
         }
     }
 
@@ -187,7 +191,10 @@ impl OpenAiProvider {
         Self {
             api_key,
             base_url,
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("failed to build HTTP client"),
         }
     }
 }
@@ -309,7 +316,10 @@ impl LlmProvider for OpenAiProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
+            let text = resp
+                .text()
+                .await
+                .map_err(|e| LlmError::NetworkError(e.to_string()))?;
             return Err(LlmError::ApiError(format!(
                 "OpenAI error {}: {}",
                 status, text
@@ -381,8 +391,8 @@ impl LlmProvider for OpenAiProvider {
         _request: LlmRequest,
     ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError>
     {
-        // Implementation would return streaming response
-        todo!("Implement streaming completion")
+        // Streaming is not yet implemented for the OpenAI provider
+        Err(LlmError::ModelNotSupported("streaming".into()))
     }
 
     async fn health_check(&self) -> Result<(), LlmError> {
@@ -449,19 +459,8 @@ impl LlmProvider for AnthropicProvider {
     }
 
     async fn complete(&self, _request: LlmRequest) -> Result<LlmResponse, LlmError> {
-        // Mock implementation
-        Ok(LlmResponse {
-            content: "Mock response from Anthropic".to_string(),
-            function_call: None,
-            usage: TokenUsage {
-                prompt_tokens: 12,
-                completion_tokens: 8,
-                total_tokens: 20,
-            },
-            model: "claude-3-sonnet".to_string(),
-            finish_reason: FinishReason::Stop,
-            metadata: HashMap::new(),
-        })
+        // Anthropic support is not yet implemented
+        Err(LlmError::ModelNotSupported("anthropic".into()))
     }
 
     async fn stream_complete(
@@ -469,11 +468,52 @@ impl LlmProvider for AnthropicProvider {
         _request: LlmRequest,
     ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError>
     {
-        todo!("Implement streaming completion")
+        // Anthropic streaming is not implemented
+        Err(LlmError::ModelNotSupported("anthropic".into()))
     }
 
     async fn health_check(&self) -> Result<(), LlmError> {
         // Implementation would check Anthropic API health
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn openai_streaming_not_supported() {
+        let provider = OpenAiProvider::new("key".into());
+        let req = LlmRequest {
+            system_prompt: None,
+            messages: Vec::new(),
+            max_tokens: None,
+            temperature: None,
+            top_p: None,
+            functions: None,
+            parameters: HashMap::new(),
+        };
+
+        let res = provider.stream_complete(req).await;
+        assert!(matches!(res, Err(LlmError::ModelNotSupported(_))));
+    }
+
+    #[tokio::test]
+    async fn anthropic_not_implemented() {
+        let provider = AnthropicProvider::new("key".into());
+        let req = LlmRequest {
+            system_prompt: None,
+            messages: Vec::new(),
+            max_tokens: None,
+            temperature: None,
+            top_p: None,
+            functions: None,
+            parameters: HashMap::new(),
+        };
+
+        let res = provider.complete(req).await;
+        assert!(matches!(res, Err(LlmError::ModelNotSupported(_))));
     }
 }

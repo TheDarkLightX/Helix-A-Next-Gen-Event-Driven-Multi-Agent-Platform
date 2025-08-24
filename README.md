@@ -30,7 +30,6 @@ cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that
 # Using OpenAI
 OPENAI_API_KEY=your_key_here \
 cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
-
 # Using a custom OpenAI-compatible endpoint
 LLM_API_KEY=your_key_here LLM_BASE_URL=https://my-llm.example/v1 \
 cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
@@ -55,7 +54,6 @@ cargo run -p helix-llm --bin quint_translator --prompt-file spec.txt
 ```
 
 If no API key is detected the translator now exits with a non-zero status so automated scripts can surface configuration issues.
-
 ## Project Structure
 
 - `/crates`: Core Rust libraries and potentially Rust-based plugins.

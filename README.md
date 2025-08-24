@@ -30,6 +30,10 @@ cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that
 # Using OpenAI
 OPENAI_API_KEY=your_key_here \
 cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
+
+# Using a custom OpenAI-compatible endpoint
+LLM_API_KEY=your_key_here LLM_BASE_URL=https://my-llm.example/v1 \
+cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
 ```
 
 The model will respond with a Quint specification based on the provided prompt.

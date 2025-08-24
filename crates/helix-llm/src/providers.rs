@@ -11,13 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! LLM provider implementations for various services
 
+use crate::errors::LlmError;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::errors::LlmError;
 
 /// Configuration for an LLM model
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,7 +195,11 @@ impl OpenAiProvider {
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     fn name(&self) -> &str {
-        "openai"
+        if self.base_url.contains("openrouter.ai") {
+            "openrouter"
+        } else {
+            "openai"
+        }
     }
 
     async fn get_models(&self) -> Result<Vec<ModelConfig>, LlmError> {
@@ -230,18 +233,145 @@ impl LlmProvider for OpenAiProvider {
     }
 
     async fn complete(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
-        // Implementation would make actual API call to OpenAI
-        // For now, return a mock response
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Serialize)]
+        struct ChatMessage<'a> {
+            role: &'a str,
+            content: &'a str,
+        }
+
+        #[derive(Serialize)]
+        struct ChatRequest<'a> {
+            model: &'a str,
+            messages: Vec<ChatMessage<'a>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            max_tokens: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            temperature: Option<f32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            top_p: Option<f32>,
+        }
+
+        fn build_messages<'a>(req: &'a LlmRequest) -> Vec<ChatMessage<'a>> {
+            let mut msgs = Vec::new();
+            if let Some(system) = &req.system_prompt {
+                msgs.push(ChatMessage {
+                    role: "system",
+                    content: system,
+                });
+            }
+            for msg in &req.messages {
+                let role = match msg.role {
+                    MessageRole::System => "system",
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                    MessageRole::Function => "function",
+                };
+                msgs.push(ChatMessage {
+                    role,
+                    content: &msg.content,
+                });
+            }
+            msgs
+        }
+
+        // Determine model from parameters or use a sensible default
+        let model = request
+            .parameters
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("gpt-4o-mini");
+
+        let messages = build_messages(&request);
+
+        let body = ChatRequest {
+            model,
+            messages,
+            max_tokens: request.max_tokens,
+            temperature: request.temperature,
+            top_p: request.top_p,
+        };
+
+        let mut req = self
+            .client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .json(&body);
+
+        if self.base_url.contains("openrouter.ai") {
+            req = req
+                .header("HTTP-Referer", "https://github.com/nx-ai/helix")
+                .header("X-Title", "Helix Quint Translator");
+        }
+
+        let resp = req.send().await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            return Err(LlmError::ApiError(format!(
+                "OpenAI error {}: {}",
+                status, text
+            )));
+        }
+
+        #[derive(Deserialize)]
+        struct ApiMessage {
+            content: String,
+        }
+
+        #[derive(Deserialize)]
+        struct Choice {
+            message: ApiMessage,
+            finish_reason: Option<String>,
+        }
+
+        #[derive(Deserialize)]
+        struct Usage {
+            prompt_tokens: u32,
+            completion_tokens: u32,
+            total_tokens: u32,
+        }
+
+        #[derive(Deserialize)]
+        struct ApiResponse {
+            choices: Vec<Choice>,
+            usage: Usage,
+            model: String,
+        }
+        fn map_finish_reason(reason: Option<&str>) -> FinishReason {
+            match reason {
+                Some("length") => FinishReason::Length,
+                Some("function_call") => FinishReason::FunctionCall,
+                Some("content_filter") => FinishReason::ContentFilter,
+                Some("stop") | None => FinishReason::Stop,
+                Some(other) => {
+                    tracing::warn!("Unknown finish reason: {}", other);
+                    FinishReason::Error
+                }
+            }
+        }
+
+        let api_response: ApiResponse = resp.json().await?;
+        let choice = api_response
+            .choices
+            .into_iter()
+            .next()
+            .ok_or_else(|| LlmError::ApiError("No choices returned".into()))?;
+
+        let finish_reason = map_finish_reason(choice.finish_reason.as_deref());
+
         Ok(LlmResponse {
-            content: "Mock response from OpenAI".to_string(),
+            content: choice.message.content,
             function_call: None,
             usage: TokenUsage {
-                prompt_tokens: 10,
-                completion_tokens: 5,
-                total_tokens: 15,
+                prompt_tokens: api_response.usage.prompt_tokens,
+                completion_tokens: api_response.usage.completion_tokens,
+                total_tokens: api_response.usage.total_tokens,
             },
-            model: "gpt-4".to_string(),
-            finish_reason: FinishReason::Stop,
+            model: api_response.model,
+            finish_reason,
             metadata: HashMap::new(),
         })
     }
@@ -249,14 +379,16 @@ impl LlmProvider for OpenAiProvider {
     async fn stream_complete(
         &self,
         _request: LlmRequest,
-    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError> {
+    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError>
+    {
         // Implementation would return streaming response
         todo!("Implement streaming completion")
     }
 
     async fn health_check(&self) -> Result<(), LlmError> {
         // Make a simple API call to check health
-        let response = self.client
+        let response = self
+            .client
             .get(&format!("{}/models", self.base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
@@ -265,7 +397,10 @@ impl LlmProvider for OpenAiProvider {
         if response.status().is_success() {
             Ok(())
         } else {
-            Err(LlmError::ApiError(format!("Health check failed: {}", response.status())))
+            Err(LlmError::ApiError(format!(
+                "Health check failed: {}",
+                response.status()
+            )))
         }
     }
 }
@@ -332,7 +467,8 @@ impl LlmProvider for AnthropicProvider {
     async fn stream_complete(
         &self,
         _request: LlmRequest,
-    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError> {
+    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError>
+    {
         todo!("Implement streaming completion")
     }
 

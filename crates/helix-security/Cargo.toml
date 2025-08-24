@@ -3,9 +3,8 @@ name = "helix-security"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Security, authentication, and authorization for Helix platform"
-repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 description = "Security and encryption utilities for Helix"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 
 [dependencies]
 helix-core = { path = "../helix-core" }

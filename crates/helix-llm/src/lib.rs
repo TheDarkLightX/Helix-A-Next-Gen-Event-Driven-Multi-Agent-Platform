@@ -29,6 +29,7 @@ pub mod parsers;
 pub mod agents;
 pub mod context;
 pub mod errors;
+pub mod intent_lattice;
 
 pub use errors::LlmError;
 pub use providers::{LlmProvider, LlmRequest, LlmResponse, ModelConfig};

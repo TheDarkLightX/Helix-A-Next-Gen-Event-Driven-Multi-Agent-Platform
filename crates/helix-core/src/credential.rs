@@ -19,6 +19,7 @@ use crate::HelixError;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Represents a stored credential for accessing external services.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -45,8 +46,11 @@ pub struct Credential {
     /// Timestamp when the credential was last updated.
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
-    // TODO: Consider adding expiry information?
-    // TODO: Consider adding metadata/tags?
+    /// Optional time when the credential expires.
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Optional metadata or tags for the credential.
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
 }
 
 impl Credential {
@@ -67,10 +71,16 @@ impl Credential {
             data: encrypted_data, // Assume data is already encrypted
             created_at: now,
             updated_at: now,
+            expires_at: None,
+            metadata: HashMap::new(),
         }
     }
 
-    // TODO: Add methods for updating (requires re-encryption logic)?
+    /// Updates the encrypted credential data and refreshes the timestamp.
+    pub fn update_data(&mut self, encrypted_data: String) {
+        self.data = encrypted_data;
+        self.updated_at = Utc::now();
+    }
 }
 
 // --- Placeholder Service Traits ---
@@ -110,7 +120,7 @@ pub trait CredentialProvider: Send + Sync {
     /// The environment variable is expected to contain a JSON representation of the Credential.
     async fn get_credential(
         &self,
-        credential_id: &str,
+        credential_id: &CredentialId,
     ) -> Result<Option<Credential>, HelixError>;
 }
 
@@ -125,9 +135,12 @@ pub struct EnvCredentialProvider;
 impl CredentialProvider for EnvCredentialProvider {
     async fn get_credential(
         &self,
-        credential_id: &str,
+        credential_id: &CredentialId,
     ) -> Result<Option<Credential>, HelixError> {
-        let env_var_name = format!("HELIX_CRED_{}", credential_id.to_uppercase());
+        let env_var_name = format!(
+            "HELIX_CRED_{}",
+            credential_id.to_string().replace('-', "_").to_uppercase()
+        );
         match std::env::var(&env_var_name) {
             Ok(credential_json) => {
                 serde_json::from_str::<Credential>(&credential_json)
@@ -209,7 +222,21 @@ mod tests {
         }
     }
 
-    // TODO: Add mock implementation for CredentialProvider if needed for other tests.
+    // Mock implementation for CredentialProvider
+    #[derive(Default)]
+    struct MockCredentialProvider {
+        creds: Mutex<HashMap<CredentialId, Credential>>,
+    }
+
+    #[async_trait]
+    impl super::CredentialProvider for MockCredentialProvider {
+        async fn get_credential(
+            &self,
+            credential_id: &CredentialId,
+        ) -> Result<Option<Credential>, HelixError> {
+            Ok(self.creds.lock().unwrap().get(credential_id).cloned())
+        }
+    }
 
     #[test]
     fn test_credential_creation() {
@@ -570,8 +597,11 @@ mod tests {
     #[tokio::test]
     async fn test_env_credential_provider_success() {
         let provider = EnvCredentialProvider;
-        let cred_id_str = "my_test_cred";
-        let env_var_name = format!("HELIX_CRED_{}", cred_id_str.to_uppercase());
+        let cred_id = Uuid::new_v4();
+        let env_var_name = format!(
+            "HELIX_CRED_{}",
+            cred_id.to_string().replace('-', "_").to_uppercase()
+        );
 
         let expected_credential = Credential {
             id: Uuid::new_v4(),
@@ -581,12 +611,14 @@ mod tests {
             data: "secret_data".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            expires_at: None,
+            metadata: HashMap::new(),
         };
         let credential_json = serde_json::to_string(&expected_credential).unwrap();
 
         std::env::set_var(&env_var_name, &credential_json);
 
-        let result = provider.get_credential(cred_id_str).await;
+        let result = provider.get_credential(&cred_id).await;
 
         std::env::remove_var(&env_var_name);
 
@@ -607,13 +639,16 @@ mod tests {
     #[tokio::test]
     async fn test_env_credential_provider_not_set() {
         let provider = EnvCredentialProvider;
-        let cred_id_str = "non_existent_cred";
-        let env_var_name = format!("HELIX_CRED_{}", cred_id_str.to_uppercase());
+        let cred_id = Uuid::new_v4();
+        let env_var_name = format!(
+            "HELIX_CRED_{}",
+            cred_id.to_string().replace('-', "_").to_uppercase()
+        );
 
         // Ensure the variable is not set
         std::env::remove_var(&env_var_name);
 
-        let result = provider.get_credential(cred_id_str).await;
+        let result = provider.get_credential(&cred_id).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
@@ -622,13 +657,16 @@ mod tests {
     #[tokio::test]
     async fn test_env_credential_provider_malformed_json() {
         let provider = EnvCredentialProvider;
-        let cred_id_str = "malformed_json_cred";
-        let env_var_name = format!("HELIX_CRED_{}", cred_id_str.to_uppercase());
+        let cred_id = Uuid::new_v4();
+        let env_var_name = format!(
+            "HELIX_CRED_{}",
+            cred_id.to_string().replace('-', "_").to_uppercase()
+        );
         let malformed_json = "{ \"id\": \"not-a-uuid\", \"name\": "; // Incomplete JSON
 
         std::env::set_var(&env_var_name, malformed_json);
 
-        let result = provider.get_credential(cred_id_str).await;
+        let result = provider.get_credential(&cred_id).await;
 
         std::env::remove_var(&env_var_name);
 
@@ -644,8 +682,11 @@ mod tests {
     #[tokio::test]
     async fn test_env_credential_provider_non_unicode_value() {
         let provider = EnvCredentialProvider;
-        let cred_id_str = "non_unicode_cred";
-        let env_var_name = format!("HELIX_CRED_{}", cred_id_str.to_uppercase());
+        let cred_id = Uuid::new_v4();
+        let env_var_name = format!(
+            "HELIX_CRED_{}",
+            cred_id.to_string().replace('-', "_").to_uppercase()
+        );
 
         // Create non-Unicode OsString (platform-dependent)
         #[cfg(unix)]
@@ -669,7 +710,7 @@ mod tests {
         }
 
 
-        let result = provider.get_credential(cred_id_str).await;
+        let result = provider.get_credential(&cred_id).await;
         std::env::remove_var(&env_var_name);
 
         #[cfg(unix)] // Only assert if the test ran

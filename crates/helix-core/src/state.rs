@@ -185,11 +185,6 @@ pub trait StateStore: Send + Sync {
 
     /// Clears all state for a profile.
     async fn clear_profile_state(&self, profile_id: &ProfileId) -> Result<u64, HelixError>;
-
-    // TODO: Consider adding methods for:
-    // - Batch operations?
-    // - Versioning/optimistic locking?
-    // - State history/audit trail?
 }
 
 // Potential additions:

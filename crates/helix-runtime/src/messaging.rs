@@ -63,13 +63,24 @@ pub enum MessagingError {
 pub struct NatsConfig {
     /// Comma-separated list of NATS server URLs.
     pub urls: String,
-    // TODO: Add authentication options (token, nkey, user/pass)
+    /// Optional authentication token.
+    pub token: Option<String>,
+    /// Optional nkey for authentication.
+    pub nkey: Option<String>,
+    /// Optional username for user/password auth.
+    pub username: Option<String>,
+    /// Optional password for user/password auth.
+    pub password: Option<String>,
 }
 
 impl Default for NatsConfig {
     fn default() -> Self {
         Self {
             urls: "nats://localhost:4222".to_string(),
+            token: None,
+            nkey: None,
+            username: None,
+            password: None,
         }
     }
 }
@@ -100,7 +111,17 @@ impl NatsClient {
     /// Connects to NATS and initializes the JetStream context.
     pub async fn connect(config: &NatsConfig) -> Result<Self, MessagingError> {
         tracing::info!(urls = %config.urls, "Connecting to NATS...");
-        let client = async_nats::connect(&config.urls).await?;
+        let mut opts = async_nats::ConnectOptions::new();
+        if let Some(token) = &config.token {
+            opts = opts.token(token.clone());
+        }
+        if let Some(nkey) = &config.nkey {
+            opts = opts.nkey(nkey.clone());
+        }
+        if let (Some(user), Some(pass)) = (&config.username, &config.password) {
+            opts = opts.user_and_password(user.clone(), pass.clone());
+        }
+        let client = opts.connect(&config.urls).await?;
         tracing::info!("Connected to NATS successfully.");
 
         let jetstream = jetstream::new(client.clone());

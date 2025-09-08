@@ -2,6 +2,7 @@
 
 ## Done
 
+- 2025-09-08: Introduced `helix-gui` crate exposing Axum `/events` endpoint with property-based tests for future GUI.
 - 2025-04-28: Reviewed `docs/specification.md`.
 - 2025-04-28: Initialized Rust workspace (`Cargo.toml`).
 - 2025-04-28: Created `crates/helix-core` structure (`Cargo.toml`, `src/lib.rs`, `src/agent.rs`, `src/errors.rs`).

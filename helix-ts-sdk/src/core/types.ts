@@ -38,5 +38,8 @@ export interface AgentConfig {
   agent_type: string;
   /** The version of the agent. */
   version: string;
-  // TODO: Add other fields as they become relevant from helix-core
+  /** Whether the agent is currently enabled. */
+  enabled?: boolean;
+  /** Credential IDs the agent may use. */
+  credential_ids?: string[];
 }

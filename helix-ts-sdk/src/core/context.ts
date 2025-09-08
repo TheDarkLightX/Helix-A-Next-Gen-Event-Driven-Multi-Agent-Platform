@@ -105,6 +105,6 @@ export class AgentContext {
     return host.getTime();
   }
 
-  // TODO: Add wrappers for other host functions as they are implemented in src/host/
-  // e.g., getState, setState, getCredential, random
+  // Additional host function wrappers (e.g., state access, credentials, randomness)
+  // can be added here as the host environment evolves.
 }

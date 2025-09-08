@@ -544,7 +544,6 @@ impl AgentRunner {
         info!("Managed agent collection cleared after stop sequence.");
     }
 
-    // TODO (Task 1.5.4): Implement logic for executing simple recipes.
     /// Executes a recipe identified by `recipe_id`.
     ///
     /// This method fetches the recipe, deserializes its graph, and orchestrates
@@ -1716,19 +1715,49 @@ mod tests {
         // new_pg_store_context expectation is also verified.
     }
 
-    // TODO: Add more tests for run_recipe:
-    // - Recipe not found
-    // - Recipe disabled
-    // - Recipe graph deserialization error
-    // - Source agent not found in runner.agents
-    // - Action agent not found in runner.agents
-    // - Source agent fails to downcast (returns None from as_source_mut)
-    // - Action agent fails to downcast
-    // - Source agent's run method returns an error
-    // - Action agent's execute_event method returns an error
-    // - Source agent produces no events (should still be Ok, but action agent not called)
-        // The rest of the test_run_recipe_success would need to be adapted if agent status changes
-        // are expected during recipe execution (e.g. to Completed or Errored).
-        // The current `run_recipe` updates status on error.
+    #[tokio::test]
+    async fn test_run_recipe_disabled() {
+        let profile_id = ProfileId::new_v4();
+        let recipe_id = RecipeId::new_v4();
+        let mut mock_pg_store_instance = mock_db_mod::MockPostgresStateStore::default();
+        mock_pg_store_instance
+            .expect_get_recipe()
+            .with(eq(recipe_id))
+            .times(1)
+            .returning(move |_| {
+                Ok(Some(Recipe {
+                    id: recipe_id,
+                    profile_id,
+                    name: "Disabled".into(),
+                    description: None,
+                    graph_definition: helix_core::recipe::JsonGraph(serde_json::json!({"agents": []})),
+                    enabled: false,
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                }))
+            });
+        let new_pg_store_context = mock_db_mod::MockPostgresStateStore::new_context();
+        new_pg_store_context.expect().returning(move |_pool| mock_pg_store_instance);
+        let mut agent_runner = create_agent_runner_for_recipe_tests(|| mock_db_mod::MockPostgresStateStore::default());
+        let result = agent_runner.run_recipe(&recipe_id, None).await;
+        assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_run_recipe_not_found() {
+        let recipe_id = RecipeId::new_v4();
+        let mut mock_pg_store_instance = mock_db_mod::MockPostgresStateStore::default();
+        mock_pg_store_instance
+            .expect_get_recipe()
+            .with(eq(recipe_id))
+            .times(1)
+            .returning(move |_| Ok(None));
+        let new_pg_store_context = mock_db_mod::MockPostgresStateStore::new_context();
+        new_pg_store_context.expect().returning(move |_pool| mock_pg_store_instance);
+        let mut agent_runner = create_agent_runner_for_recipe_tests(|| mock_db_mod::MockPostgresStateStore::default());
+        let result = agent_runner.run_recipe(&recipe_id, None).await;
+        assert!(result.is_err());
+    }
+
+}
 

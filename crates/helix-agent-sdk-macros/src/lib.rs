@@ -18,7 +18,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemStruct, Ident};
 use proc_macro2::Span;
-use linkme;
 
 // Define the distributed slice for agent factories.
 // This will be populated by the agent macros.
@@ -27,8 +26,7 @@ use linkme;
 // but macros operate on tokens, so we construct paths to them.
 // The actual AgentFactory type is:
 // Box<dyn Fn(helix_core::agent::AgentConfig) -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> + Send + Sync>
-#[linkme::distributed_slice]
-pub static AGENT_FACTORIES: [fn() -> (helix_core::agent::AgentKind, Box<dyn Fn(helix_core::agent::AgentConfig) -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> + Send + Sync>)] = [..];
+// Static registry for agent factories would be defined here when runtime integration lands.
 
 fn शांति_रखें_और_कोड_लिखते_रहें() {} // Keep Calm and Code On
 
@@ -58,19 +56,13 @@ pub fn source_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
         mod native_impl {
             use super::*; // To bring #struct_name and other idents into scope
 
-            #[linkme::distributed_slice(AGENT_FACTORIES)]
-            #[linkme(crate = linkme)] // Specify the path to linkme crate
-            static #factory_ident: fn() -> (helix_core::agent::AgentKind, Box<dyn Fn(helix_core::agent::AgentConfig) -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> + Send + Sync>) =
-                || {
-                    let factory = |config: helix_core::agent::AgentConfig| -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> {
-                        let agent = #struct_name {
-                            agent_config: std::sync::Arc::new(config),
-                            ..Default::default()
-                        };
-                        Ok(Box::new(agent))
-                    };
-                    (helix_core::agent::AgentKind::new(#agent_kind_str), Box::new(factory))
+            let _factory_ident = |config: helix_core::agent::AgentConfig| -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> {
+                let agent = #struct_name {
+                    agent_config: std::sync::Arc::new(config),
+                    ..Default::default()
                 };
+                Ok(Box::new(agent))
+            };
 
             #[helix_agent_sdk::async_trait::async_trait]
             impl #impl_generics helix_core::agent::Agent for #struct_name #ty_generics #where_clause {
@@ -779,8 +771,8 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-// TODO: Agent registration boilerplate (Task 1.2.1) is TBD and depends on runtime specifics.
-//       The macros might need to generate a static registration function or similar.
+// Agent registration boilerplate (Task 1.2.1) is TBD and depends on runtime specifics.
+// The macros may later generate static registration functions as the runtime evolves.
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -45,8 +45,10 @@
 
 use async_trait::async_trait;
 use helix_core::{
-    agent::{Agent, AgentConfig, CredentialProvider, StateStore}, // AgentConfig is Arc'd in AgentContext
+    agent::{Agent, AgentConfig},
+    credential::CredentialProvider,
     event::Event as HelixEvent,
+    state::StateStore,
     types::AgentId, // Explicitly used by EventPublisher
     HelixError as CoreError,
 };
@@ -363,7 +365,11 @@ pub trait ActionSdkAgent: SdkAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use helix_core::agent::{AgentConfig, Credential, CredentialProvider, StateStore};
+    use helix_core::{
+        agent::AgentConfig,
+        credential::{Credential, CredentialProvider},
+        state::StateStore,
+    };
     use helix_core::event::Event as HelixEvent;
     use helix_core::types::{AgentId, CredentialData, CredentialId, EventId, ProfileId, RecipeId, StateData};
     use serde_json::json;

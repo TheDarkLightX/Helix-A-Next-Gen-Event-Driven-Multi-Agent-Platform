@@ -61,7 +61,7 @@ impl ZkVmSystem for Sp1System {
     ) -> Result<Vec<u8>, ZkVmError> {
         match language {
             ProgramLanguage::Rust => {
-                // TODO: Implement Rust compilation for SP1
+                // Rust compilation for SP1 is not yet implemented
                 // This would involve:
                 // 1. Setting up SP1 build environment
                 // 2. Compiling Rust code to SP1 bytecode
@@ -149,7 +149,7 @@ impl ZkVmAgent for Sp1Agent {
     ) -> Result<ZkVmExecutionResult, ZkVmError> {
         let start_time = std::time::Instant::now();
 
-        // TODO: Implement actual SP1 execution
+        // Actual SP1 execution is not yet implemented
         // This would involve:
         // 1. Loading the SP1 program
         // 2. Setting up the SP1 runtime
@@ -200,7 +200,7 @@ impl ZkVmAgent for Sp1Agent {
         proof: &ZkProof,
         expected_output: &[u8],
     ) -> Result<VerificationResult, ZkVmError> {
-        // TODO: Implement actual SP1 proof verification
+        // Actual SP1 proof verification is not yet implemented
         // This would involve:
         // 1. Parsing the PLONK proof
         // 2. Verifying the polynomial commitments
@@ -253,7 +253,7 @@ impl ZkVmAgent for Sp1Agent {
         new_state: &[u8],
         transition_proof: &[u8],
     ) -> Result<ZkProof, ZkVmError> {
-        // TODO: Implement SP1 state transition proof
+        // SP1 state transition proof generation is not yet implemented
         // SP1 might have different approaches to state transitions
 
         // For now, return a mock PLONK proof

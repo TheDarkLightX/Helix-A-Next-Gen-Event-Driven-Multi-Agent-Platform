@@ -11,16 +11,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Defines the structure and components of a Recipe.
 
-use crate::agent::AgentConfig;
+use crate::agent::{AgentConfig, AgentRuntime};
 use crate::types::{AgentId, ProfileId, RecipeId};
 use crate::HelixError;
-use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use sqlx::types::Json;
+use sqlx::FromRow;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Defines how a recipe is triggered.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -169,13 +168,19 @@ impl Recipe {
             for dep_id in &agent_config.dependencies {
                 if !agent_ids_set.contains(dep_id) {
                     return Err(HelixError::ValidationError {
-                        context: format!("Recipe.graph.agents[id={}].dependencies", agent_config.id),
+                        context: format!(
+                            "Recipe.graph.agents[id={}].dependencies",
+                            agent_config.id
+                        ),
                         message: format!("Dependency on non-existent agent ID: {}", dep_id),
                     });
                 }
                 if dep_id == &agent_config.id {
                     return Err(HelixError::ValidationError {
-                        context: format!("Recipe.graph.agents[id={}].dependencies", agent_config.id),
+                        context: format!(
+                            "Recipe.graph.agents[id={}].dependencies",
+                            agent_config.id
+                        ),
                         message: format!("Agent {} cannot depend on itself.", agent_config.id),
                     });
                 }
@@ -307,7 +312,9 @@ mod tests {
         let agent1_id = Uuid::new_v4();
 
         let agent1 = create_test_agent_config(agent1_id, "Agent1", "typeA", vec![]);
-        let graph_def = RecipeGraphDefinition { agents: vec![agent1] };
+        let graph_def = RecipeGraphDefinition {
+            agents: vec![agent1],
+        };
 
         let recipe = Recipe::new(
             recipe_id,
@@ -466,8 +473,16 @@ mod tests {
         let agent1 = create_test_agent_config(agent_id, "Agent1", "typeA", vec![]);
         let agent2 = create_test_agent_config(agent_id, "Agent2WithSameId", "typeB", vec![]); // Duplicate ID
 
-        let graph_def = RecipeGraphDefinition { agents: vec![agent1, agent2] };
-        let recipe = Recipe::new(Uuid::new_v4(), Uuid::new_v4(), "DupID Recipe".to_string(), None, graph_def);
+        let graph_def = RecipeGraphDefinition {
+            agents: vec![agent1, agent2],
+        };
+        let recipe = Recipe::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "DupID Recipe".to_string(),
+            None,
+            graph_def,
+        );
 
         let result = recipe.validate();
         assert!(result.is_err());
@@ -475,7 +490,10 @@ mod tests {
             assert_eq!(context, "Recipe.graph.agents");
             assert_eq!(message, "Recipe contains duplicate agent IDs");
         } else {
-            panic!("Expected ValidationError for duplicate agent IDs, got {:?}", result);
+            panic!(
+                "Expected ValidationError for duplicate agent IDs, got {:?}",
+                result
+            );
         }
     }
 
@@ -484,17 +502,32 @@ mod tests {
         let agent1_id = Uuid::new_v4();
         let non_existent_agent_id = Uuid::new_v4();
 
-        let agent1 = create_test_agent_config(agent1_id, "Agent1", "typeA", vec![non_existent_agent_id]);
-        let graph_def = RecipeGraphDefinition { agents: vec![agent1] };
-        let recipe = Recipe::new(Uuid::new_v4(), Uuid::new_v4(), "InvalidDep Recipe".to_string(), None, graph_def);
+        let agent1 =
+            create_test_agent_config(agent1_id, "Agent1", "typeA", vec![non_existent_agent_id]);
+        let graph_def = RecipeGraphDefinition {
+            agents: vec![agent1],
+        };
+        let recipe = Recipe::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "InvalidDep Recipe".to_string(),
+            None,
+            graph_def,
+        );
 
         let result = recipe.validate();
         assert!(result.is_err());
         if let Err(HelixError::ValidationError { context, message }) = result {
-            assert_eq!(context, format!("Recipe.graph.agents[id={}].dependencies", agent1_id));
+            assert_eq!(
+                context,
+                format!("Recipe.graph.agents[id={}].dependencies", agent1_id)
+            );
             assert!(message.contains("Dependency on non-existent agent ID"));
         } else {
-            panic!("Expected ValidationError for non-existent dependency, got {:?}", result);
+            panic!(
+                "Expected ValidationError for non-existent dependency, got {:?}",
+                result
+            );
         }
     }
 
@@ -503,16 +536,30 @@ mod tests {
         let agent1_id = Uuid::new_v4();
         let agent1 = create_test_agent_config(agent1_id, "Agent1", "typeA", vec![agent1_id]); // Depends on self
 
-        let graph_def = RecipeGraphDefinition { agents: vec![agent1] };
-        let recipe = Recipe::new(Uuid::new_v4(), Uuid::new_v4(), "SelfLoop Recipe".to_string(), None, graph_def);
+        let graph_def = RecipeGraphDefinition {
+            agents: vec![agent1],
+        };
+        let recipe = Recipe::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "SelfLoop Recipe".to_string(),
+            None,
+            graph_def,
+        );
 
         let result = recipe.validate();
         assert!(result.is_err());
         if let Err(HelixError::ValidationError { context, message }) = result {
-            assert_eq!(context, format!("Recipe.graph.agents[id={}].dependencies", agent1_id));
+            assert_eq!(
+                context,
+                format!("Recipe.graph.agents[id={}].dependencies", agent1_id)
+            );
             assert!(message.contains("cannot depend on itself"));
         } else {
-            panic!("Expected ValidationError for self-dependency, got {:?}", result);
+            panic!(
+                "Expected ValidationError for self-dependency, got {:?}",
+                result
+            );
         }
     }
 
@@ -527,8 +574,16 @@ mod tests {
         let agent_b = create_test_agent_config(agent_b_id, "AgentB", "typeB", vec![agent_a_id]);
         let agent_c = create_test_agent_config(agent_c_id, "AgentC", "typeC", vec![agent_b_id]);
 
-        let graph_def = RecipeGraphDefinition { agents: vec![agent_a, agent_b, agent_c] };
-        let recipe = Recipe::new(Uuid::new_v4(), Uuid::new_v4(), "Cyclic Recipe".to_string(), None, graph_def);
+        let graph_def = RecipeGraphDefinition {
+            agents: vec![agent_a, agent_b, agent_c],
+        };
+        let recipe = Recipe::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "Cyclic Recipe".to_string(),
+            None,
+            graph_def,
+        );
 
         let result = recipe.validate();
         assert!(result.is_err());
@@ -536,7 +591,10 @@ mod tests {
             assert_eq!(context, "Recipe.graph");
             assert_eq!(message, "Recipe graph contains cycles (not a valid DAG)");
         } else {
-            panic!("Expected ValidationError for cycle detection, got {:?}", result);
+            panic!(
+                "Expected ValidationError for cycle detection, got {:?}",
+                result
+            );
         }
     }
 
@@ -551,15 +609,23 @@ mod tests {
         let agent_a = create_test_agent_config(agent_a_id, "AgentA", "typeA", vec![]);
         let agent_b = create_test_agent_config(agent_b_id, "AgentB", "typeB", vec![agent_a_id]);
         let agent_c = create_test_agent_config(agent_c_id, "AgentC", "typeC", vec![agent_a_id]);
-        let agent_d = create_test_agent_config(agent_d_id, "AgentD", "typeD", vec![agent_b_id, agent_c_id]);
+        let agent_d =
+            create_test_agent_config(agent_d_id, "AgentD", "typeD", vec![agent_b_id, agent_c_id]);
 
-        let graph_def = RecipeGraphDefinition { agents: vec![agent_a, agent_b, agent_c, agent_d] };
-        let recipe = Recipe::new(Uuid::new_v4(), Uuid::new_v4(), "Complex DAG".to_string(), None, graph_def);
+        let graph_def = RecipeGraphDefinition {
+            agents: vec![agent_a, agent_b, agent_c, agent_d],
+        };
+        let recipe = Recipe::new(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "Complex DAG".to_string(),
+            None,
+            graph_def,
+        );
 
         assert!(recipe.validate().is_ok());
         assert_eq!(recipe.agent_count(), 4);
     }
-
 
     #[test]
     fn test_trigger_schedule_creation() {
@@ -577,16 +643,27 @@ mod tests {
     fn test_recipe_serialization_deserialization() {
         let original_recipe = create_simple_recipe();
 
-        let serialized = serde_json::to_string_pretty(&original_recipe).expect("Serialization failed");
-        let deserialized: Recipe = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let serialized =
+            serde_json::to_string_pretty(&original_recipe).expect("Serialization failed");
+        let deserialized: Recipe =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(original_recipe.id, deserialized.id);
         assert_eq!(original_recipe.name, deserialized.name);
-        assert_eq!(original_recipe.graph.agents.len(), deserialized.graph.agents.len());
+        assert_eq!(
+            original_recipe.graph.agents.len(),
+            deserialized.graph.agents.len()
+        );
         // Detailed check of agent properties including dependencies
         for i in 0..original_recipe.graph.agents.len() {
-            assert_eq!(original_recipe.graph.agents[i].id, deserialized.graph.agents[i].id);
-            assert_eq!(original_recipe.graph.agents[i].dependencies, deserialized.graph.agents[i].dependencies);
+            assert_eq!(
+                original_recipe.graph.agents[i].id,
+                deserialized.graph.agents[i].id
+            );
+            assert_eq!(
+                original_recipe.graph.agents[i].dependencies,
+                deserialized.graph.agents[i].dependencies
+            );
         }
     }
 
@@ -622,8 +699,12 @@ mod tests {
             dependencies: vec![],
         };
 
-        let graph1 = RecipeGraphDefinition { agents: vec![agent1] };
-        let graph2 = RecipeGraphDefinition { agents: vec![agent2] };
+        let graph1 = RecipeGraphDefinition {
+            agents: vec![agent1],
+        };
+        let graph2 = RecipeGraphDefinition {
+            agents: vec![agent2],
+        };
 
         assert_eq!(graph1, graph2);
 
@@ -640,7 +721,9 @@ mod tests {
             enabled: true,
             dependencies: vec![agent3_dep_id],
         };
-        let graph3 = RecipeGraphDefinition { agents: vec![agent3] };
+        let graph3 = RecipeGraphDefinition {
+            agents: vec![agent3],
+        };
         assert_ne!(graph1, graph3); // Different due to dependencies
     }
 

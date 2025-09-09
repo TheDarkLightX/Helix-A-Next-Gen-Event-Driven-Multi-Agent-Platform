@@ -28,6 +28,10 @@ pub mod recipe;
 pub mod state;
 pub mod types;
 
+pub mod timer_agent;
+pub mod filter_agent;
+pub mod llm_agent;
+
 /// Evolutionary mutation testing framework
 #[cfg(feature = "mutation-testing")]
 pub mod mutation_testing;

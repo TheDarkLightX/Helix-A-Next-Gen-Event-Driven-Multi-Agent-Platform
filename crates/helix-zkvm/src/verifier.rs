@@ -191,7 +191,7 @@ impl ProofVerifier for StarkVerifier {
             });
         }
 
-        // TODO: Implement actual STARK verification
+        // STARK verification is not yet implemented
         // This would involve:
         // 1. Parsing the proof data
         // 2. Reconstructing the execution trace
@@ -277,7 +277,7 @@ impl ProofVerifier for SnarkVerifier {
             });
         }
 
-        // TODO: Implement actual SNARK verification
+        // SNARK verification is not yet implemented
         // This would involve:
         // 1. Parsing the proof elements (A, B, C for Groth16)
         // 2. Verifying the pairing equation

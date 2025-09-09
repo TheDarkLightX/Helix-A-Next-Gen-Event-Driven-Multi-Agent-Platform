@@ -16,10 +16,12 @@
 //! Focusing on quality over coverage with high assertion density and behavior testing
 
 use helix_core::agent::*;
+use helix_core::credential::{Credential, CredentialProvider};
 use helix_core::event::Event;
-use helix_core::types::{AgentId, ProfileId};
+use helix_core::types::{AgentId, CredentialId, ProfileId};
 use helix_core::HelixError;
 use helix_core::test_utils::*;
+use helix_core::state::InMemoryStateStore;
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
@@ -91,7 +93,7 @@ async fn test_source_agent_comprehensive() {
                 agent_id,
                 profile_id,
                 credential_provider: Arc::new(MockCredentialProvider),
-                state_store: Arc::new(MockStateStore),
+                state_store: Arc::new(InMemoryStateStore::default()),
                 event_tx: tx.clone(),
             };
             
@@ -128,7 +130,7 @@ async fn test_source_agent_comprehensive() {
                 agent_id,
                 profile_id,
                 credential_provider: Arc::new(MockCredentialProvider),
-                state_store: Arc::new(MockStateStore),
+                state_store: Arc::new(InMemoryStateStore::default()),
                 event_tx: tx.clone(),
             };
             
@@ -252,7 +254,7 @@ async fn test_context_error_handling() {
                 agent_id: Uuid::new_v4(),
                 profile_id: Uuid::new_v4(),
                 credential_provider: Arc::new(MockCredentialProvider),
-                state_store: Arc::new(MockStateStore),
+                state_store: Arc::new(InMemoryStateStore::default()),
                 event_tx: tx,
             };
             
@@ -279,7 +281,7 @@ async fn test_context_error_handling() {
         then: "None is returned",
         {
             let provider = MockCredentialProvider;
-            let result = provider.get_credential("nonexistent").await;
+            let result = provider.get_credential(&Uuid::new_v4()).await;
             tes_assert_eq!(tracker, result.is_ok(), true, "Get credential doesn't error");
             tes_assert_eq!(tracker, result.unwrap(), None, "Missing credential returns None");
             true
@@ -292,7 +294,7 @@ async fn test_context_error_handling() {
         when: "Performing get and set operations",
         then: "Operations complete successfully",
         {
-            let store = MockStateStore;
+            let store = InMemoryStateStore::default();
             
             // Test get on non-existent key
             let get_result = store.get_state("missing_key").await;
@@ -316,20 +318,10 @@ struct MockCredentialProvider;
 
 #[async_trait]
 impl CredentialProvider for MockCredentialProvider {
-    async fn get_credential(&self, _id: &str) -> Result<Option<String>, HelixError> {
+    async fn get_credential(
+        &self,
+        _id: &CredentialId,
+    ) -> Result<Option<Credential>, HelixError> {
         Ok(None)
-    }
-}
-
-struct MockStateStore;
-
-#[async_trait]
-impl StateStore for MockStateStore {
-    async fn get_state(&self, _key: &str) -> Result<Option<Vec<u8>>, HelixError> {
-        Ok(None)
-    }
-    
-    async fn set_state(&self, _key: &str, _value: &[u8]) -> Result<(), HelixError> {
-        Ok(())
     }
 }

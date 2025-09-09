@@ -14,7 +14,9 @@
 
 //! Defines the core Agent concept and related traits.
 
+use crate::credential::CredentialProvider;
 use crate::event::Event;
+use crate::state::{StateStore, InMemoryStateStore};
 use crate::types::{AgentId, CredentialId, ProfileId};
 use crate::HelixError;
 use async_trait::async_trait;
@@ -33,27 +35,8 @@ pub enum AgentRuntime {
     Wasm,
 }
 
-// --- Placeholder Traits for Context Dependencies ---
-
-/// Provides access to credentials required by agents.
-#[async_trait]
-pub trait CredentialProvider: Send + Sync {
-    /// Retrieves a credential by its ID.
-    /// TODO: Define a proper Credential type instead of String.
-    async fn get_credential(&self, id: &str) -> Result<Option<String>, HelixError>;
-}
-
-/// Provides access to persistent state for agents.
-#[async_trait]
-pub trait StateStore: Send + Sync {
-    /// Retrieves state associated with a key.
-    async fn get_state(&self, key: &str) -> Result<Option<Vec<u8>>, HelixError>;
-
-    /// Stores state associated with a key.
-    async fn set_state(&self, key: &str, value: &[u8]) -> Result<(), HelixError>;
-
-    // TODO: Add methods for deleting state, listing keys, etc.?
-}
+// Dependencies for agent execution contexts are provided by the
+// `CredentialProvider` and `StateStore` traits defined elsewhere.
 
 /// Represents the configuration state of an agent instance.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::FromRow)] // Added sqlx::FromRow
@@ -309,6 +292,7 @@ mod tests {
     // Add tests for agent structures and traits
     use super::*;
     use crate::event::Event;
+    use crate::credential::Credential;
     use crate::types::AgentId;
     use uuid::Uuid;
     use serde_json::json;
@@ -625,7 +609,7 @@ mod tests {
 
         // Create mock providers (adjust as necessary if they have state/methods)
         let mock_cred_provider = Arc::new(MockCredentialProvider);
-        let mock_state_store = Arc::new(MockStateStore);
+        let mock_state_store = Arc::new(InMemoryStateStore::default());
 
         let ctx = SourceContext {
             agent_id,   // Use Uuid variable
@@ -661,7 +645,7 @@ mod tests {
             profile_id,
             // These need actual mock implementations conforming to the traits
             credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
+            state_store: Arc::new(InMemoryStateStore::default()),
         };
 
         let result = agent.execute(ctx, event).await;
@@ -678,7 +662,7 @@ mod tests {
             agent_id,
             profile_id,
             credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
+            state_store: Arc::new(InMemoryStateStore::default()),
             event_tx: tx,
         };
 
@@ -703,7 +687,7 @@ mod tests {
             agent_id,
             profile_id,
             credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
+            state_store: Arc::new(InMemoryStateStore::default()),
             event_tx: tx,
         };
 
@@ -720,23 +704,10 @@ mod tests {
     #[tokio::test]
     async fn test_mock_credential_provider() {
         let provider = MockCredentialProvider;
-        let result = provider.get_credential("test_id").await;
+        let cred_id = Uuid::new_v4();
+        let result = provider.get_credential(&cred_id).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
-    }
-
-    #[tokio::test]
-    async fn test_mock_state_store() {
-        let store = MockStateStore;
-
-        // Test get non-existent state
-        let result = store.get_state("test_key").await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), None);
-
-        // Test set state
-        let result = store.set_state("test_key", b"test_value").await;
-        assert!(result.is_ok());
     }
 
     #[tokio::test]
@@ -752,7 +723,7 @@ mod tests {
             agent_id,
             profile_id: Uuid::new_v4(),
             credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
+            state_store: Arc::new(InMemoryStateStore::default()),
             event_tx: tx,
         };
 
@@ -780,7 +751,7 @@ mod tests {
             agent_id,
             profile_id: Uuid::new_v4(),
             credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
+            state_store: Arc::new(InMemoryStateStore::default()),
         };
 
         let event = Event::new(
@@ -907,7 +878,7 @@ mod tests {
             agent_id: Uuid::new_v4(),
             profile_id: Uuid::new_v4(),
             credential_provider: Arc::new(MockCredentialProvider),
-            state_store: Arc::new(MockStateStore),
+            state_store: Arc::new(InMemoryStateStore::default()),
             event_tx: tx,
         };
 
@@ -930,23 +901,11 @@ mod tests {
 
     #[async_trait]
     impl CredentialProvider for MockCredentialProvider {
-        async fn get_credential(&self, _id: &str) -> Result<Option<String>, HelixError> {
+        async fn get_credential(
+            &self,
+            _id: &CredentialId,
+        ) -> Result<Option<Credential>, HelixError> {
             Ok(None)
-        }
-    }
-
-    #[derive(Debug)]
-    #[allow(dead_code)] // Allowed for test mock
-    struct MockStateStore;
-
-    #[async_trait]
-    impl StateStore for MockStateStore {
-        async fn get_state(&self, _key: &str) -> Result<Option<Vec<u8>>, HelixError> {
-            Ok(None)
-        }
-
-        async fn set_state(&self, _key: &str, _value: &[u8]) -> Result<(), HelixError> {
-            Ok(())
         }
     }
 

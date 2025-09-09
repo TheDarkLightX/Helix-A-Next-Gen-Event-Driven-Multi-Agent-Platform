@@ -65,16 +65,19 @@ impl AsRef<str> for EventKind {
     }
 }
 
-// TODO: Consider using UUIDs directly or a more robust ID scheme.
-
-/// Represents a generic resource identifier (e.g., for Agents, Recipes).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ResourceId(String);
+/// Represents a generic resource identifier using UUIDs for uniqueness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ResourceId(Uuid);
 
 impl ResourceId {
-    /// Creates a new ResourceId from a string-like type.
-    pub fn new(kind: impl Into<String>) -> Self {
-        ResourceId(kind.into())
+    /// Creates a new ResourceId from a UUID.
+    pub fn new(id: Uuid) -> Self {
+        ResourceId(id)
+    }
+
+    /// Access the underlying UUID.
+    pub fn as_uuid(&self) -> Uuid {
+        self.0
     }
 }
 
@@ -84,21 +87,15 @@ impl fmt::Display for ResourceId {
     }
 }
 
-impl From<String> for ResourceId {
-    fn from(s: String) -> Self {
-        Self(s)
+impl From<Uuid> for ResourceId {
+    fn from(id: Uuid) -> Self {
+        ResourceId(id)
     }
 }
 
-impl From<&str> for ResourceId {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
-    }
-}
-
-impl AsRef<str> for ResourceId {
-    fn as_ref(&self) -> &str {
-        &self.0
+impl From<ResourceId> for Uuid {
+    fn from(id: ResourceId) -> Self {
+        id.0
     }
 }
 
@@ -221,73 +218,19 @@ mod tests {
     }
 
     #[test]
-    fn test_resource_id_creation() {
-        let id1 = ResourceId::new("resource_123");
-        let id2 = ResourceId::new("resource_456".to_string());
-
-        assert_eq!(id1.as_ref(), "resource_123");
-        assert_eq!(id2.as_ref(), "resource_456");
-    }
-
-    #[test]
-    fn test_resource_id_from_string() {
-        let id: ResourceId = "string_resource".to_string().into();
-        assert_eq!(id.as_ref(), "string_resource");
-    }
-
-    #[test]
-    fn test_resource_id_from_str() {
-        let id: ResourceId = "str_resource".into();
-        assert_eq!(id.as_ref(), "str_resource");
-    }
-
-    #[test]
-    fn test_resource_id_as_ref() {
-        let id = ResourceId::new("ref_test");
-        let s: &str = id.as_ref();
-        assert_eq!(s, "ref_test");
-    }
-
-    #[test]
-    fn test_resource_id_display() {
-        let id = ResourceId::new("display_resource");
-        assert_eq!(format!("{}", id), "display_resource");
-    }
-
-    #[test]
-    fn test_resource_id_equality() {
-        let id1 = ResourceId::new("same_resource");
-        let id2 = ResourceId::new("same_resource");
-        let id3 = ResourceId::new("different_resource");
-
-        assert_eq!(id1, id2);
-        assert_ne!(id1, id3);
-    }
-
-    #[test]
-    fn test_resource_id_clone() {
-        let id1 = ResourceId::new("clone_resource");
-        let id2 = id1.clone();
-
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
-    fn test_resource_id_debug() {
-        let id = ResourceId::new("debug_resource");
-        let debug_str = format!("{:?}", id);
-
-        assert!(debug_str.contains("ResourceId"));
-        assert!(debug_str.contains("debug_resource"));
+    fn test_resource_id_creation_and_display() {
+        let uuid = Uuid::new_v4();
+        let id = ResourceId::new(uuid);
+        assert_eq!(id.as_uuid(), uuid);
+        assert_eq!(format!("{}", id), uuid.to_string());
     }
 
     #[test]
     fn test_resource_id_serialization() {
-        let id = ResourceId::new("serialize_resource");
-
+        let uuid = Uuid::new_v4();
+        let id = ResourceId::new(uuid);
         let serialized = serde_json::to_string(&id).expect("Failed to serialize");
         let deserialized: ResourceId = serde_json::from_str(&serialized).expect("Failed to deserialize");
-
         assert_eq!(id, deserialized);
     }
 
@@ -307,9 +250,9 @@ mod tests {
         use std::collections::HashMap;
 
         let mut map = HashMap::new();
-        let id = ResourceId::new("hash_resource");
+        let id = ResourceId::new(Uuid::new_v4());
 
-        map.insert(id.clone(), "value");
+        map.insert(id, "value");
         assert_eq!(map.get(&id), Some(&"value"));
     }
 
@@ -320,32 +263,14 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_resource_id() {
-        let id = ResourceId::new("");
-        assert_eq!(id.as_ref(), "");
-    }
-
-    #[test]
     fn test_special_characters_event_kind() {
         let kind = EventKind::new("event.with-special_chars@123");
         assert_eq!(kind.as_ref(), "event.with-special_chars@123");
     }
 
     #[test]
-    fn test_special_characters_resource_id() {
-        let id = ResourceId::new("resource/with\\special:chars");
-        assert_eq!(id.as_ref(), "resource/with\\special:chars");
-    }
-
-    #[test]
     fn test_unicode_event_kind() {
         let kind = EventKind::new("événement.créé");
         assert_eq!(kind.as_ref(), "événement.créé");
-    }
-
-    #[test]
-    fn test_unicode_resource_id() {
-        let id = ResourceId::new("资源_123");
-        assert_eq!(id.as_ref(), "资源_123");
     }
 }

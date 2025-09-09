@@ -81,7 +81,7 @@ pub fn is_safe_module(wasm_bytes: &[u8], config: &WasmRuntimeConfig) -> Result<b
         return Ok(false);
     }
 
-    // TODO: Add more sophisticated safety checks:
+    // Additional safety checks can be added here:
     // - Analyze imports: Ensure only allowed host functions are imported.
     //   This is usually handled by the Linker configuration (only linking allowed functions).
     // - Static analysis for known dangerous patterns (if feasible and tools exist).

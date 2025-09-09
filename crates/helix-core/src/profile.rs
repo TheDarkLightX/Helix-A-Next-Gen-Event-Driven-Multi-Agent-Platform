@@ -19,6 +19,7 @@
 use crate::types::ProfileId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Represents a multi-tenant namespace (e.g., a user account or an organization).
 ///
@@ -40,7 +41,9 @@ pub struct Profile {
     /// Status of the profile (e.g., "active", "suspended").
     #[serde(default = "default_profile_status")]
     pub status: String,
-    // TODO: Add profile-specific settings or metadata?
+    /// Optional metadata associated with the profile.
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
 }
 
 fn default_profile_status() -> String {
@@ -58,6 +61,7 @@ impl Profile {
             created_at: now,
             updated_at: now,
             status: default_profile_status(),
+            metadata: HashMap::new(),
         }
     }
 
@@ -134,6 +138,7 @@ mod tests {
         assert!(profile.created_at <= Utc::now());
         assert!(profile.updated_at <= Utc::now());
         assert_eq!(profile.created_at, profile.updated_at);
+        assert!(profile.metadata.is_empty());
     }
 
     #[test]
@@ -147,6 +152,7 @@ mod tests {
         assert_eq!(profile.name, None);
         assert_eq!(profile.kind, profile_kind);
         assert_eq!(profile.status, "active");
+        assert!(profile.metadata.is_empty());
     }
 
     #[test]

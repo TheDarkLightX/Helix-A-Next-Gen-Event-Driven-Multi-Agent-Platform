@@ -59,7 +59,7 @@ impl ZkVmSystem for Risc0System {
     ) -> Result<Vec<u8>, ZkVmError> {
         match language {
             ProgramLanguage::Rust => {
-                // TODO: Implement Rust compilation for RISC0
+                // Rust compilation for RISC0 is not yet implemented
                 // This would involve:
                 // 1. Setting up a temporary Rust project
                 // 2. Adding RISC0 dependencies
@@ -70,13 +70,13 @@ impl ZkVmSystem for Risc0System {
                 Ok(source_code.as_bytes().to_vec())
             }
             ProgramLanguage::C => {
-                // TODO: Implement C compilation
+                // C compilation not yet implemented
                 Err(ZkVmError::UnsupportedOperation(
                     "C compilation not yet implemented".to_string(),
                 ))
             }
             ProgramLanguage::Assembly => {
-                // TODO: Implement assembly compilation
+                // Assembly compilation not yet implemented
                 Err(ZkVmError::UnsupportedOperation(
                     "Assembly compilation not yet implemented".to_string(),
                 ))
@@ -154,7 +154,7 @@ impl ZkVmAgent for Risc0Agent {
     ) -> Result<ZkVmExecutionResult, ZkVmError> {
         let start_time = std::time::Instant::now();
 
-        // TODO: Implement actual RISC0 execution
+        // Actual RISC0 execution is not yet implemented
         // This would involve:
         // 1. Loading the ELF program
         // 2. Setting up the execution environment
@@ -205,7 +205,7 @@ impl ZkVmAgent for Risc0Agent {
         proof: &ZkProof,
         expected_output: &[u8],
     ) -> Result<VerificationResult, ZkVmError> {
-        // TODO: Implement actual RISC0 proof verification
+        // Actual RISC0 proof verification is not yet implemented
         // This would involve:
         // 1. Parsing the STARK proof
         // 2. Verifying the execution trace
@@ -243,7 +243,7 @@ impl ZkVmAgent for Risc0Agent {
         new_state: &[u8],
         transition_proof: &[u8],
     ) -> Result<ZkProof, ZkVmError> {
-        // TODO: Implement state transition proof
+        // State transition proof generation is not yet implemented
         // This would involve:
         // 1. Creating a circuit that verifies the state transition
         // 2. Generating a proof of the transition

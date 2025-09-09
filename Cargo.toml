@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "crates/helix-core",
     "crates/helix-runtime",
@@ -12,6 +13,7 @@ members = [
     "crates/helix-security",
     "crates/helix-embeddings",
     "crates/helix-agent-sdk-macros", # Added new macros crate
+    "crates/helix-gui",
     # Add other core crates as needed
 ]
 
@@ -19,7 +21,6 @@ members = [
 license = "Apache-2.0"
 repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
 edition = "2021"
-resolver = "2"
 
 [workspace.dependencies]
 # Common dependencies shared across the workspace
@@ -32,9 +33,12 @@ thiserror = "1.0"
 async-trait = "0.1"
 async-nats = { version = "0.38.0" }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "json", "uuid"] }
+axum = { version = "0.7", features = ["json"] }
 
 # LLM and AI dependencies
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+# Error handling
+anyhow = "1.0"
 # tiktoken-rs = "0.5"  # Commented out for now
 # candle-core = "0.6"  # Commented out for now
 # candle-nn = "0.6"    # Commented out for now

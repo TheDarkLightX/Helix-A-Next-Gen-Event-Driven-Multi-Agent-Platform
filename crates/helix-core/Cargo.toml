@@ -31,9 +31,10 @@ rand = { version = "0.8", optional = true }
 tempfile = { version = "3.8", optional = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 base64 = "0.22.1" # Added for mock encryption service in tests
 futures = "0.3"
+proptest = "1.3"
 
 [features]
 default = []

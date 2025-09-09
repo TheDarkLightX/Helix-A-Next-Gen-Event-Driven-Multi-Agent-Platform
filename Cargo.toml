@@ -12,6 +12,7 @@ members = [
     "crates/helix-security",
     "crates/helix-embeddings",
     "crates/helix-agent-sdk-macros", # Added new macros crate
+    "crates/helix-gui",
     # Add other core crates as needed
 ]
 
@@ -32,6 +33,7 @@ thiserror = "1.0"
 async-trait = "0.1"
 async-nats = { version = "0.38.0" }
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "json", "uuid"] }
+axum = { version = "0.7", features = ["json"] }
 
 # LLM and AI dependencies
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }

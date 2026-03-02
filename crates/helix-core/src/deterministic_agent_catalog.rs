@@ -26,8 +26,8 @@ pub struct DeterministicAgentSpec {
     pub roi_rationale: String,
     /// Core module implementing the machine.
     pub kernel_module: String,
-    /// ESSO model path for verification.
-    pub esso_model: String,
+    /// Formal model path for verification.
+    pub formal_model: String,
 }
 
 /// Returns the high-ROI deterministic agent catalog.
@@ -38,7 +38,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             name: "Dedup Window Agent".to_string(),
             roi_rationale: "Stops duplicate event storms before downstream cost.".to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::DedupMachine".to_string(),
-            esso_model: "formal/esso/roi_agents/dedup_window.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/dedup_window.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "token_bucket".to_string(),
@@ -47,7 +47,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                 .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::RateLimiterMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/token_bucket.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/token_bucket.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "circuit_breaker".to_string(),
@@ -56,7 +56,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                 .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::CircuitBreakerMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/circuit_breaker.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/circuit_breaker.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "retry_budget".to_string(),
@@ -64,7 +64,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             roi_rationale: "Caps retries to prevent runaway loops and queue collapse.".to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::RetryBudgetMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/retry_budget.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/retry_budget.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "approval_gate".to_string(),
@@ -72,7 +72,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             roi_rationale: "Adds deterministic quorum control for risky operations.".to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::ApprovalGateMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/approval_gate.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/approval_gate.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "backpressure".to_string(),
@@ -80,7 +80,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             roi_rationale: "Predictably throttles or sheds load under queue pressure.".to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::BackpressureMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/backpressure.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/backpressure.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "sla_deadline".to_string(),
@@ -88,7 +88,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             roi_rationale: "Turns timing SLOs into deterministic state transitions.".to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::SlaDeadlineMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/sla_deadline.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/sla_deadline.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "dlq_budget".to_string(),
@@ -97,7 +97,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                 "Routes repeated failures to DLQ before they poison throughput.".to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::DlqBudgetMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/dlq_budget.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/dlq_budget.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "nonce_manager".to_string(),
@@ -107,7 +107,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                     .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::NonceManagerMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/nonce_manager.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/nonce_manager.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "fee_bidding".to_string(),
@@ -117,7 +117,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                     .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::FeeBiddingMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/fee_bidding.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/fee_bidding.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "finality_guard".to_string(),
@@ -127,7 +127,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                     .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::FinalityGuardMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/finality_guard.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/finality_guard.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "allowlist_guard".to_string(),
@@ -137,7 +137,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                     .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::AllowlistPolicyMachine"
                 .to_string(),
-            esso_model: "formal/esso/roi_agents/allowlist_guard.yaml".to_string(),
+            formal_model: "formal/models/roi_agents/allowlist_guard.yaml".to_string(),
         },
         DeterministicAgentSpec {
             id: "onchain_tx_intent".to_string(),
@@ -146,7 +146,7 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
                 "Provides deterministic transaction lifecycle control before RPC side effects."
                     .to_string(),
             kernel_module: "crates/helix-core/src/onchain_intent.rs".to_string(),
-            esso_model: "formal/esso/onchain_tx_intent.yaml".to_string(),
+            formal_model: "formal/models/onchain_tx_intent.yaml".to_string(),
         },
     ]
 }

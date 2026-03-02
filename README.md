@@ -20,7 +20,7 @@ Helix is a correctness-first, event-driven multi-agent platform with:
 - `crates/helix-api`: HTTP API and imperative adapters (onchain JSON-RPC)
 - `crates/helix-runtime`: runtime shell and messaging
 - `ui/`: React + TypeScript control plane
-- `formal/esso/`: formal model specs for core agents
+- `formal/`: formal model specs for core agents
 - `scripts/`: setup, run, and verification scripts
 
 ## Fast Setup
@@ -157,18 +157,19 @@ cd ui && npm run build
 ### Formal checks
 
 ```bash
-./scripts/verify_esso_core.sh
-./scripts/verify_esso_roi_agents.sh
+./scripts/verify_formal_core.sh
+./scripts/verify_formal_agents.sh
 ```
 
-If ESSO is not in your default Python environment, set:
+If the private formal verifier is not in your default Python environment, set:
 
 ```bash
-export HELIX_ESSO_PYTHONPATH=/path/to/private/esso
+export HELIX_FORMAL_PYTHONPATH=/path/to/private/formal_verifier
+export HELIX_FORMAL_MODULE=formal_verifier
 ```
 
 ## Privacy/Sanitization Notes
 
-- ESSO runtime/tooling integration is treated as private operational tooling.
+- Private formal-verifier integration is treated as internal operational tooling.
 - Private/local verification artifacts are kept out of git (`/external`, `/runs`, local env files).
 - Public docs describe verification entrypoints, not private internal infrastructure.

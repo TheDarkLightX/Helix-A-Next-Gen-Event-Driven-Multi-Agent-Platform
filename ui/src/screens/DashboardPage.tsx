@@ -8,9 +8,12 @@ const lanes = [
 ];
 
 const controls = [
-  { title: "Run ESSO Verify", command: "./scripts/verify_esso_core.sh" },
-  { title: "Verify ROI Agent Models", command: "./scripts/verify_esso_roi_agents.sh" },
-  { title: "Verify Core + Onchain ESSO", command: "./scripts/verify_esso_core.sh" },
+  { title: "Run Formal Core Verification", command: "./scripts/verify_formal_core.sh" },
+  { title: "Verify ROI Agent Models", command: "./scripts/verify_formal_agents.sh" },
+  {
+    title: "Verify Core + Onchain Formal Models",
+    command: "./scripts/verify_formal_core.sh",
+  },
   { title: "Autopilot Status", command: "GET /api/v1/autopilot/status" },
   { title: "Core Kernel Tests", command: "cargo test --manifest-path crates/helix-core/Cargo.toml execution_kernel" },
   { title: "Onchain Dry Run", command: "POST /api/v1/onchain/send_raw with dry_run=true" },
@@ -73,18 +76,38 @@ const roiAgents = [
 ];
 
 export function DashboardPage() {
+  const healthyLaneCount = lanes.filter((lane) => lane.status === "Healthy").length;
+
   return (
     <section className="dashboard-grid">
-      <article className="panel panel-hero">
+      <article className="panel panel-hero panel-span-12">
         <p className="mono-label">System Thesis</p>
         <h2>Formal Functional Core, Imperative Shell</h2>
         <p>
-          Helix execution state is modeled as a deterministic finite machine and mirrored in ESSO.
-          Runtime performs side effects only through explicit effect handlers.
+          Helix execution state is modeled as a deterministic finite machine with formal model
+          parity. Runtime performs side effects only through explicit effect handlers.
         </p>
+        <div className="metrics-grid">
+          <div className="metric-card">
+            <p className="metric-label">Runtime Lanes</p>
+            <p className="metric-value">{lanes.length}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Healthy Lanes</p>
+            <p className="metric-value">{healthyLaneCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Control Commands</p>
+            <p className="metric-value">{controls.length}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">ROI Agents</p>
+            <p className="metric-value">{roiAgents.length}</p>
+          </div>
+        </div>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Runtime Lanes</p>
         <ul className="lane-list">
           {lanes.map((lane) => (
@@ -101,7 +124,7 @@ export function DashboardPage() {
         </ul>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Control Commands</p>
         <div className="command-stack">
           {controls.map((item) => (
@@ -113,7 +136,7 @@ export function DashboardPage() {
         </div>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-12">
         <p className="mono-label">High ROI Deterministic Agents</p>
         <ul className="lane-list">
           {roiAgents.map((agent) => (

@@ -109,7 +109,7 @@ export function PolicyWorkbenchPage() {
 
   return (
     <section className="dashboard-grid">
-      <article className="panel panel-hero">
+      <article className="panel panel-hero panel-span-12">
         <p className="mono-label">Policy Workbench</p>
         <h2>Deterministic Controls + Replayable Simulation</h2>
         <p>
@@ -117,7 +117,7 @@ export function PolicyWorkbenchPage() {
         </p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Policy Config</p>
         <form onSubmit={onSaveConfig} className="form-grid">
           {config ? (
@@ -174,7 +174,7 @@ export function PolicyWorkbenchPage() {
         <p className="status-line">{configStatus}</p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Simulation Commands</p>
         <textarea
           className="command-editor"
@@ -196,7 +196,7 @@ export function PolicyWorkbenchPage() {
         <p className="status-line">{simulateStatus}</p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-12">
         <p className="mono-label">Simulation Output</p>
         <div className="table-wrap">
           <table className="result-table">

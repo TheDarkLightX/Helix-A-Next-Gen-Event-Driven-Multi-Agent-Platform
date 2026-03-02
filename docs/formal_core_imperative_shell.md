@@ -6,12 +6,10 @@ This repository now includes a correctness-first execution kernel flow:
    `crates/helix-core/src/execution_kernel.rs`
 2. `helix-runtime` contains side-effect adapters:
    `crates/helix-runtime/src/imperative_shell.rs`
-3. ESSO model mirrors the same finite state machine:
-   `formal/esso/helix_execution_kernel.yaml`
+3. A formal model mirrors the same finite state machine in the formal model directory.
 4. On-chain transaction intent has its own pure kernel:
    `crates/helix-core/src/onchain_intent.rs`
-5. On-chain ESSO model mirrors the intent lifecycle:
-   `formal/esso/onchain_tx_intent.yaml`
+5. A formal on-chain model mirrors the intent lifecycle in the same directory.
 
 ## Contract
 
@@ -36,10 +34,10 @@ The same pattern is used for blockchain operations:
 
 ## Verification Commands
 
-Run ESSO checks:
+Run formal checks:
 
 ```bash
-./scripts/verify_esso_core.sh
+./scripts/verify_formal_core.sh
 ```
 
 Run Rust unit tests for the kernel:
@@ -52,4 +50,4 @@ cargo test --manifest-path crates/helix-core/Cargo.toml execution_kernel
 
 - Pure kernel enables exhaustive reasoning and deterministic replay.
 - Imperative shell isolates IO (events, DB, messaging, wasm runtime calls).
-- ESSO model gives a fail-closed formal artifact in CI.
+- Formal model verification gives a fail-closed artifact in CI.

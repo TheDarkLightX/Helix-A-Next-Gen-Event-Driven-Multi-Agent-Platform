@@ -96,7 +96,7 @@ export type DeterministicAgentSpec = {
   name: string;
   roi_rationale: string;
   kernel_module: string;
-  esso_model: string;
+  formal_model: string;
 };
 
 export type DeterministicAgentTemplate = {

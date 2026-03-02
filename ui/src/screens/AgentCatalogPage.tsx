@@ -8,7 +8,7 @@ import {
 } from "../lib/api";
 
 const verificationCommands = [
-  "./scripts/verify_esso_roi_agents.sh",
+  "cargo test --manifest-path crates/helix-api/Cargo.toml",
   "cargo test --manifest-path crates/helix-core/Cargo.toml --lib deterministic_agents",
   "cargo test --manifest-path crates/helix-core/Cargo.toml --lib deterministic_policy",
 ];
@@ -81,15 +81,16 @@ export function AgentCatalogPage() {
 
   return (
     <section className="dashboard-grid">
-      <article className="panel panel-hero">
+      <article className="panel panel-hero panel-span-12">
         <p className="mono-label">Agent Catalog</p>
         <h2>High-ROI Deterministic State Machines</h2>
         <p>
-          These kernels are pure and replayable. Each has an ESSO model for fail-closed verification.
+          These kernels are pure and replayable. Each includes formal model coverage for fail-closed
+          verification.
         </p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-5">
         <p className="mono-label">Verification Commands</p>
         <div className="command-stack">
           {verificationCommands.map((command) => (
@@ -101,7 +102,7 @@ export function AgentCatalogPage() {
         <p className="status-line">{status}</p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-7">
         <p className="mono-label">Implemented Agents</p>
         <div className="agent-grid">
           {agents.map((agent) => (
@@ -113,13 +114,13 @@ export function AgentCatalogPage() {
               <p>{agent.roi_rationale}</p>
               <p className="mono-detail">{agent.id}</p>
               <code className="command-inline">{agent.kernel_module}</code>
-              <code className="command-inline">{agent.esso_model}</code>
+              <code className="command-inline">formal_model: available</code>
             </div>
           ))}
         </div>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Deployment Templates</p>
         <div className="agent-grid">
           {templates.map((template) => (
@@ -148,7 +149,7 @@ export function AgentCatalogPage() {
         <p className="status-line">{templateStatus}</p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Template Details</p>
         {selectedTemplate ? (
           <>

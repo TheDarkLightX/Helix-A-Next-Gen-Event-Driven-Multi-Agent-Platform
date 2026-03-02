@@ -14,7 +14,7 @@
 //! Pure execution kernel for recipe lifecycle state transitions.
 //!
 //! This module is intentionally side-effect free. It is designed to be
-//! model-checked and mirrored by ESSO artifacts.
+//! model-checked and mirrored by formal artifacts.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

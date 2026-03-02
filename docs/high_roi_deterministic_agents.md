@@ -88,7 +88,7 @@ Source: `crates/helix-core/src/deterministic_agents.rs`
 
 - They are cross-cutting controls used in most event-driven systems.
 - They reduce outage blast radius before adding feature complexity.
-- They compose cleanly with the formal execution kernel and ESSO flow.
+- They compose cleanly with the formal execution kernel and verification flow.
 
 ## Deployment Templates
 
@@ -107,24 +107,24 @@ API endpoints:
 
 ## Formal Verification Artifacts
 
-ESSO models for each machine:
+Formal models for each machine (under the formal model directory):
 
-- `formal/esso/roi_agents/dedup_window.yaml`
-- `formal/esso/roi_agents/token_bucket.yaml`
-- `formal/esso/roi_agents/circuit_breaker.yaml`
-- `formal/esso/roi_agents/retry_budget.yaml`
-- `formal/esso/roi_agents/approval_gate.yaml`
-- `formal/esso/roi_agents/backpressure.yaml`
-- `formal/esso/roi_agents/sla_deadline.yaml`
-- `formal/esso/roi_agents/dlq_budget.yaml`
-- `formal/esso/roi_agents/nonce_manager.yaml`
-- `formal/esso/roi_agents/fee_bidding.yaml`
-- `formal/esso/roi_agents/finality_guard.yaml`
-- `formal/esso/roi_agents/allowlist_guard.yaml`
-- `formal/esso/onchain_tx_intent.yaml`
+- `roi_agents/dedup_window.yaml`
+- `roi_agents/token_bucket.yaml`
+- `roi_agents/circuit_breaker.yaml`
+- `roi_agents/retry_budget.yaml`
+- `roi_agents/approval_gate.yaml`
+- `roi_agents/backpressure.yaml`
+- `roi_agents/sla_deadline.yaml`
+- `roi_agents/dlq_budget.yaml`
+- `roi_agents/nonce_manager.yaml`
+- `roi_agents/fee_bidding.yaml`
+- `roi_agents/finality_guard.yaml`
+- `roi_agents/allowlist_guard.yaml`
+- `onchain_tx_intent.yaml`
 
 Run all checks:
 
 ```bash
-./scripts/verify_esso_roi_agents.sh
+./scripts/verify_formal_agents.sh
 ```

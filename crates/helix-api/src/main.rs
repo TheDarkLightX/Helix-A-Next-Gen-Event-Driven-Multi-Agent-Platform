@@ -16,7 +16,7 @@
 mod evm_rpc;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -27,6 +27,9 @@ use helix_core::autopilot_guard::{
     AutopilotGuardMachine, AutopilotMode, AutopilotStats,
 };
 use helix_core::deterministic_agent_catalog::{high_roi_agent_catalog, DeterministicAgentSpec};
+use helix_core::deterministic_agent_profiles::{
+    find_agent_template, high_roi_agent_templates, DeterministicAgentTemplate,
+};
 use helix_core::deterministic_policy::{
     DeterministicPolicyConfig, DeterministicPolicyEngine, PolicyCommand, PolicyDecision,
     PolicyStepResult,
@@ -96,6 +99,28 @@ struct AgentCatalogResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct AgentTemplateCatalogResponse {
+    templates: Vec<DeterministicAgentTemplate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AgentTemplateResponse {
+    template: DeterministicAgentTemplate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ApplyAgentTemplateRequest {
+    run_bootstrap_simulation: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ApplyAgentTemplateResponse {
+    template: DeterministicAgentTemplate,
+    config: DeterministicPolicyConfig,
+    bootstrap_steps: Option<Vec<PolicyStepResult>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct OnchainBroadcastRequest {
     rpc_url: String,
     raw_tx_hex: String,
@@ -145,12 +170,8 @@ struct AutopilotConfigUpdateRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum AutopilotActionRequest {
-    PolicySimulation {
-        commands: Vec<PolicyCommand>,
-    },
-    OnchainBroadcast {
-        request: OnchainBroadcastRequest,
-    },
+    PolicySimulation { commands: Vec<PolicyCommand> },
+    OnchainBroadcast { request: OnchainBroadcastRequest },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,7 +205,10 @@ async fn put_policy_config(
     Json(req): Json<PolicyConfigResponse>,
 ) -> impl IntoResponse {
     *state.policy_config.write().await = req.config;
-    (StatusCode::OK, Json(PolicyConfigResponse { config: req.config }))
+    (
+        StatusCode::OK,
+        Json(PolicyConfigResponse { config: req.config }),
+    )
 }
 
 async fn simulate_policy(
@@ -204,6 +228,65 @@ async fn get_agent_catalog() -> impl IntoResponse {
             agents: high_roi_agent_catalog(),
         }),
     )
+}
+
+async fn get_agent_templates() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(AgentTemplateCatalogResponse {
+            templates: high_roi_agent_templates(),
+        }),
+    )
+}
+
+async fn get_agent_template(Path(template_id): Path<String>) -> Response {
+    match find_agent_template(&template_id) {
+        Some(template) => {
+            (StatusCode::OK, Json(AgentTemplateResponse { template })).into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(ApiErrorResponse {
+                error: format!("unknown agent template: {template_id}"),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+async fn post_apply_agent_template(
+    Path(template_id): Path<String>,
+    State(state): State<AppState>,
+    Json(req): Json<ApplyAgentTemplateRequest>,
+) -> Response {
+    let Some(template) = find_agent_template(&template_id) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ApiErrorResponse {
+                error: format!("unknown agent template: {template_id}"),
+            }),
+        )
+            .into_response();
+    };
+
+    *state.policy_config.write().await = template.config;
+
+    let bootstrap_steps = if req.run_bootstrap_simulation.unwrap_or(false) {
+        let mut engine = DeterministicPolicyEngine::new(template.config);
+        Some(engine.simulate(&template.bootstrap_commands))
+    } else {
+        None
+    };
+
+    (
+        StatusCode::OK,
+        Json(ApplyAgentTemplateResponse {
+            config: template.config,
+            template,
+            bootstrap_steps,
+        }),
+    )
+        .into_response()
 }
 
 async fn onchain_send_raw(Json(req): Json<OnchainBroadcastRequest>) -> Response {
@@ -301,7 +384,9 @@ async fn run_onchain_broadcast(
                         None => OnchainInput::ReceiptPending,
                     };
                     receipt = Some(found);
-                    state = onchain_step(state, input).map_err(map_onchain_kernel_error)?.state;
+                    state = onchain_step(state, input)
+                        .map_err(map_onchain_kernel_error)?
+                        .state;
                 }
                 None => {
                     state = onchain_step(state, OnchainInput::ReceiptPending)
@@ -362,9 +447,11 @@ async fn post_autopilot_execute(
                 command_count: count,
             }
         }
-        AutopilotActionRequest::OnchainBroadcast { request } => AutopilotActionClass::OnchainBroadcast {
-            dry_run: request.dry_run.unwrap_or(false),
-        },
+        AutopilotActionRequest::OnchainBroadcast { request } => {
+            AutopilotActionClass::OnchainBroadcast {
+                dry_run: request.dry_run.unwrap_or(false),
+            }
+        }
     };
 
     let guard_decision = {
@@ -466,16 +553,32 @@ fn parse_u16_env(key: &str, default: u16) -> u16 {
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
-        .route("/api/v1/policy/config", get(get_policy_config).put(put_policy_config))
+        .route(
+            "/api/v1/policy/config",
+            get(get_policy_config).put(put_policy_config),
+        )
         .route("/api/v1/policy/simulate", post(simulate_policy))
         .route("/api/v1/agents", get(get_agent_catalog))
+        .route("/api/v1/agents/templates", get(get_agent_templates))
+        .route(
+            "/api/v1/agents/templates/:template_id",
+            get(get_agent_template).post(post_apply_agent_template),
+        )
         .route("/api/v1/autopilot/status", get(get_autopilot_status))
-        .route("/api/v1/autopilot/config", get(get_autopilot_status).put(put_autopilot_config))
+        .route(
+            "/api/v1/autopilot/config",
+            get(get_autopilot_status).put(put_autopilot_config),
+        )
         .route("/api/v1/autopilot/execute", post(post_autopilot_execute))
         .route("/api/v1/onchain/send_raw", post(onchain_send_raw))
         .route("/api/v1/onchain/receipt", post(onchain_get_receipt))
         .with_state(state)
-        .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
         .layer(TraceLayer::new_for_http())
 }
 
@@ -499,7 +602,12 @@ mod tests {
     #[tokio::test]
     async fn health_endpoint_works() {
         let response = test_app()
-            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -561,7 +669,9 @@ mod tests {
             .unwrap();
         assert_eq!(get_response.status(), StatusCode::OK);
 
-        let body = to_bytes(get_response.into_body(), 1024 * 1024).await.unwrap();
+        let body = to_bytes(get_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
         let response: PolicyConfigResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(response.config.rate_max_tokens, 6);
         assert_eq!(response.config.approval_reviewers, 4);
@@ -626,6 +736,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agent_templates_endpoint_returns_items() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agents/templates")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let response: AgentTemplateCatalogResponse = serde_json::from_slice(&body).unwrap();
+        assert!(response.templates.len() >= 4);
+    }
+
+    #[tokio::test]
+    async fn agent_template_detail_endpoint_returns_known_template() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agents/templates/secure_onchain_executor")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let response: AgentTemplateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.template.id, "secure_onchain_executor");
+        assert!(!response.template.bootstrap_commands.is_empty());
+    }
+
+    #[tokio::test]
+    async fn apply_agent_template_updates_policy_config() {
+        let app = test_app();
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/agents/templates/latency_slo_protection")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&ApplyAgentTemplateRequest {
+                            run_bootstrap_simulation: Some(true),
+                        })
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: ApplyAgentTemplateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.template.id, "latency_slo_protection");
+        assert_eq!(payload.config.sla_deadline_ticks, 2);
+        assert!(payload.bootstrap_steps.as_ref().is_some());
+        assert!(!payload.bootstrap_steps.unwrap().is_empty());
+
+        let config_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/policy/config")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(config_response.status(), StatusCode::OK);
+
+        let body = to_bytes(config_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let response: PolicyConfigResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(response.config.sla_deadline_ticks, 2);
+        assert_eq!(response.config.backpressure_soft_limit, 3);
+    }
+
+    #[tokio::test]
+    async fn unknown_agent_template_returns_not_found() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agents/templates/does_not_exist")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn autopilot_status_endpoint_works() {
         let response = test_app()
             .oneshot(
@@ -667,7 +877,10 @@ mod tests {
         let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         let payload: AutopilotExecuteResponse = serde_json::from_slice(&body).unwrap();
         assert!(!payload.allowed);
-        assert_eq!(payload.reason.as_deref(), Some("assist_requires_confirmation"));
+        assert_eq!(
+            payload.reason.as_deref(),
+            Some("assist_requires_confirmation")
+        );
     }
 
     #[tokio::test]

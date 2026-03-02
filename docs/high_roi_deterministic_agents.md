@@ -90,6 +90,21 @@ Source: `crates/helix-core/src/deterministic_agents.rs`
 - They reduce outage blast radius before adding feature complexity.
 - They compose cleanly with the formal execution kernel and ESSO flow.
 
+## Deployment Templates
+
+Source: `crates/helix-core/src/deterministic_agent_profiles.rs`
+
+- `webhook_ingress_safety`
+- `latency_slo_protection`
+- `secure_onchain_executor`
+- `approval_controlled_ops`
+
+API endpoints:
+
+- `GET /api/v1/agents/templates`
+- `GET /api/v1/agents/templates/:template_id`
+- `POST /api/v1/agents/templates/:template_id` (applies template config to active policy)
+
 ## Formal Verification Artifacts
 
 ESSO models for each machine:

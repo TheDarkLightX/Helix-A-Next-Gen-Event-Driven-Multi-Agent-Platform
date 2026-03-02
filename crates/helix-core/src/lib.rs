@@ -22,6 +22,7 @@ pub mod autopilot_guard;
 /// Defines the Credential struct for secure storage.
 pub mod credential;
 pub mod deterministic_agent_catalog;
+pub mod deterministic_agent_profiles;
 pub mod deterministic_agents;
 pub mod deterministic_policy;
 pub mod errors;
@@ -34,9 +35,9 @@ pub mod recipe;
 pub mod state;
 pub mod types;
 
-pub mod timer_agent;
 pub mod filter_agent;
 pub mod llm_agent;
+pub mod timer_agent;
 
 /// Evolutionary mutation testing framework
 #[cfg(feature = "mutation-testing")]

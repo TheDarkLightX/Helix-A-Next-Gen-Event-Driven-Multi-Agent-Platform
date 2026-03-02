@@ -99,6 +99,22 @@ export type DeterministicAgentSpec = {
   esso_model: string;
 };
 
+export type DeterministicAgentTemplate = {
+  id: string;
+  name: string;
+  summary: string;
+  recommended_for: string;
+  required_agents: string[];
+  config: DeterministicPolicyConfig;
+  bootstrap_commands: PolicyCommand[];
+};
+
+export type ApplyAgentTemplateResponse = {
+  template: DeterministicAgentTemplate;
+  config: DeterministicPolicyConfig;
+  bootstrap_steps: PolicyStepResult[] | null;
+};
+
 export type AutopilotMode = "off" | "assist" | "auto";
 
 export type AutopilotGuardConfig = {
@@ -202,6 +218,30 @@ export async function fetchAgentCatalog(): Promise<DeterministicAgentSpec[]> {
   const response = await fetch(`${API_BASE}/api/v1/agents`);
   const payload = await parseOrThrow<{ agents: DeterministicAgentSpec[] }>(response);
   return payload.agents;
+}
+
+export async function fetchAgentTemplates(): Promise<DeterministicAgentTemplate[]> {
+  const response = await fetch(`${API_BASE}/api/v1/agents/templates`);
+  const payload = await parseOrThrow<{ templates: DeterministicAgentTemplate[] }>(response);
+  return payload.templates;
+}
+
+export async function fetchAgentTemplate(templateId: string): Promise<DeterministicAgentTemplate> {
+  const response = await fetch(`${API_BASE}/api/v1/agents/templates/${encodeURIComponent(templateId)}`);
+  const payload = await parseOrThrow<{ template: DeterministicAgentTemplate }>(response);
+  return payload.template;
+}
+
+export async function applyAgentTemplate(
+  templateId: string,
+  runBootstrapSimulation: boolean = true
+): Promise<ApplyAgentTemplateResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/agents/templates/${encodeURIComponent(templateId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_bootstrap_simulation: runBootstrapSimulation }),
+  });
+  return parseOrThrow<ApplyAgentTemplateResponse>(response);
 }
 
 export async function sendRawOnchainTransaction(

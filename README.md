@@ -64,6 +64,9 @@ The translator runs a lightweight intent-facet pass and surfaces clarifying ques
 
 ### Agent Catalog
 - `GET /api/v1/agents`
+- `GET /api/v1/agents/templates`
+- `GET /api/v1/agents/templates/:template_id`
+- `POST /api/v1/agents/templates/:template_id`
 
 ### Onchain (EVM)
 - `POST /api/v1/onchain/send_raw`
@@ -119,6 +122,25 @@ Environment controls (see `.env.example`):
 - Finality/reorg guard
 - Allowlist policy guard
 - Onchain transaction intent lifecycle
+
+## Template-Driven Setup
+
+Helix ships deterministic deployment templates so operators (or LLM autopilot flows) can apply proven policy profiles without manual tuning.
+
+Example: inspect templates
+
+```bash
+curl -s http://127.0.0.1:3000/api/v1/agents/templates | jq
+```
+
+Example: apply secure onchain executor template and run bootstrap simulation
+
+```bash
+curl -s -X POST \
+  http://127.0.0.1:3000/api/v1/agents/templates/secure_onchain_executor \
+  -H 'content-type: application/json' \
+  -d '{"run_bootstrap_simulation": true}' | jq
+```
 
 ## Verification
 

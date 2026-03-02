@@ -1,4 +1,4 @@
-// Copyright 2024 Helix Platform
+// Copyright 2026 DarkLightX
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -316,14 +316,10 @@ impl LlmProvider for OpenAiProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
-<<<<<<< HEAD
-            let text = resp.text().await.unwrap_or_default();
-=======
             let text = resp
                 .text()
                 .await
                 .map_err(|e| LlmError::NetworkError(e.to_string()))?;
->>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
             return Err(LlmError::ApiError(format!(
                 "OpenAI error {}: {}",
                 status, text
@@ -402,11 +398,7 @@ impl LlmProvider for OpenAiProvider {
         // Make a simple API call to check health
         let response = self
             .client
-<<<<<<< HEAD
-            .get(&format!("{}/models", self.base_url))
-=======
             .get(format!("{}/models", self.base_url))
->>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
             .header("Authorization", format!("Bearer {}", self.api_key))
             .send()
             .await?;

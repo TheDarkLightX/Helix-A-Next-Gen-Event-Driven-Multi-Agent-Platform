@@ -1,4 +1,4 @@
-// Copyright 2024 Helix Platform
+// Copyright 2026 DarkLightX
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -25,19 +25,11 @@
 pub mod agents;
 pub mod context;
 pub mod errors;
-<<<<<<< HEAD
 /// Utilities for parsing intent facets from natural language prompts.
 pub mod intent_lattice;
 pub mod parsers;
 pub mod prompts;
 pub mod providers;
-=======
-/// Utilities for parsing intent facets from natural language prompts.
-pub mod intent_lattice;
-pub mod parsers;
-pub mod prompts;
-pub mod providers;
->>>>>>> codex/create-app-to-translate-english-to-quint-o73u92
 
 pub use context::{AgentContext, ConversationContext};
 pub use errors::LlmError;

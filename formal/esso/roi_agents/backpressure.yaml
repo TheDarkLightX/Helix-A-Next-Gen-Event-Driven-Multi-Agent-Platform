@@ -1,0 +1,172 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "backpressure"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic queue-depth backpressure control."
+observables:
+  state_vars: ["queue_depth", "decision"]
+  effects: []
+types: []
+state_vars:
+  - id: "queue_depth"
+    role: "data"
+    type: { kind: "int", min: 0, max: 8 }
+  - id: "decision"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Accept", "Throttle", "Shed"]
+invariants:
+  - id: "AcceptRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Accept" }]
+        - op: "<="
+          args: [{ var: "queue_depth" }, { const: 2 }]
+  - id: "ThrottleLowerRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Throttle" }]
+        - op: ">="
+          args: [{ var: "queue_depth" }, { const: 3 }]
+  - id: "ThrottleUpperRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Throttle" }]
+        - op: "<="
+          args: [{ var: "queue_depth" }, { const: 4 }]
+  - id: "ShedRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Shed" }]
+        - op: ">="
+          args: [{ var: "queue_depth" }, { const: 5 }]
+init:
+  - var: "queue_depth"
+    expr: { const: 0 }
+  - var: "decision"
+    expr: { enum: "Accept" }
+actions:
+  - id: "enqueue_accept_0_1"
+    params: []
+    guard:
+      op: "<="
+      args: [{ var: "queue_depth" }, { const: 1 }]
+    updates:
+      - var: "queue_depth"
+        expr: { op: "+", args: [{ var: "queue_depth" }, { const: 1 }] }
+      - var: "decision"
+        expr: { enum: "Accept" }
+    effects: {}
+  - id: "enqueue_throttle_2_3"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: ">="
+          args: [{ var: "queue_depth" }, { const: 2 }]
+        - op: "<="
+          args: [{ var: "queue_depth" }, { const: 3 }]
+    updates:
+      - var: "queue_depth"
+        expr: { op: "+", args: [{ var: "queue_depth" }, { const: 1 }] }
+      - var: "decision"
+        expr: { enum: "Throttle" }
+    effects: {}
+  - id: "enqueue_shed_at_4"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "queue_depth" }, { const: 4 }]
+    updates:
+      - var: "queue_depth"
+        expr: { const: 5 }
+      - var: "decision"
+        expr: { enum: "Shed" }
+    effects: {}
+  - id: "enqueue_shed_5_7"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: ">="
+          args: [{ var: "queue_depth" }, { const: 5 }]
+        - op: "<"
+          args: [{ var: "queue_depth" }, { const: 8 }]
+    updates:
+      - var: "queue_depth"
+        expr: { op: "+", args: [{ var: "queue_depth" }, { const: 1 }] }
+      - var: "decision"
+        expr: { enum: "Shed" }
+    effects: {}
+  - id: "enqueue_shed_full"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "queue_depth" }, { const: 8 }]
+    updates:
+      - var: "queue_depth"
+        expr: { const: 8 }
+      - var: "decision"
+        expr: { enum: "Shed" }
+    effects: {}
+  - id: "dequeue_accept_1_3"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: ">="
+          args: [{ var: "queue_depth" }, { const: 1 }]
+        - op: "<="
+          args: [{ var: "queue_depth" }, { const: 3 }]
+    updates:
+      - var: "queue_depth"
+        expr: { op: "-", args: [{ var: "queue_depth" }, { const: 1 }] }
+      - var: "decision"
+        expr: { enum: "Accept" }
+    effects: {}
+  - id: "dequeue_throttle_4_5"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: ">="
+          args: [{ var: "queue_depth" }, { const: 4 }]
+        - op: "<="
+          args: [{ var: "queue_depth" }, { const: 5 }]
+    updates:
+      - var: "queue_depth"
+        expr: { op: "-", args: [{ var: "queue_depth" }, { const: 1 }] }
+      - var: "decision"
+        expr: { enum: "Throttle" }
+    effects: {}
+  - id: "dequeue_shed_6_8"
+    params: []
+    guard:
+      op: ">="
+      args: [{ var: "queue_depth" }, { const: 6 }]
+    updates:
+      - var: "queue_depth"
+        expr: { op: "-", args: [{ var: "queue_depth" }, { const: 1 }] }
+      - var: "decision"
+        expr: { enum: "Shed" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "queue_depth"
+      expr: { var: "queue_depth" }
+    - var: "decision"
+      expr: { var: "decision" }

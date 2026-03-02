@@ -1,0 +1,63 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "retry_budget"
+  created_by: "helix"
+  seed: 0
+  notes: "Bounded retry budget with explicit reset."
+observables:
+  state_vars: ["remaining"]
+  effects: []
+types: []
+state_vars:
+  - id: "remaining"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+invariants:
+  - id: "RemainingRange"
+    kind: "safety"
+    expr:
+      op: "and"
+      args:
+        - op: "<="
+          args: [{ const: 0 }, { var: "remaining" }]
+        - op: "<="
+          args: [{ var: "remaining" }, { const: 3 }]
+init:
+  - var: "remaining"
+    expr: { const: 3 }
+actions:
+  - id: "consume_retry"
+    params: []
+    guard:
+      op: ">"
+      args: [{ var: "remaining" }, { const: 0 }]
+    updates:
+      - var: "remaining"
+        expr: { op: "-", args: [{ var: "remaining" }, { const: 1 }] }
+    effects: {}
+  - id: "consume_exhausted"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "remaining" }, { const: 0 }]
+    updates:
+      - var: "remaining"
+        expr: { const: 0 }
+    effects: {}
+  - id: "reset_cycle"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "remaining" }, { const: 0 }]
+        - op: ">"
+          args: [{ var: "remaining" }, { const: 0 }]
+    updates:
+      - var: "remaining"
+        expr: { const: 3 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "remaining"
+      expr: { var: "remaining" }

@@ -1,0 +1,122 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "fee_bidding"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic fee quote and bump policy."
+observables:
+  state_vars: ["base_fee", "rejection_count", "quote_fee"]
+  effects: []
+types: []
+state_vars:
+  - id: "base_fee"
+    role: "data"
+    type: { kind: "int", min: 1, max: 8 }
+  - id: "rejection_count"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+  - id: "quote_fee"
+    role: "data"
+    type: { kind: "int", min: 1, max: 12 }
+invariants:
+  - id: "QuoteNotBelowBaseFee"
+    kind: "safety"
+    expr:
+      op: ">="
+      args:
+        - { var: "quote_fee" }
+        - { var: "base_fee" }
+init:
+  - var: "base_fee"
+    expr: { const: 3 }
+  - var: "rejection_count"
+    expr: { const: 0 }
+  - var: "quote_fee"
+    expr: { const: 4 }
+actions:
+  - id: "update_base_up"
+    params: []
+    guard:
+      op: "<"
+      args: [{ var: "base_fee" }, { const: 8 }]
+    updates:
+      - var: "base_fee"
+        expr: { op: "+", args: [{ var: "base_fee" }, { const: 1 }] }
+      - var: "rejection_count"
+        expr: { var: "rejection_count" }
+      - var: "quote_fee"
+        expr: { op: "+", args: [{ var: "base_fee" }, { const: 1 }] }
+    effects: {}
+  - id: "update_base_down"
+    params: []
+    guard:
+      op: ">"
+      args: [{ var: "base_fee" }, { const: 1 }]
+    updates:
+      - var: "base_fee"
+        expr: { op: "-", args: [{ var: "base_fee" }, { const: 1 }] }
+      - var: "rejection_count"
+        expr: { var: "rejection_count" }
+      - var: "quote_fee"
+        expr: { var: "quote_fee" }
+    effects: {}
+  - id: "reject_bump"
+    params: []
+    guard:
+      op: "<"
+      args: [{ var: "rejection_count" }, { const: 3 }]
+    updates:
+      - var: "base_fee"
+        expr: { var: "base_fee" }
+      - var: "rejection_count"
+        expr: { op: "+", args: [{ var: "rejection_count" }, { const: 1 }] }
+      - var: "quote_fee"
+        expr: { var: "quote_fee" }
+    effects: {}
+  - id: "confirm_reset"
+    params: []
+    guard:
+      op: ">="
+      args: [{ var: "rejection_count" }, { const: 0 }]
+    updates:
+      - var: "base_fee"
+        expr: { var: "base_fee" }
+      - var: "rejection_count"
+        expr: { const: 0 }
+      - var: "quote_fee"
+        expr: { var: "quote_fee" }
+    effects: {}
+  - id: "quote_normal"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "rejection_count" }, { const: 0 }]
+    updates:
+      - var: "base_fee"
+        expr: { var: "base_fee" }
+      - var: "rejection_count"
+        expr: { var: "rejection_count" }
+      - var: "quote_fee"
+        expr: { op: "+", args: [{ var: "base_fee" }, { const: 1 }] }
+    effects: {}
+  - id: "quote_bumped"
+    params: []
+    guard:
+      op: ">"
+      args: [{ var: "rejection_count" }, { const: 0 }]
+    updates:
+      - var: "base_fee"
+        expr: { var: "base_fee" }
+      - var: "rejection_count"
+        expr: { var: "rejection_count" }
+      - var: "quote_fee"
+        expr: { op: "+", args: [{ var: "base_fee" }, { const: 2 }] }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "base_fee"
+      expr: { var: "base_fee" }
+    - var: "rejection_count"
+      expr: { var: "rejection_count" }
+    - var: "quote_fee"
+      expr: { var: "quote_fee" }

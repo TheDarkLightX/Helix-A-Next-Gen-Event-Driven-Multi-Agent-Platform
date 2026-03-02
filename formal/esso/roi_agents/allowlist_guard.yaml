@@ -1,0 +1,158 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "allowlist_guard"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic allowlist policy with pause gate."
+observables:
+  state_vars: ["paused", "path", "decision"]
+  effects: []
+types: []
+state_vars:
+  - id: "paused"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "path"
+    role: "data"
+    type:
+      kind: "enum"
+      symbols: ["AllowedPath", "OtherPath"]
+  - id: "decision"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Allow", "DenyPaused", "DenyNotAllowed"]
+invariants:
+  - id: "DenyPausedRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "DenyPaused" }]
+        - op: "="
+          args: [{ var: "paused" }, { bool: true }]
+  - id: "AllowRequiresNotPaused"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Allow" }]
+        - op: "="
+          args: [{ var: "paused" }, { bool: false }]
+init:
+  - var: "paused"
+    expr: { bool: false }
+  - var: "path"
+    expr: { enum: "AllowedPath" }
+  - var: "decision"
+    expr: { enum: "Allow" }
+actions:
+  - id: "pause"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "paused" }, { bool: false }]
+    updates:
+      - var: "paused"
+        expr: { bool: true }
+      - var: "path"
+        expr: { var: "path" }
+      - var: "decision"
+        expr: { enum: "DenyPaused" }
+    effects: {}
+  - id: "resume"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "paused" }, { bool: true }]
+    updates:
+      - var: "paused"
+        expr: { bool: false }
+      - var: "path"
+        expr: { var: "path" }
+      - var: "decision"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "path" }, { enum: "AllowedPath" }]
+          then: { enum: "Allow" }
+          else: { enum: "DenyNotAllowed" }
+    effects: {}
+  - id: "switch_to_other_path"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "path" }, { enum: "AllowedPath" }]
+    updates:
+      - var: "paused"
+        expr: { var: "paused" }
+      - var: "path"
+        expr: { enum: "OtherPath" }
+      - var: "decision"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "paused" }, { bool: true }]
+          then: { enum: "DenyPaused" }
+          else: { enum: "DenyNotAllowed" }
+    effects: {}
+  - id: "switch_to_allowed_path"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "path" }, { enum: "OtherPath" }]
+    updates:
+      - var: "paused"
+        expr: { var: "paused" }
+      - var: "path"
+        expr: { enum: "AllowedPath" }
+      - var: "decision"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "paused" }, { bool: true }]
+          then: { enum: "DenyPaused" }
+          else: { enum: "Allow" }
+    effects: {}
+  - id: "evaluate"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "paused" }, { bool: true }]
+        - op: "="
+          args: [{ var: "paused" }, { bool: false }]
+    updates:
+      - var: "paused"
+        expr: { var: "paused" }
+      - var: "path"
+        expr: { var: "path" }
+      - var: "decision"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "paused" }, { bool: true }]
+          then: { enum: "DenyPaused" }
+          else:
+            op: "ite"
+            cond:
+              op: "="
+              args: [{ var: "path" }, { enum: "AllowedPath" }]
+            then: { enum: "Allow" }
+            else: { enum: "DenyNotAllowed" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "paused"
+      expr: { var: "paused" }
+    - var: "path"
+      expr: { var: "path" }
+    - var: "decision"
+      expr: { var: "decision" }

@@ -1,0 +1,212 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "sla_deadline"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic SLA deadline window (3 ticks)."
+observables:
+  state_vars: ["active", "remaining", "status"]
+  effects: []
+types: []
+state_vars:
+  - id: "active"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "remaining"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+  - id: "status"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Idle", "Pending", "Expired", "CompletedOnTime", "CompletedLate"]
+invariants:
+  - id: "IdleInactive"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Idle" }]
+        - op: "="
+          args: [{ var: "active" }, { bool: false }]
+  - id: "PendingRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Pending" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "active" }, { bool: true }]
+            - op: ">="
+              args: [{ var: "remaining" }, { const: 1 }]
+  - id: "ExpiredRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Expired" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "active" }, { bool: true }]
+            - op: "="
+              args: [{ var: "remaining" }, { const: 0 }]
+init:
+  - var: "active"
+    expr: { bool: false }
+  - var: "remaining"
+    expr: { const: 0 }
+  - var: "status"
+    expr: { enum: "Idle" }
+actions:
+  - id: "start_window"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "active" }, { bool: false }]
+    updates:
+      - var: "active"
+        expr: { bool: true }
+      - var: "remaining"
+        expr: { const: 3 }
+      - var: "status"
+        expr: { enum: "Pending" }
+    effects: {}
+  - id: "tick_3_to_2"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "active" }, { bool: true }]
+        - op: "="
+          args: [{ var: "remaining" }, { const: 3 }]
+    updates:
+      - var: "active"
+        expr: { bool: true }
+      - var: "remaining"
+        expr: { const: 2 }
+      - var: "status"
+        expr: { enum: "Pending" }
+    effects: {}
+  - id: "tick_2_to_1"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "active" }, { bool: true }]
+        - op: "="
+          args: [{ var: "remaining" }, { const: 2 }]
+    updates:
+      - var: "active"
+        expr: { bool: true }
+      - var: "remaining"
+        expr: { const: 1 }
+      - var: "status"
+        expr: { enum: "Pending" }
+    effects: {}
+  - id: "tick_1_to_expired"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "active" }, { bool: true }]
+        - op: "="
+          args: [{ var: "remaining" }, { const: 1 }]
+    updates:
+      - var: "active"
+        expr: { bool: true }
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "status"
+        expr: { enum: "Expired" }
+    effects: {}
+  - id: "tick_expired"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "active" }, { bool: true }]
+        - op: "="
+          args: [{ var: "remaining" }, { const: 0 }]
+    updates:
+      - var: "active"
+        expr: { bool: true }
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "status"
+        expr: { enum: "Expired" }
+    effects: {}
+  - id: "complete_on_time"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "active" }, { bool: true }]
+        - op: ">="
+          args: [{ var: "remaining" }, { const: 1 }]
+    updates:
+      - var: "active"
+        expr: { bool: false }
+      - var: "remaining"
+        expr: { var: "remaining" }
+      - var: "status"
+        expr: { enum: "CompletedOnTime" }
+    effects: {}
+  - id: "complete_late"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "active" }, { bool: true }]
+        - op: "="
+          args: [{ var: "remaining" }, { const: 0 }]
+    updates:
+      - var: "active"
+        expr: { bool: false }
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "status"
+        expr: { enum: "CompletedLate" }
+    effects: {}
+  - id: "reset"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Idle" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "Pending" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "Expired" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "CompletedOnTime" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "CompletedLate" }]
+    updates:
+      - var: "active"
+        expr: { bool: false }
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "status"
+        expr: { enum: "Idle" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "active"
+      expr: { var: "active" }
+    - var: "remaining"
+      expr: { var: "remaining" }
+    - var: "status"
+      expr: { var: "status" }

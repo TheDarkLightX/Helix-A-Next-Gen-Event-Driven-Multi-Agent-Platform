@@ -1,0 +1,96 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "nonce_manager"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic nonce reservation/confirmation/reconciliation."
+observables:
+  state_vars: ["next_nonce", "in_flight"]
+  effects: []
+types: []
+state_vars:
+  - id: "next_nonce"
+    role: "data"
+    type: { kind: "int", min: 0, max: 5 }
+  - id: "in_flight"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+invariants:
+  - id: "InFlightBoundedByNextNonce"
+    kind: "safety"
+    expr:
+      op: "<="
+      args:
+        - { var: "in_flight" }
+        - { var: "next_nonce" }
+init:
+  - var: "next_nonce"
+    expr: { const: 0 }
+  - var: "in_flight"
+    expr: { const: 0 }
+actions:
+  - id: "reserve_grow"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "<"
+          args: [{ var: "next_nonce" }, { const: 5 }]
+        - op: "<"
+          args: [{ var: "in_flight" }, { const: 3 }]
+    updates:
+      - var: "next_nonce"
+        expr: { op: "+", args: [{ var: "next_nonce" }, { const: 1 }] }
+      - var: "in_flight"
+        expr: { op: "+", args: [{ var: "in_flight" }, { const: 1 }] }
+    effects: {}
+  - id: "reserve_full"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "in_flight" }, { const: 3 }]
+    updates:
+      - var: "next_nonce"
+        expr: { var: "next_nonce" }
+      - var: "in_flight"
+        expr: { var: "in_flight" }
+    effects: {}
+  - id: "confirm"
+    params: []
+    guard:
+      op: ">"
+      args: [{ var: "in_flight" }, { const: 0 }]
+    updates:
+      - var: "next_nonce"
+        expr: { var: "next_nonce" }
+      - var: "in_flight"
+        expr: { op: "-", args: [{ var: "in_flight" }, { const: 1 }] }
+    effects: {}
+  - id: "reconcile_forward"
+    params: []
+    guard:
+      op: "<"
+      args: [{ var: "next_nonce" }, { const: 5 }]
+    updates:
+      - var: "next_nonce"
+        expr: { op: "+", args: [{ var: "next_nonce" }, { const: 1 }] }
+      - var: "in_flight"
+        expr: { var: "in_flight" }
+    effects: {}
+  - id: "reconcile_clear_inflight"
+    params: []
+    guard:
+      op: ">"
+      args: [{ var: "in_flight" }, { const: 0 }]
+    updates:
+      - var: "next_nonce"
+        expr: { var: "next_nonce" }
+      - var: "in_flight"
+        expr: { const: 0 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "next_nonce"
+      expr: { var: "next_nonce" }
+    - var: "in_flight"
+      expr: { var: "in_flight" }

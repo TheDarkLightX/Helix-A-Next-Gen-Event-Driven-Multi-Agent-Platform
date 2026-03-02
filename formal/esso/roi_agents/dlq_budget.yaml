@@ -1,0 +1,98 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "dlq_budget"
+  created_by: "helix"
+  seed: 0
+  notes: "Consecutive failure budget to deterministic DLQ route."
+observables:
+  state_vars: ["failures", "route"]
+  effects: []
+types: []
+state_vars:
+  - id: "failures"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+  - id: "route"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Continue", "RouteToDlq"]
+invariants:
+  - id: "ContinueRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "route" }, { enum: "Continue" }]
+        - op: "<="
+          args: [{ var: "failures" }, { const: 2 }]
+  - id: "RouteRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "route" }, { enum: "RouteToDlq" }]
+        - op: "="
+          args: [{ var: "failures" }, { const: 3 }]
+init:
+  - var: "failures"
+    expr: { const: 0 }
+  - var: "route"
+    expr: { enum: "Continue" }
+actions:
+  - id: "failure_0_to_1"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "failures" }, { const: 0 }]
+    updates:
+      - var: "failures"
+        expr: { const: 1 }
+      - var: "route"
+        expr: { enum: "Continue" }
+    effects: {}
+  - id: "failure_1_to_2"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "failures" }, { const: 1 }]
+    updates:
+      - var: "failures"
+        expr: { const: 2 }
+      - var: "route"
+        expr: { enum: "Continue" }
+    effects: {}
+  - id: "failure_route_to_dlq"
+    params: []
+    guard:
+      op: ">="
+      args: [{ var: "failures" }, { const: 2 }]
+    updates:
+      - var: "failures"
+        expr: { const: 3 }
+      - var: "route"
+        expr: { enum: "RouteToDlq" }
+    effects: {}
+  - id: "success_or_reset"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "route" }, { enum: "Continue" }]
+        - op: "="
+          args: [{ var: "route" }, { enum: "RouteToDlq" }]
+    updates:
+      - var: "failures"
+        expr: { const: 0 }
+      - var: "route"
+        expr: { enum: "Continue" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "failures"
+      expr: { var: "failures" }
+    - var: "route"
+      expr: { var: "route" }

@@ -1,0 +1,160 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "approval_gate"
+  created_by: "helix"
+  seed: 0
+  notes: "2-of-3 deterministic quorum gate."
+observables:
+  state_vars: ["approvals", "rejects", "decision"]
+  effects: []
+types: []
+state_vars:
+  - id: "approvals"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+  - id: "rejects"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+  - id: "decision"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Pending", "Approved", "Rejected"]
+invariants:
+  - id: "VoteBound"
+    kind: "safety"
+    expr:
+      op: "<="
+      args:
+        - op: "+"
+          args: [{ var: "approvals" }, { var: "rejects" }]
+        - { const: 3 }
+  - id: "ApprovedRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Approved" }]
+        - op: ">="
+          args: [{ var: "approvals" }, { const: 2 }]
+  - id: "RejectedRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Rejected" }]
+        - op: ">="
+          args: [{ var: "rejects" }, { const: 2 }]
+  - id: "PendingRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Pending" }]
+        - op: "and"
+          args:
+            - op: "<"
+              args: [{ var: "approvals" }, { const: 2 }]
+            - op: "<"
+              args: [{ var: "rejects" }, { const: 2 }]
+init:
+  - var: "approvals"
+    expr: { const: 0 }
+  - var: "rejects"
+    expr: { const: 0 }
+  - var: "decision"
+    expr: { enum: "Pending" }
+actions:
+  - id: "approve_to_pending"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Pending" }]
+        - op: "="
+          args: [{ var: "approvals" }, { const: 0 }]
+    updates:
+      - var: "approvals"
+        expr: { const: 1 }
+      - var: "rejects"
+        expr: { var: "rejects" }
+      - var: "decision"
+        expr: { enum: "Pending" }
+    effects: {}
+  - id: "approve_to_approved"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Pending" }]
+        - op: "="
+          args: [{ var: "approvals" }, { const: 1 }]
+    updates:
+      - var: "approvals"
+        expr: { const: 2 }
+      - var: "rejects"
+        expr: { var: "rejects" }
+      - var: "decision"
+        expr: { enum: "Approved" }
+    effects: {}
+  - id: "reject_to_rejected"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Pending" }]
+        - op: ">="
+          args: [{ var: "rejects" }, { const: 0 }]
+    updates:
+      - var: "approvals"
+        expr: { var: "approvals" }
+      - var: "rejects"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "rejects" }, { const: 0 }]
+          then: { const: 1 }
+          else: { const: 2 }
+      - var: "decision"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "rejects" }, { const: 0 }]
+          then: { enum: "Pending" }
+          else: { enum: "Rejected" }
+    effects: {}
+  - id: "reset"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Approved" }]
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Rejected" }]
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Pending" }]
+    updates:
+      - var: "approvals"
+        expr: { const: 0 }
+      - var: "rejects"
+        expr: { const: 0 }
+      - var: "decision"
+        expr: { enum: "Pending" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "approvals"
+      expr: { var: "approvals" }
+    - var: "rejects"
+      expr: { var: "rejects" }
+    - var: "decision"
+      expr: { var: "decision" }

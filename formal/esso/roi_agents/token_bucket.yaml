@@ -1,0 +1,86 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "token_bucket"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic token-bucket limiter with bounded refill."
+observables:
+  state_vars: ["tokens"]
+  effects: []
+types: []
+state_vars:
+  - id: "tokens"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+invariants:
+  - id: "TokenRange"
+    kind: "safety"
+    expr:
+      op: "and"
+      args:
+        - op: "<="
+          args: [{ const: 0 }, { var: "tokens" }]
+        - op: "<="
+          args: [{ var: "tokens" }, { const: 3 }]
+init:
+  - var: "tokens"
+    expr: { const: 3 }
+actions:
+  - id: "tick_refill"
+    params: []
+    guard:
+      op: "<"
+      args: [{ var: "tokens" }, { const: 3 }]
+    updates:
+      - var: "tokens"
+        expr: { op: "+", args: [{ var: "tokens" }, { const: 1 }] }
+    effects: {}
+  - id: "tick_noop"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "tokens" }, { const: 3 }]
+    updates:
+      - var: "tokens"
+        expr: { const: 3 }
+    effects: {}
+  - id: "request_cost_1_allow"
+    params: []
+    guard:
+      op: ">="
+      args: [{ var: "tokens" }, { const: 1 }]
+    updates:
+      - var: "tokens"
+        expr: { op: "-", args: [{ var: "tokens" }, { const: 1 }] }
+    effects: {}
+  - id: "request_cost_1_deny"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "tokens" }, { const: 0 }]
+    updates:
+      - var: "tokens"
+        expr: { const: 0 }
+    effects: {}
+  - id: "request_cost_2_allow"
+    params: []
+    guard:
+      op: ">="
+      args: [{ var: "tokens" }, { const: 2 }]
+    updates:
+      - var: "tokens"
+        expr: { op: "-", args: [{ var: "tokens" }, { const: 2 }] }
+    effects: {}
+  - id: "request_cost_2_deny"
+    params: []
+    guard:
+      op: "<"
+      args: [{ var: "tokens" }, { const: 2 }]
+    updates:
+      - var: "tokens"
+        expr: { var: "tokens" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "tokens"
+      expr: { var: "tokens" }

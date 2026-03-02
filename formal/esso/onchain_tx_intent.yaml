@@ -1,0 +1,173 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "onchain_tx_intent"
+  created_by: "helix"
+  seed: 0
+  notes: "Abstract transaction intent lifecycle; side effects handled by imperative shell."
+observables:
+  state_vars: ["phase", "poll_round"]
+  effects: []
+types: []
+state_vars:
+  - id: "phase"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Idle", "Submitting", "PendingReceipt", "Confirmed", "Reverted", "Failed"]
+  - id: "poll_round"
+    role: "data"
+    type: { kind: "int", min: 0, max: 2 }
+invariants:
+  - id: "IdleHasZeroPollRound"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Idle" }]
+        - op: "="
+          args: [{ var: "poll_round" }, { const: 0 }]
+  - id: "TerminalHasBoundedPollRound"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "or"
+          args:
+            - op: "="
+              args: [{ var: "phase" }, { enum: "Confirmed" }]
+            - op: "="
+              args: [{ var: "phase" }, { enum: "Reverted" }]
+            - op: "="
+              args: [{ var: "phase" }, { enum: "Failed" }]
+        - op: "<="
+          args: [{ var: "poll_round" }, { const: 2 }]
+init:
+  - var: "phase"
+    expr: { enum: "Idle" }
+  - var: "poll_round"
+    expr: { const: 0 }
+actions:
+  - id: "start"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Idle" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Submitting" }
+      - var: "poll_round"
+        expr: { const: 0 }
+    effects: {}
+  - id: "submit_accepted"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Submitting" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "PendingReceipt" }
+      - var: "poll_round"
+        expr: { const: 0 }
+    effects: {}
+  - id: "submit_rejected"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Submitting" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Failed" }
+      - var: "poll_round"
+        expr: { var: "poll_round" }
+    effects: {}
+  - id: "receipt_pending_0"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "PendingReceipt" }]
+        - op: "="
+          args: [{ var: "poll_round" }, { const: 0 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "PendingReceipt" }
+      - var: "poll_round"
+        expr: { const: 1 }
+    effects: {}
+  - id: "receipt_pending_1"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "PendingReceipt" }]
+        - op: "="
+          args: [{ var: "poll_round" }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "PendingReceipt" }
+      - var: "poll_round"
+        expr: { const: 2 }
+    effects: {}
+  - id: "receipt_timeout"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "PendingReceipt" }]
+        - op: "="
+          args: [{ var: "poll_round" }, { const: 2 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Failed" }
+      - var: "poll_round"
+        expr: { const: 2 }
+    effects: {}
+  - id: "receipt_success"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "PendingReceipt" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Confirmed" }
+      - var: "poll_round"
+        expr: { var: "poll_round" }
+    effects: {}
+  - id: "receipt_revert"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "PendingReceipt" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Reverted" }
+      - var: "poll_round"
+        expr: { var: "poll_round" }
+    effects: {}
+  - id: "reset"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Confirmed" }]
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Reverted" }]
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Failed" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Idle" }
+      - var: "poll_round"
+        expr: { const: 0 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "phase"
+      expr: { var: "phase" }
+    - var: "poll_round"
+      expr: { var: "poll_round" }

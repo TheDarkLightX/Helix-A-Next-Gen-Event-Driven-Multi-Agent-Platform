@@ -1,67 +1,152 @@
-# Project Codename: Helix
+# Helix Platform 1.0
 
-Self-hosted personal event-automation (like IFTTT, but smarter).
+Helix is a correctness-first, event-driven multi-agent platform with:
 
-See `docs/specification.md` for detailed requirements.
+- Formal functional core (pure deterministic state machines)
+- Imperative shell (all side effects at explicit boundaries)
+- Operator UI control plane
+- LLM-operable autopilot API with fail-closed guardrails
 
-## Quick Start
+## What Ships In 1.0
 
-*(Instructions to be added)*
+- Deterministic policy engine with replayable simulations
+- Deterministic high-ROI agent catalog
+- On-chain EVM transaction shell (`send_raw` + receipt polling + dry-run)
+- Autopilot guard for LLM-driven operation (`off` / `assist` / `auto`)
+
+## Repository Layout
+
+- `crates/helix-core`: deterministic kernels and policy/autopilot guard logic
+- `crates/helix-api`: HTTP API and imperative adapters (onchain JSON-RPC)
+- `crates/helix-runtime`: runtime shell and messaging
+- `ui/`: React + TypeScript control plane
+- `formal/esso/`: formal model specs for core agents
+- `scripts/`: setup, run, and verification scripts
+
+## Fast Setup
 
 ```bash
-# Build the core library
-cargo build --workspace
-
-# Run tests
-cargo test --workspace
+./scripts/setup_local.sh
+./scripts/run_local.sh
 ```
+
+Endpoints after startup:
+
+- API: `http://127.0.0.1:3000`
+- UI: `http://127.0.0.1:5173`
 
 ## Quint Translator
 
-The `helix-llm` crate includes a small CLI tool that leverages a language model to translate plain English descriptions into [Quint](https://quint-lang.org) specifications.
-
-Set an API key for your preferred provider and run. The translator checks for `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or a generic `LLM_API_KEY` (with optional `LLM_BASE_URL`). The `--model`, `--temperature`, `--output`, and `--base-url` flags offer additional control:
-
-```bash
-# Using OpenRouter
-OPENROUTER_API_KEY=your_key_here \
-cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
-
-# Using OpenAI
-OPENAI_API_KEY=your_key_here \
-cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
-=======
-# Using a custom OpenAI-compatible endpoint
-LLM_API_KEY=your_key_here LLM_BASE_URL=https://my-llm.example/v1 \
-cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
-```
-
-The model will respond with a Quint specification based on the provided prompt.
-
-Before issuing a request to the model, the translator performs a lightweight **intent-facet** analysis to highlight potential ambiguities. If aspects like temporal scope or quantifier are missing, clarifying questions are printed to help refine the prompt.
-=======
-Before issuing a request to the model, the translator performs a lightweight **intent-facet** analysis to highlight potential ambiguities. If aspects like temporal scope, quantifier, or guard keywords (e.g. `if`, `when`, `unless`, `only if`) are missing, clarifying questions are printed to help refine the prompt.
-
-You can customize the model or write output to a file:
+`helix-llm` includes a CLI translator from plain English to [Quint](https://quint-lang.org) specs.
 
 ```bash
 OPENAI_API_KEY=your_key_here \
-cargo run -p helix-llm --bin quint_translator --model gpt-4o --temperature 0.1 --output counter.qnt -- "describe a simple counter that increments"
+cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
 ```
 
-You can also read a prompt from a file instead of the command line:
+You can also:
+
+- Set `--model`, `--temperature`, `--output`, and `--base-url`
+- Use `--prompt-file spec.txt`
+- Use `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `LLM_API_KEY`
+
+The translator runs a lightweight intent-facet pass and surfaces clarifying questions when prompts are ambiguous.
+
+## Core API
+
+### Health
+- `GET /health`
+
+### Policy
+- `GET /api/v1/policy/config`
+- `PUT /api/v1/policy/config`
+- `POST /api/v1/policy/simulate`
+
+### Agent Catalog
+- `GET /api/v1/agents`
+
+### Onchain (EVM)
+- `POST /api/v1/onchain/send_raw`
+- `POST /api/v1/onchain/receipt`
+
+### Autopilot (LLM Operable)
+- `GET /api/v1/autopilot/status`
+- `PUT /api/v1/autopilot/config`
+- `POST /api/v1/autopilot/execute`
+
+## UI Routes
+
+- `/` Dashboard
+- `/policies` Policy workbench
+- `/agents` Deterministic agent catalog
+- `/onchain` Onchain shell
+- `/autopilot` Autopilot control panel
+
+## Autopilot Model
+
+Autopilot is designed so an LLM can operate Helix the way a human operator would, with deterministic constraints:
+
+- `off`: deny autonomous actions
+- `assist`: require `confirmed_by_human=true` for every action
+- `auto`: permit autonomous execution within guardrails
+
+Guardrails include:
+
+- Max policy command batch size
+- On-chain enable/disable switch
+- Optional mandatory `dry_run` for on-chain actions
+- Denial reason codes for deterministic auditing
+
+Environment controls (see `.env.example`):
+
+- `HELIX_AUTOPILOT_MODE`
+- `HELIX_AUTOPILOT_ALLOW_ONCHAIN`
+- `HELIX_AUTOPILOT_REQUIRE_DRY_RUN`
+- `HELIX_AUTOPILOT_MAX_POLICY_COMMANDS`
+
+## Deterministic Agent Set (1.0)
+
+- Dedup window
+- Token bucket rate limiter
+- Circuit breaker
+- Retry budget
+- Approval gate
+- Backpressure controller
+- SLA deadline controller
+- DLQ failure budget
+- Nonce manager
+- Fee bidding
+- Finality/reorg guard
+- Allowlist policy guard
+- Onchain transaction intent lifecycle
+
+## Verification
+
+### Rust tests
 
 ```bash
-OPENAI_API_KEY=your_key_here \
-cargo run -p helix-llm --bin quint_translator --prompt-file spec.txt
+cargo test --manifest-path crates/helix-core/Cargo.toml --lib deterministic_agents
+cargo test --manifest-path crates/helix-core/Cargo.toml --lib deterministic_policy
+cargo test --manifest-path crates/helix-core/Cargo.toml --lib onchain_intent
+cargo test --manifest-path crates/helix-api/Cargo.toml
+cd ui && npm run build
 ```
 
-=======
-If no API key is detected the translator now exits with a non-zero status so automated scripts can surface configuration issues.
-## Project Structure
+### Formal checks
 
-  - `/helix-core`: The main runtime logic, agent traits, event definitions.
+```bash
+./scripts/verify_esso_core.sh
+./scripts/verify_esso_roi_agents.sh
+```
 
-## Contributing
+If ESSO is not in your default Python environment, set:
 
-*(Contribution guidelines TBD)*
+```bash
+export HELIX_ESSO_PYTHONPATH=/path/to/private/esso
+```
+
+## Privacy/Sanitization Notes
+
+- ESSO runtime/tooling integration is treated as private operational tooling.
+- Private/local verification artifacts are kept out of git (`/external`, `/runs`, local env files).
+- Public docs describe verification entrypoints, not private internal infrastructure.

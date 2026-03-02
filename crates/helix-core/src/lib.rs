@@ -1,4 +1,4 @@
-// Copyright 2024 Helix Platform
+// Copyright 2026 DarkLightX
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,10 +18,16 @@
 
 // Core modules
 pub mod agent;
+pub mod autopilot_guard;
 /// Defines the Credential struct for secure storage.
 pub mod credential;
+pub mod deterministic_agent_catalog;
+pub mod deterministic_agents;
+pub mod deterministic_policy;
 pub mod errors;
 pub mod event;
+pub mod execution_kernel;
+pub mod onchain_intent;
 pub mod policy;
 pub mod profile;
 pub mod recipe;

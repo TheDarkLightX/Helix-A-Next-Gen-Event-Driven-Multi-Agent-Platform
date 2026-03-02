@@ -1,0 +1,100 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "dedup_window"
+  created_by: "helix"
+  seed: 0
+  notes: "Abstract dedup window FSM with deterministic expiry."
+observables:
+  state_vars: ["seen", "age"]
+  effects: []
+types: []
+state_vars:
+  - id: "seen"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "age"
+    role: "data"
+    type: { kind: "int", min: 0, max: 2 }
+invariants:
+  - id: "NoSeenZeroAge"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "seen" }, { bool: false }]
+        - op: "="
+          args: [{ var: "age" }, { const: 0 }]
+  - id: "SeenPositiveAgeOrZero"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "seen" }, { bool: true }]
+        - op: "<="
+          args: [{ var: "age" }, { const: 2 }]
+init:
+  - var: "seen"
+    expr: { bool: false }
+  - var: "age"
+    expr: { const: 0 }
+actions:
+  - id: "observe_new"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "seen" }, { bool: false }]
+    updates:
+      - var: "seen"
+        expr: { bool: true }
+      - var: "age"
+        expr: { const: 0 }
+    effects: {}
+  - id: "observe_duplicate"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "seen" }, { bool: true }]
+    updates:
+      - var: "seen"
+        expr: { bool: true }
+      - var: "age"
+        expr: { var: "age" }
+    effects: {}
+  - id: "tick_grow"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "seen" }, { bool: true }]
+        - op: "<"
+          args: [{ var: "age" }, { const: 2 }]
+    updates:
+      - var: "seen"
+        expr: { bool: true }
+      - var: "age"
+        expr: { op: "+", args: [{ var: "age" }, { const: 1 }] }
+    effects: {}
+  - id: "tick_expire"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "seen" }, { bool: true }]
+        - op: "="
+          args: [{ var: "age" }, { const: 2 }]
+    updates:
+      - var: "seen"
+        expr: { bool: false }
+      - var: "age"
+        expr: { const: 0 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "seen"
+      expr: { var: "seen" }
+    - var: "age"
+      expr: { var: "age" }

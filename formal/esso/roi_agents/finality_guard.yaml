@@ -1,0 +1,128 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "finality_guard"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic confirmation-depth finality and reorg guard."
+observables:
+  state_vars: ["phase", "observed_depth"]
+  effects: []
+types: []
+state_vars:
+  - id: "phase"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Pending", "Finalized", "ReorgDetected"]
+  - id: "observed_depth"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+invariants:
+  - id: "FinalizedDepthRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Finalized" }]
+        - op: ">="
+          args: [{ var: "observed_depth" }, { const: 2 }]
+  - id: "PendingDepthRule"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Pending" }]
+        - op: "<="
+          args: [{ var: "observed_depth" }, { const: 1 }]
+init:
+  - var: "phase"
+    expr: { enum: "Pending" }
+  - var: "observed_depth"
+    expr: { const: 0 }
+actions:
+  - id: "observe_depth_0_to_1"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Pending" }]
+        - op: "="
+          args: [{ var: "observed_depth" }, { const: 0 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Pending" }
+      - var: "observed_depth"
+        expr: { const: 1 }
+    effects: {}
+  - id: "observe_depth_1_to_finalized"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Pending" }]
+        - op: "="
+          args: [{ var: "observed_depth" }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Finalized" }
+      - var: "observed_depth"
+        expr: { const: 2 }
+    effects: {}
+  - id: "observe_depth_finalized"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Finalized" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Finalized" }
+      - var: "observed_depth"
+        expr: { const: 3 }
+    effects: {}
+  - id: "mark_reorg_pending_or_finalized"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Pending" }]
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Finalized" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "ReorgDetected" }
+      - var: "observed_depth"
+        expr: { const: 0 }
+    effects: {}
+  - id: "reset_from_reorg"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "ReorgDetected" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Pending" }
+      - var: "observed_depth"
+        expr: { const: 0 }
+    effects: {}
+  - id: "reset_from_finalized"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Finalized" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Pending" }
+      - var: "observed_depth"
+        expr: { const: 0 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "phase"
+      expr: { var: "phase" }
+    - var: "observed_depth"
+      expr: { var: "observed_depth" }

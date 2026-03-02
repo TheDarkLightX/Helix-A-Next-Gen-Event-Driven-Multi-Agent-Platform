@@ -1,0 +1,172 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "helix_execution_kernel"
+  created_by: "helix"
+  seed: 0
+  notes: "Finite execution kernel for recipe lifecycle: start, progress, fail, reset."
+observables:
+  state_vars: ["phase", "remaining", "failed"]
+  effects: []
+types: []
+state_vars:
+  - id: "phase"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Idle", "Running", "Succeeded", "Failed"]
+  - id: "remaining"
+    role: "data"
+    type: { kind: "int", min: 0, max: 16 }
+  - id: "failed"
+    role: "data"
+    type: { kind: "bool" }
+invariants:
+  - id: "IdleInvariant"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Idle" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "remaining" }, { const: 0 }]
+            - op: "="
+              args: [{ var: "failed" }, { bool: false }]
+  - id: "RunningInvariant"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Running" }]
+        - op: "and"
+          args:
+            - op: ">"
+              args: [{ var: "remaining" }, { const: 0 }]
+            - op: "="
+              args: [{ var: "failed" }, { bool: false }]
+  - id: "SucceededInvariant"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Succeeded" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "remaining" }, { const: 0 }]
+            - op: "="
+              args: [{ var: "failed" }, { bool: false }]
+  - id: "FailedInvariant"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Failed" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "remaining" }, { const: 0 }]
+            - op: "="
+              args: [{ var: "failed" }, { bool: true }]
+init:
+  - var: "phase"
+    expr: { enum: "Idle" }
+  - var: "remaining"
+    expr: { const: 0 }
+  - var: "failed"
+    expr: { bool: false }
+actions:
+  - id: "start"
+    params:
+      - id: "count"
+        type: { kind: "int", min: 1, max: 16 }
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Idle" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Running" }
+      - var: "remaining"
+        expr: { param: "count" }
+      - var: "failed"
+        expr: { bool: false }
+    effects: {}
+  - id: "agent_ok_progress"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Running" }]
+        - op: ">"
+          args: [{ var: "remaining" }, { const: 1 }]
+    updates:
+      - var: "remaining"
+        expr:
+          op: "-"
+          args: [{ var: "remaining" }, { const: 1 }]
+      - var: "phase"
+        expr: { enum: "Running" }
+      - var: "failed"
+        expr: { bool: false }
+    effects: {}
+  - id: "agent_ok_finish"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Running" }]
+        - op: "="
+          args: [{ var: "remaining" }, { const: 1 }]
+    updates:
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "phase"
+        expr: { enum: "Succeeded" }
+      - var: "failed"
+        expr: { bool: false }
+    effects: {}
+  - id: "agent_fail"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Running" }]
+    updates:
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "phase"
+        expr: { enum: "Failed" }
+      - var: "failed"
+        expr: { bool: true }
+    effects: {}
+  - id: "reset"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Succeeded" }]
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Failed" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Idle" }
+      - var: "remaining"
+        expr: { const: 0 }
+      - var: "failed"
+        expr: { bool: false }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "phase"
+      expr: { var: "phase" }
+    - var: "remaining"
+      expr: { var: "remaining" }
+    - var: "failed"
+      expr: { var: "failed" }

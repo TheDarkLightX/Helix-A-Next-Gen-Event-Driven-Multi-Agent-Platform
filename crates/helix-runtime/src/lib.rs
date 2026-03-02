@@ -1,4 +1,4 @@
-// Copyright 2024 Helix Platform
+// Copyright 2026 DarkLightX
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -34,4 +34,5 @@ pub use messaging::{NatsConfig, NatsClient, StreamConfig, MessagingError};
 
 pub mod agent_runner;
 pub mod agent_registry; // Added agent_registry module
+pub mod imperative_shell;
 pub mod messaging;

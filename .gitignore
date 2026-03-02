@@ -43,3 +43,13 @@ PROJECT_TODO_LIST.md
 progress.md
 troubleshooting.md
 COMPREHENSIVE_*_PLAN.md
+
+# External repositories and vendor clones
+/external/
+
+# Local verification artifacts
+/runs/
+
+# Frontend dependencies/build artifacts
+/ui/node_modules/
+/ui/dist/

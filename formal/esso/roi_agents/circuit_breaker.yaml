@@ -1,0 +1,164 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "circuit_breaker"
+  created_by: "helix"
+  seed: 0
+  notes: "Closed/Open/HalfOpen breaker with deterministic cooldown."
+observables:
+  state_vars: ["phase", "fail_count", "cooldown"]
+  effects: []
+types: []
+state_vars:
+  - id: "phase"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Closed", "Open", "HalfOpen"]
+  - id: "fail_count"
+    role: "data"
+    type: { kind: "int", min: 0, max: 2 }
+  - id: "cooldown"
+    role: "data"
+    type: { kind: "int", min: 0, max: 2 }
+invariants:
+  - id: "OpenHasCooldown"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Open" }]
+        - op: ">"
+          args: [{ var: "cooldown" }, { const: 0 }]
+  - id: "ClosedZeroCooldown"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Closed" }]
+        - op: "="
+          args: [{ var: "cooldown" }, { const: 0 }]
+init:
+  - var: "phase"
+    expr: { enum: "Closed" }
+  - var: "fail_count"
+    expr: { const: 0 }
+  - var: "cooldown"
+    expr: { const: 0 }
+actions:
+  - id: "closed_success"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "Closed" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Closed" }
+      - var: "fail_count"
+        expr: { const: 0 }
+      - var: "cooldown"
+        expr: { const: 0 }
+    effects: {}
+  - id: "closed_failure_1"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Closed" }]
+        - op: "="
+          args: [{ var: "fail_count" }, { const: 0 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Closed" }
+      - var: "fail_count"
+        expr: { const: 1 }
+      - var: "cooldown"
+        expr: { const: 0 }
+    effects: {}
+  - id: "closed_failure_open"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Closed" }]
+        - op: "="
+          args: [{ var: "fail_count" }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Open" }
+      - var: "fail_count"
+        expr: { const: 2 }
+      - var: "cooldown"
+        expr: { const: 2 }
+    effects: {}
+  - id: "open_tick_down"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Open" }]
+        - op: ">"
+          args: [{ var: "cooldown" }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Open" }
+      - var: "fail_count"
+        expr: { var: "fail_count" }
+      - var: "cooldown"
+        expr: { op: "-", args: [{ var: "cooldown" }, { const: 1 }] }
+    effects: {}
+  - id: "open_tick_to_half_open"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "phase" }, { enum: "Open" }]
+        - op: "="
+          args: [{ var: "cooldown" }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { enum: "HalfOpen" }
+      - var: "fail_count"
+        expr: { var: "fail_count" }
+      - var: "cooldown"
+        expr: { const: 0 }
+    effects: {}
+  - id: "half_open_success"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "HalfOpen" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Closed" }
+      - var: "fail_count"
+        expr: { const: 0 }
+      - var: "cooldown"
+        expr: { const: 0 }
+    effects: {}
+  - id: "half_open_failure"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "phase" }, { enum: "HalfOpen" }]
+    updates:
+      - var: "phase"
+        expr: { enum: "Open" }
+      - var: "fail_count"
+        expr: { const: 2 }
+      - var: "cooldown"
+        expr: { const: 2 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "phase"
+      expr: { var: "phase" }
+    - var: "fail_count"
+      expr: { var: "fail_count" }
+    - var: "cooldown"
+      expr: { var: "cooldown" }

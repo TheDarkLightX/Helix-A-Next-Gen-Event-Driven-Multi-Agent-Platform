@@ -109,19 +109,16 @@ Environment controls (see `.env.example`):
 
 ## Deterministic Agent Set (1.0)
 
-- Dedup window
-- Token bucket rate limiter
-- Circuit breaker
-- Retry budget
-- Approval gate
-- Backpressure controller
-- SLA deadline controller
-- DLQ failure budget
-- Nonce manager
-- Fee bidding
-- Finality/reorg guard
-- Allowlist policy guard
-- Onchain transaction intent lifecycle
+Helix now ships **73 deterministic agent classes**:
+
+- 13 foundational high-ROI kernels (dedup, token bucket, circuit breaker, retry budget, approval gate, backpressure, SLA, DLQ, nonce, fee bidding, finality/reorg, allowlist, onchain intent).
+- 60 expanded guard classes spanning ingress integrity, SLO/incident control, tenant/compliance boundaries, payment/risk controls, and onchain execution safety.
+
+Query the full live catalog:
+
+```bash
+curl -s http://127.0.0.1:3000/api/v1/agents | jq '.agents | length'
+```
 
 ## Template-Driven Setup
 

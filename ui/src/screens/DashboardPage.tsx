@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { fetchAgentCatalog } from "../lib/api";
+
 const lanes = [
   { name: "Formal Kernel", status: "Healthy", note: "Finite-state transitions + invariants" },
   { name: "Imperative Shell", status: "Healthy", note: "Effects isolated behind execution port" },
@@ -76,7 +79,19 @@ const roiAgents = [
 ];
 
 export function DashboardPage() {
+  const [agentClassCount, setAgentClassCount] = useState<number>(roiAgents.length);
   const healthyLaneCount = lanes.filter((lane) => lane.status === "Healthy").length;
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const catalog = await fetchAgentCatalog();
+        setAgentClassCount(catalog.length);
+      } catch {
+        setAgentClassCount(roiAgents.length);
+      }
+    })();
+  }, []);
 
   return (
     <section className="dashboard-grid">
@@ -101,8 +116,8 @@ export function DashboardPage() {
             <p className="metric-value">{controls.length}</p>
           </div>
           <div className="metric-card">
-            <p className="metric-label">ROI Agents</p>
-            <p className="metric-value">{roiAgents.length}</p>
+            <p className="metric-label">Agent Classes</p>
+            <p className="metric-value">{agentClassCount}</p>
           </div>
         </div>
       </article>

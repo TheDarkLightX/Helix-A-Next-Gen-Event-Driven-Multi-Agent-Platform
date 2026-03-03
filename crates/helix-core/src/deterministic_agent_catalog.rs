@@ -13,6 +13,7 @@
 
 //! Catalog of deterministic high-ROI agents shipped with Helix.
 
+use crate::deterministic_agents_expanded::EXPANDED_AGENT_DESCRIPTORS;
 use serde::{Deserialize, Serialize};
 
 /// Metadata for one deterministic agent kernel.
@@ -32,12 +33,13 @@ pub struct DeterministicAgentSpec {
 
 /// Returns the high-ROI deterministic agent catalog.
 pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
-    vec![
+    let mut catalog = vec![
         DeterministicAgentSpec {
             id: "dedup_window".to_string(),
             name: "Dedup Window Agent".to_string(),
             roi_rationale: "Stops duplicate event storms before downstream cost.".to_string(),
-            kernel_module: "crates/helix-core/src/deterministic_agents.rs::DedupMachine".to_string(),
+            kernel_module: "crates/helix-core/src/deterministic_agents.rs::DedupMachine"
+                .to_string(),
             formal_model: "formal/models/roi_agents/dedup_window.yaml".to_string(),
         },
         DeterministicAgentSpec {
@@ -93,8 +95,8 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
         DeterministicAgentSpec {
             id: "dlq_budget".to_string(),
             name: "DLQ Budget Agent".to_string(),
-            roi_rationale:
-                "Routes repeated failures to DLQ before they poison throughput.".to_string(),
+            roi_rationale: "Routes repeated failures to DLQ before they poison throughput."
+                .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::DlqBudgetMachine"
                 .to_string(),
             formal_model: "formal/models/roi_agents/dlq_budget.yaml".to_string(),
@@ -102,9 +104,8 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
         DeterministicAgentSpec {
             id: "nonce_manager".to_string(),
             name: "Nonce Manager Agent".to_string(),
-            roi_rationale:
-                "Prevents nonce collisions and tracks in-flight nonce reservations."
-                    .to_string(),
+            roi_rationale: "Prevents nonce collisions and tracks in-flight nonce reservations."
+                .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::NonceManagerMachine"
                 .to_string(),
             formal_model: "formal/models/roi_agents/nonce_manager.yaml".to_string(),
@@ -112,9 +113,8 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
         DeterministicAgentSpec {
             id: "fee_bidding".to_string(),
             name: "Fee Bidding Agent".to_string(),
-            roi_rationale:
-                "Generates deterministic EIP-1559 fee quotes with bounded bumping."
-                    .to_string(),
+            roi_rationale: "Generates deterministic EIP-1559 fee quotes with bounded bumping."
+                .to_string(),
             kernel_module: "crates/helix-core/src/deterministic_agents.rs::FeeBiddingMachine"
                 .to_string(),
             formal_model: "formal/models/roi_agents/fee_bidding.yaml".to_string(),
@@ -148,5 +148,47 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             kernel_module: "crates/helix-core/src/onchain_intent.rs".to_string(),
             formal_model: "formal/models/onchain_tx_intent.yaml".to_string(),
         },
-    ]
+    ];
+    catalog.extend(expanded_agent_catalog());
+    catalog
+}
+
+const SHARED_EXPANDED_AGENT_FORMAL_MODEL: &str =
+    "formal/models/library/threshold_guard_reference.yaml";
+
+fn expanded_agent_catalog() -> Vec<DeterministicAgentSpec> {
+    EXPANDED_AGENT_DESCRIPTORS
+        .iter()
+        .map(|descriptor| DeterministicAgentSpec {
+            id: descriptor.id.to_string(),
+            name: descriptor.name.to_string(),
+            roi_rationale: descriptor.roi_rationale.to_string(),
+            kernel_module: format!(
+                "crates/helix-core/src/deterministic_agents_expanded.rs::{}",
+                descriptor.machine_type
+            ),
+            formal_model: SHARED_EXPANDED_AGENT_FORMAL_MODEL.to_string(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn catalog_exceeds_huginn_floor() {
+        assert!(
+            high_roi_agent_catalog().len() > 68,
+            "Helix should expose more agent classes than Huginn's 68-class baseline."
+        );
+    }
+
+    #[test]
+    fn catalog_ids_are_unique() {
+        let catalog = high_roi_agent_catalog();
+        let unique: HashSet<&str> = catalog.iter().map(|agent| agent.id.as_str()).collect();
+        assert_eq!(catalog.len(), unique.len());
+    }
 }

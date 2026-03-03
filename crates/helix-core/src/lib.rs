@@ -24,6 +24,7 @@ pub mod credential;
 pub mod deterministic_agent_catalog;
 pub mod deterministic_agent_profiles;
 pub mod deterministic_agents;
+pub mod deterministic_agents_expanded;
 pub mod deterministic_policy;
 pub mod errors;
 pub mod event;

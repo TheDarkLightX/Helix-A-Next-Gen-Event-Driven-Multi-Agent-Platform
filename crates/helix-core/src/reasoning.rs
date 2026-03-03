@@ -264,10 +264,11 @@ pub fn evaluate_reasoning(
             triples,
             max_rounds,
         } => {
-            let max_rounds = usize::from(max_rounds.unwrap_or(16).max(1));
+            let query = normalize_non_empty(&query, "reasoning.query", "query")?;
+            let max_rounds = resolve_max_rounds(max_rounds)?;
             let (closure, matched_rules) =
                 infer_symbolic_closure(facts, rules, triples, max_rounds)?;
-            let entailed = closure.contains(&query);
+            let entailed = closure.contains(query.as_str());
             let verdict = if entailed {
                 ReasoningVerdict::Allow
             } else {
@@ -297,11 +298,15 @@ pub fn evaluate_reasoning(
             let mut matched_rules = Vec::new();
 
             for rule in &rules {
+                let rule_id = normalize_non_empty(&rule.id, "reasoning.rules", "rule id")?;
                 let matches = rule.min_features.iter().all(|(feature, min)| {
+                    if feature.trim().is_empty() {
+                        return false;
+                    }
                     features.get(feature).copied().unwrap_or(i64::MIN) >= *min
                 });
                 if matches {
-                    matched_rules.push(rule.id.clone());
+                    matched_rules.push(rule_id);
                     match rule.verdict {
                         ReasoningVerdict::Allow => {
                             allow_score = allow_score.saturating_add(u32::from(rule.weight))
@@ -314,6 +319,21 @@ pub fn evaluate_reasoning(
                         }
                     }
                 }
+            }
+
+            if matched_rules.is_empty() {
+                return Ok(ReasoningDecision {
+                    backend: ReasoningBackend::ExpertSystem,
+                    verdict: ReasoningVerdict::Deny,
+                    confidence: 1.0,
+                    rationale: "no expert rules matched; fail-closed deny".to_string(),
+                    trace: ReasoningTrace {
+                        derived_facts: Vec::new(),
+                        matched_rules,
+                        symbolic_entailed: None,
+                        neural_probability: None,
+                    },
+                });
             }
 
             let total = allow_score
@@ -374,11 +394,13 @@ pub fn evaluate_reasoning(
             min_probability,
             max_rounds,
         } => {
-            let max_rounds = usize::from(max_rounds.unwrap_or(16).max(1));
-            let min_probability = min_probability.unwrap_or(0.8).clamp(0.0, 1.0);
+            let query = normalize_non_empty(&query, "reasoning.query", "query")?;
+            let max_rounds = resolve_max_rounds(max_rounds)?;
+            let min_probability =
+                validate_probability(min_probability.unwrap_or(0.8), "reasoning.min_probability")?;
             let (closure, matched_rules) =
                 infer_symbolic_closure(facts, rules, triples, max_rounds)?;
-            let entailed = closure.contains(&query);
+            let entailed = closure.contains(query.as_str());
             let probability = run_linear_model(&features, &model)?;
 
             let (verdict, rationale, confidence) = if !entailed {
@@ -432,43 +454,45 @@ fn infer_symbolic_closure(
 
     let mut closure: BTreeSet<String> = BTreeSet::new();
     for fact in facts {
-        if fact.trim().is_empty() {
-            return Err(HelixError::validation_error(
-                "reasoning.facts",
-                "fact entries must be non-empty",
-            ));
-        }
-        closure.insert(fact);
+        closure.insert(normalize_non_empty(
+            &fact,
+            "reasoning.facts",
+            "fact entries",
+        )?);
     }
 
     for triple in triples {
-        closure.insert(format!(
-            "{}({},{})",
-            triple.predicate.trim(),
-            triple.subject.trim(),
-            triple.object.trim()
-        ));
+        let predicate =
+            normalize_non_empty(&triple.predicate, "reasoning.triples", "triple predicate")?;
+        let subject = normalize_non_empty(&triple.subject, "reasoning.triples", "triple subject")?;
+        let object = normalize_non_empty(&triple.object, "reasoning.triples", "triple object")?;
+        closure.insert(format!("{}({},{})", predicate, subject, object));
     }
+
+    let normalized_rules: Vec<(String, Vec<String>, String)> = rules
+        .into_iter()
+        .map(|rule| {
+            let id = normalize_non_empty(&rule.id, "reasoning.rules", "rule id")?;
+            let consequent =
+                normalize_non_empty(&rule.consequent, "reasoning.rules", "rule consequent")?;
+            let antecedents = rule
+                .antecedents
+                .into_iter()
+                .map(|ant| normalize_non_empty(&ant, "reasoning.rules", "rule antecedent"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok::<_, HelixError>((id, antecedents, consequent))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut matched_rules = Vec::new();
     for _ in 0..max_rounds {
         let mut changed = false;
-        for rule in &rules {
-            if rule.consequent.trim().is_empty() {
-                return Err(HelixError::validation_error(
-                    "reasoning.rules",
-                    "rule consequent must be non-empty",
-                ));
-            }
-
-            if rule
-                .antecedents
-                .iter()
-                .all(|ant| closure.contains(ant.as_str()))
-                && !closure.contains(rule.consequent.as_str())
+        for (rule_id, antecedents, consequent) in &normalized_rules {
+            if antecedents.iter().all(|ant| closure.contains(ant))
+                && !closure.contains(consequent.as_str())
             {
-                closure.insert(rule.consequent.clone());
-                matched_rules.push(rule.id.clone());
+                closure.insert(consequent.clone());
+                matched_rules.push(rule_id.clone());
                 changed = true;
             }
         }
@@ -484,32 +508,49 @@ fn run_linear_model(
     features: &BTreeMap<String, f64>,
     model: &LinearModel,
 ) -> Result<f64, HelixError> {
-    if model.review_threshold > model.allow_threshold {
+    ensure_finite(model.bias, "reasoning.model", "model bias")?;
+    let review_threshold =
+        validate_probability(model.review_threshold, "reasoning.model.review_threshold")?;
+    let allow_threshold =
+        validate_probability(model.allow_threshold, "reasoning.model.allow_threshold")?;
+
+    if review_threshold > allow_threshold {
         return Err(HelixError::validation_error(
             "reasoning.model",
             "review_threshold must be <= allow_threshold",
         ));
     }
 
-    if !(0.0..=1.0).contains(&model.review_threshold)
-        || !(0.0..=1.0).contains(&model.allow_threshold)
-    {
-        return Err(HelixError::validation_error(
-            "reasoning.model",
-            "thresholds must be in [0, 1]",
-        ));
+    for (feature, value) in features {
+        if feature.trim().is_empty() {
+            return Err(HelixError::validation_error(
+                "reasoning.features",
+                "feature names must be non-empty",
+            ));
+        }
+        ensure_finite(*value, "reasoning.features", "feature value")?;
     }
 
     let mut score = model.bias;
     for (feature, weight) in &model.weights {
+        if feature.trim().is_empty() {
+            return Err(HelixError::validation_error(
+                "reasoning.model",
+                "model feature names must be non-empty",
+            ));
+        }
+        ensure_finite(*weight, "reasoning.model", "model weight")?;
         let value = features.get(feature).ok_or_else(|| {
-            HelixError::validation_error("reasoning.features", "missing required model feature")
+            HelixError::validation_error(
+                "reasoning.features".to_string(),
+                format!("missing required model feature: {feature}"),
+            )
         })?;
         score += weight * value;
     }
 
     let probability = 1.0 / (1.0 + (-score).exp());
-    Ok(probability.clamp(0.0, 1.0))
+    validate_probability(probability, "reasoning.probability")
 }
 
 fn ml_verdict(probability: f64, model: &LinearModel) -> Result<ReasoningVerdict, HelixError> {
@@ -536,6 +577,50 @@ fn confidence_from_probability(probability: f64, verdict: ReasoningVerdict) -> f
         ReasoningVerdict::Allow => probability,
         ReasoningVerdict::Review => (0.5 + (probability - 0.5).abs()).clamp(0.0, 1.0),
         ReasoningVerdict::Deny => (1.0 - probability).clamp(0.0, 1.0),
+    }
+}
+
+fn normalize_non_empty(value: &str, context: &str, field: &str) -> Result<String, HelixError> {
+    let normalized = value.trim();
+    if normalized.is_empty() {
+        return Err(HelixError::validation_error(
+            context.to_string(),
+            format!("{field} must be non-empty"),
+        ));
+    }
+    Ok(normalized.to_string())
+}
+
+fn ensure_finite(value: f64, context: &str, field: &str) -> Result<(), HelixError> {
+    if value.is_finite() {
+        Ok(())
+    } else {
+        Err(HelixError::validation_error(
+            context.to_string(),
+            format!("{field} must be finite"),
+        ))
+    }
+}
+
+fn validate_probability(value: f64, context: &str) -> Result<f64, HelixError> {
+    ensure_finite(value, context, "probability")?;
+    if !(0.0..=1.0).contains(&value) {
+        return Err(HelixError::validation_error(
+            context.to_string(),
+            "probability must be in [0, 1]".to_string(),
+        ));
+    }
+    Ok(value)
+}
+
+fn resolve_max_rounds(max_rounds: Option<u8>) -> Result<usize, HelixError> {
+    match max_rounds {
+        Some(0) => Err(HelixError::validation_error(
+            "reasoning.max_rounds",
+            "max_rounds must be greater than zero",
+        )),
+        Some(value) => Ok(usize::from(value)),
+        None => Ok(16),
     }
 }
 
@@ -626,5 +711,240 @@ mod tests {
         assert_eq!(decision.verdict, ReasoningVerdict::Deny);
         assert_eq!(decision.trace.symbolic_entailed, Some(false));
         assert!(decision.trace.neural_probability.unwrap() > 0.9);
+    }
+
+    #[test]
+    fn expert_backend_denies_when_no_rule_matches() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::ExpertSystem {
+            features: BTreeMap::from([("risk".to_string(), 1)]),
+            rules: vec![ExpertRule {
+                id: "allow_if_high".to_string(),
+                min_features: BTreeMap::from([("risk".to_string(), 5)]),
+                verdict: ReasoningVerdict::Allow,
+                weight: 10,
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert_eq!(decision.confidence, 1.0);
+    }
+
+    #[test]
+    fn neuro_backend_boundary_thresholds_are_stable() {
+        let features = BTreeMap::new();
+        let model = LinearModel {
+            bias: 0.0,
+            weights: BTreeMap::new(),
+            allow_threshold: 0.5,
+            review_threshold: 0.5,
+        };
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::Neuro {
+            features: features.clone(),
+            model: model.clone(),
+        })
+        .unwrap();
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+
+        let review_model = LinearModel {
+            allow_threshold: 0.8,
+            review_threshold: 0.5,
+            ..model
+        };
+        let review_decision = evaluate_reasoning(ReasoningEvaluationRequest::Neuro {
+            features: features.clone(),
+            model: review_model,
+        })
+        .unwrap();
+        assert_eq!(review_decision.verdict, ReasoningVerdict::Review);
+
+        let deny_decision = evaluate_reasoning(ReasoningEvaluationRequest::Neuro {
+            features,
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::new(),
+                allow_threshold: 0.8,
+                review_threshold: 0.6,
+            },
+        })
+        .unwrap();
+        assert_eq!(deny_decision.verdict, ReasoningVerdict::Deny);
+    }
+
+    #[test]
+    fn symbolic_backend_rejects_empty_query_and_triple_fields() {
+        let empty_query = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "   ".to_string(),
+            facts: vec!["trusted(user)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            max_rounds: Some(4),
+        });
+        assert!(matches!(
+            empty_query,
+            Err(HelixError::ValidationError { .. })
+        ));
+
+        let empty_triple = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["trusted(user)".to_string()],
+            rules: vec![],
+            triples: vec![KrrTriple {
+                subject: "user".to_string(),
+                predicate: " ".to_string(),
+                object: "tx".to_string(),
+            }],
+            max_rounds: Some(4),
+        });
+        assert!(matches!(
+            empty_triple,
+            Err(HelixError::ValidationError { .. })
+        ));
+    }
+
+    #[test]
+    fn neuro_symbolic_rejects_invalid_probability_inputs() {
+        let nan_probability = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), f64::NAN)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            max_rounds: Some(4),
+        });
+        assert!(matches!(
+            nan_probability,
+            Err(HelixError::ValidationError { .. })
+        ));
+
+        let nan_min_probability = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(f64::NAN),
+            max_rounds: Some(4),
+        });
+        assert!(matches!(
+            nan_min_probability,
+            Err(HelixError::ValidationError { .. })
+        ));
+    }
+
+    #[test]
+    fn neuro_symbolic_rejects_out_of_range_min_probability() {
+        let above_one = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(1.1),
+            max_rounds: Some(4),
+        });
+        assert!(matches!(above_one, Err(HelixError::ValidationError { .. })));
+
+        let below_zero = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(-0.1),
+            max_rounds: Some(4),
+        });
+        assert!(matches!(
+            below_zero,
+            Err(HelixError::ValidationError { .. })
+        ));
+    }
+
+    #[test]
+    fn neuro_backend_rejects_invalid_thresholds() {
+        let invalid_order = evaluate_reasoning(ReasoningEvaluationRequest::Neuro {
+            features: BTreeMap::new(),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::new(),
+                allow_threshold: 0.4,
+                review_threshold: 0.5,
+            },
+        });
+        assert!(matches!(
+            invalid_order,
+            Err(HelixError::ValidationError { .. })
+        ));
+
+        let out_of_range = evaluate_reasoning(ReasoningEvaluationRequest::Neuro {
+            features: BTreeMap::new(),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::new(),
+                allow_threshold: 1.1,
+                review_threshold: 0.5,
+            },
+        });
+        assert!(matches!(
+            out_of_range,
+            Err(HelixError::ValidationError { .. })
+        ));
+    }
+
+    #[test]
+    fn symbolic_backends_reject_zero_max_rounds() {
+        let symbolic = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            max_rounds: Some(0),
+        });
+        assert!(matches!(symbolic, Err(HelixError::ValidationError { .. })));
+
+        let neuro_symbolic = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            max_rounds: Some(0),
+        });
+        assert!(matches!(
+            neuro_symbolic,
+            Err(HelixError::ValidationError { .. })
+        ));
     }
 }

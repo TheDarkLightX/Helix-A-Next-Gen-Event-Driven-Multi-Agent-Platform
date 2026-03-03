@@ -262,4 +262,43 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn policy_command_count_boundary_checks() {
+        let mut machine = AutopilotGuardMachine::new(AutopilotGuardConfig {
+            mode: AutopilotMode::Auto,
+            allow_onchain: false,
+            require_onchain_dry_run: true,
+            max_policy_commands: 3,
+        });
+
+        let zero = machine.step(AutopilotGuardInput::Evaluate {
+            action: AutopilotActionClass::PolicySimulation { command_count: 0 },
+            confirmed_by_human: false,
+        });
+        assert!(matches!(
+            zero,
+            AutopilotGuardDecision::Deny { reason } if reason == "policy_command_limit"
+        ));
+
+        let at_limit = machine.step(AutopilotGuardInput::Evaluate {
+            action: AutopilotActionClass::PolicySimulation { command_count: 3 },
+            confirmed_by_human: false,
+        });
+        assert!(matches!(
+            at_limit,
+            AutopilotGuardDecision::Allow {
+                requires_confirmation: false
+            }
+        ));
+
+        let over_limit = machine.step(AutopilotGuardInput::Evaluate {
+            action: AutopilotActionClass::PolicySimulation { command_count: 4 },
+            confirmed_by_human: false,
+        });
+        assert!(matches!(
+            over_limit,
+            AutopilotGuardDecision::Deny { reason } if reason == "policy_command_limit"
+        ));
+    }
 }

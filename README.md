@@ -11,6 +11,7 @@ Helix is a correctness-first, event-driven multi-agent platform with:
 
 - Deterministic policy engine with replayable simulations
 - Deterministic high-ROI agent catalog
+- Deterministic KRR/symbolic/expert/neuro/neuro-symbolic reasoning backends
 - On-chain EVM transaction shell (`send_raw` + receipt polling + dry-run)
 - Autopilot guard for LLM-driven operation (`off` / `assist` / `auto`)
 
@@ -64,9 +65,14 @@ The translator runs a lightweight intent-facet pass and surfaces clarifying ques
 
 ### Agent Catalog
 - `GET /api/v1/agents`
+- `GET /api/v1/agents/quality`
+- `POST /api/v1/agents/guards/simulate`
 - `GET /api/v1/agents/templates`
 - `GET /api/v1/agents/templates/:template_id`
 - `POST /api/v1/agents/templates/:template_id`
+
+### Reasoning Backends
+- `POST /api/v1/reasoning/evaluate`
 
 ### Onchain (EVM)
 - `POST /api/v1/onchain/send_raw`
@@ -109,15 +115,16 @@ Environment controls (see `.env.example`):
 
 ## Deterministic Agent Set (1.0)
 
-Helix now ships **73 deterministic agent classes**:
+Helix now ships **77 deterministic agent classes**:
 
-- 13 foundational high-ROI kernels (dedup, token bucket, circuit breaker, retry budget, approval gate, backpressure, SLA, DLQ, nonce, fee bidding, finality/reorg, allowlist, onchain intent).
+- 17 foundational high-ROI kernels (core execution + onchain + symbolic/expert/neuro/neuro-symbolic reasoning gates).
 - 60 expanded guard classes spanning ingress integrity, SLO/incident control, tenant/compliance boundaries, payment/risk controls, and onchain execution safety.
 
 Query the full live catalog:
 
 ```bash
 curl -s http://127.0.0.1:3000/api/v1/agents | jq '.agents | length'
+curl -s http://127.0.0.1:3000/api/v1/agents/quality | jq '.quality'
 ```
 
 ## Template-Driven Setup
@@ -158,11 +165,19 @@ cd ui && npm run build
 ./scripts/verify_formal_agents.sh
 ```
 
-If the private formal verifier is not in your default Python environment, set:
+Formal scripts are fail-closed and will try, in order:
+
+- `HELIX_FORMAL_MODULE` (default: `formal_verifier`)
+- `HELIX_FORMAL_FALLBACK_MODULE` (optional)
+- auto-discovered vendored backend under `external/`
+
+Optional overrides:
 
 ```bash
-export HELIX_FORMAL_PYTHONPATH=/path/to/private/formal_verifier
 export HELIX_FORMAL_MODULE=formal_verifier
+export HELIX_FORMAL_FALLBACK_MODULE=alternate_formal_backend
+export HELIX_FORMAL_PYTHONPATH=/path/to/private/formal_backend
+export HELIX_FORMAL_VENDORED_ROOT=/path/to/external
 ```
 
 ## Privacy/Sanitization Notes

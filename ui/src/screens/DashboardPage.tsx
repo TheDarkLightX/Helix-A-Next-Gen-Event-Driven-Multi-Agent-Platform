@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchAgentCatalog } from "../lib/api";
+import type { DeterministicAgentSpec } from "../lib/api";
+import { fetchAgentCatalog, fetchAgentCatalogQuality } from "../lib/api";
 
 const lanes = [
   { name: "Formal Kernel", status: "Healthy", note: "Finite-state transitions + invariants" },
@@ -13,17 +14,14 @@ const lanes = [
 const controls = [
   { title: "Run Formal Core Verification", command: "./scripts/verify_formal_core.sh" },
   { title: "Verify ROI Agent Models", command: "./scripts/verify_formal_agents.sh" },
-  {
-    title: "Verify Core + Onchain Formal Models",
-    command: "./scripts/verify_formal_core.sh",
-  },
+  { title: "Apply Secure Onchain Template", command: "POST /api/v1/agents/templates/secure_onchain_executor" },
   { title: "Autopilot Status", command: "GET /api/v1/autopilot/status" },
   { title: "Core Kernel Tests", command: "cargo test --manifest-path crates/helix-core/Cargo.toml execution_kernel" },
   { title: "Onchain Dry Run", command: "POST /api/v1/onchain/send_raw with dry_run=true" },
   { title: "Launch UI", command: "cd ui && npm install && npm run dev" },
 ];
 
-const roiAgents = [
+const fallbackAgents = [
   {
     name: "Dedup Window Agent",
     value: "Eliminates duplicate event storms before downstream work.",
@@ -78,17 +76,87 @@ const roiAgents = [
   },
 ];
 
+const featuredAgentOrder = [
+  "dedup_window",
+  "token_bucket",
+  "circuit_breaker",
+  "retry_budget",
+  "approval_gate",
+  "backpressure",
+  "sla_deadline",
+  "dlq_budget",
+  "onchain_tx_intent",
+  "nonce_manager",
+  "fee_bidding",
+  "finality_guard",
+  "allowlist_guard",
+  "symbolic_reasoning_gate",
+  "expert_system_gate",
+  "neuro_risk_gate",
+  "neuro_symbolic_fusion_gate",
+];
+
+const reasoningModes = [
+  {
+    name: "KRR + Symbolic",
+    note: "Forward chaining over finite facts/rules/triples with deterministic closure rounds.",
+  },
+  {
+    name: "Expert System",
+    note: "Weighted deterministic rule voting with explicit feature thresholds.",
+  },
+  {
+    name: "Neural Risk",
+    note: "Deterministic linear scoring model with fixed thresholds for allow/review/deny.",
+  },
+  {
+    name: "Neuro-Symbolic",
+    note: "Fail-closed symbolic entailment gate fused with bounded neural confidence.",
+  },
+];
+
+function pickFeaturedAgents(catalog: DeterministicAgentSpec[]) {
+  const ranked = featuredAgentOrder
+    .map((id) => catalog.find((agent) => agent.id === id))
+    .filter((agent): agent is DeterministicAgentSpec => Boolean(agent));
+
+  if (ranked.length >= 10) {
+    return ranked.map((agent) => ({
+      name: agent.name,
+      value: agent.roi_rationale,
+    }));
+  }
+
+  return fallbackAgents;
+}
+
 export function DashboardPage() {
-  const [agentClassCount, setAgentClassCount] = useState<number>(roiAgents.length);
+  const [agentClassCount, setAgentClassCount] = useState<number>(fallbackAgents.length);
+  const [featuredAgents, setFeaturedAgents] = useState(fallbackAgents);
+  const [categoryCoverage, setCategoryCoverage] = useState<number>(0);
+  const [huginnBaseline, setHuginnBaseline] = useState<number>(68);
+  const [baselineGap, setBaselineGap] = useState<number>(agentClassCount - 68);
+  const superiorityRatio = (agentClassCount / Math.max(huginnBaseline, 1)).toFixed(2);
   const healthyLaneCount = lanes.filter((lane) => lane.status === "Healthy").length;
 
   useEffect(() => {
     void (async () => {
       try {
-        const catalog = await fetchAgentCatalog();
+        const [catalog, quality] = await Promise.all([
+          fetchAgentCatalog(),
+          fetchAgentCatalogQuality(),
+        ]);
         setAgentClassCount(catalog.length);
+        setFeaturedAgents(pickFeaturedAgents(catalog));
+        setCategoryCoverage(quality.expanded_categories);
+        setHuginnBaseline(quality.huginn_baseline_agents);
+        setBaselineGap(quality.total_agents - quality.huginn_baseline_agents);
       } catch {
-        setAgentClassCount(roiAgents.length);
+        setAgentClassCount(fallbackAgents.length);
+        setFeaturedAgents(fallbackAgents);
+        setCategoryCoverage(0);
+        setHuginnBaseline(68);
+        setBaselineGap(fallbackAgents.length - 68);
       }
     })();
   }, []);
@@ -112,12 +180,20 @@ export function DashboardPage() {
             <p className="metric-value">{healthyLaneCount}</p>
           </div>
           <div className="metric-card">
-            <p className="metric-label">Control Commands</p>
-            <p className="metric-value">{controls.length}</p>
+            <p className="metric-label">Coverage Domains</p>
+            <p className="metric-value">{categoryCoverage}</p>
           </div>
           <div className="metric-card">
             <p className="metric-label">Agent Classes</p>
             <p className="metric-value">{agentClassCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Baseline Gap</p>
+            <p className="metric-value">{baselineGap >= 0 ? `+${baselineGap}` : baselineGap}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Baseline Ratio</p>
+            <p className="metric-value">{superiorityRatio}x</p>
           </div>
         </div>
       </article>
@@ -140,6 +216,21 @@ export function DashboardPage() {
       </article>
 
       <article className="panel panel-span-6">
+        <p className="mono-label">Reasoning Backends</p>
+        <ul className="lane-list">
+          {reasoningModes.map((mode) => (
+            <li key={mode.name} className="lane-row">
+              <div>
+                <h3>{mode.name}</h3>
+                <p>{mode.note}</p>
+              </div>
+              <span className="status-pill ok">Deterministic</span>
+            </li>
+          ))}
+        </ul>
+      </article>
+
+      <article className="panel panel-span-6">
         <p className="mono-label">Control Commands</p>
         <div className="command-stack">
           {controls.map((item) => (
@@ -152,9 +243,9 @@ export function DashboardPage() {
       </article>
 
       <article className="panel panel-span-12">
-        <p className="mono-label">High ROI Deterministic Agents</p>
+        <p className="mono-label">Featured Agent Classes</p>
         <ul className="lane-list">
-          {roiAgents.map((agent) => (
+          {featuredAgents.map((agent) => (
             <li key={agent.name} className="lane-row">
               <div>
                 <h3>{agent.name}</h3>

@@ -168,6 +168,12 @@ a {
   transform: translateX(2px);
 }
 
+.route-link:focus-visible {
+  outline: none;
+  border-color: rgba(255, 173, 74, 0.8);
+  box-shadow: 0 0 0 3px rgba(255, 173, 74, 0.22);
+}
+
 .route-link-active {
   border-color: rgba(255, 173, 74, 0.55);
   background:
@@ -377,6 +383,7 @@ a {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.77rem;
   color: #d6e9ff;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
@@ -534,6 +541,13 @@ a {
   transform: translateY(0);
 }
 
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible {
+  outline: none;
+  border-color: rgba(255, 173, 74, 0.85);
+  box-shadow: 0 0 0 3px rgba(255, 173, 74, 0.2);
+}
+
 .status-line {
   margin-top: 0.62rem !important;
   color: #bdd5ee !important;
@@ -621,7 +635,7 @@ a {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.55rem;
   margin-top: 0.85rem;
 }
@@ -706,10 +720,6 @@ a {
 
   .route-nav {
     grid-template-columns: 1fr;
-  }
-
-  .metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .form-grid {

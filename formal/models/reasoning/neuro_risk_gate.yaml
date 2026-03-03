@@ -1,0 +1,92 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "neuro_risk_gate"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic reasoning gate model with fail-closed transitions."
+observables:
+  state_vars: ["phase", "score"]
+  effects: []
+types: []
+state_vars:
+  - id: "phase"
+    role: "control"
+    type: { kind: "int", min: 0, max: 2 }
+  - id: "score"
+    role: "data"
+    type: { kind: "int", min: 0, max: 3 }
+invariants:
+  - id: "PhaseRange"
+    kind: "safety"
+    expr:
+      op: "and"
+      args:
+        - op: "<="
+          args: [{ const: 0 }, { var: "phase" }]
+        - op: "<="
+          args: [{ var: "phase" }, { const: 2 }]
+  - id: "ScoreRange"
+    kind: "safety"
+    expr:
+      op: "and"
+      args:
+        - op: "<="
+          args: [{ const: 0 }, { var: "score" }]
+        - op: "<="
+          args: [{ var: "score" }, { const: 3 }]
+init:
+  - var: "phase"
+    expr: { const: 0 }
+  - var: "score"
+    expr: { const: 0 }
+actions:
+  - id: "observe_allow"
+    params: []
+    guard:
+      op: "<="
+      args: [{ var: "score" }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { const: 2 }
+      - var: "score"
+        expr: { var: "score" }
+    effects: {}
+  - id: "observe_review"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "score" }, { const: 2 }]
+    updates:
+      - var: "phase"
+        expr: { const: 1 }
+      - var: "score"
+        expr: { var: "score" }
+    effects: {}
+  - id: "observe_deny"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "score" }, { const: 3 }]
+    updates:
+      - var: "phase"
+        expr: { const: 0 }
+      - var: "score"
+        expr: { const: 3 }
+    effects: {}
+  - id: "reset"
+    params: []
+    guard:
+      op: "="
+      args: [{ const: 1 }, { const: 1 }]
+    updates:
+      - var: "phase"
+        expr: { const: 0 }
+      - var: "score"
+        expr: { const: 0 }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "phase"
+      expr: { var: "phase" }
+    - var: "score"
+      expr: { var: "score" }

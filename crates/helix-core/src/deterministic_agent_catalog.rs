@@ -13,7 +13,9 @@
 
 //! Catalog of deterministic high-ROI agents shipped with Helix.
 
-use crate::deterministic_agents_expanded::EXPANDED_AGENT_DESCRIPTORS;
+use crate::deterministic_agents_expanded::{
+    expanded_agent_quality_summary, EXPANDED_AGENT_DESCRIPTORS,
+};
 use serde::{Deserialize, Serialize};
 
 /// Metadata for one deterministic agent kernel.
@@ -30,6 +32,29 @@ pub struct DeterministicAgentSpec {
     /// Formal model path for verification.
     pub formal_model: String,
 }
+
+/// Catalog-level quality metrics for deterministic agent coverage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentCatalogQuality {
+    /// Total number of exposed deterministic agent classes.
+    pub total_agents: usize,
+    /// Number of foundational agents.
+    pub foundational_agents: usize,
+    /// Number of expanded temporal guard agents.
+    pub expanded_agents: usize,
+    /// Number of expanded categories covered.
+    pub expanded_categories: usize,
+    /// Number of temporal input variants used by expanded agents.
+    pub temporal_inputs: usize,
+    /// Number of temporal decision variants used by expanded agents.
+    pub temporal_decisions: usize,
+    /// External baseline for market comparison.
+    pub huginn_baseline_agents: usize,
+    /// True when Helix exceeds the comparison baseline.
+    pub exceeds_huginn: bool,
+}
+
+const HUGINN_BASELINE_AGENTS: usize = 68;
 
 /// Returns the high-ROI deterministic agent catalog.
 pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
@@ -140,6 +165,41 @@ pub fn high_roi_agent_catalog() -> Vec<DeterministicAgentSpec> {
             formal_model: "formal/models/roi_agents/allowlist_guard.yaml".to_string(),
         },
         DeterministicAgentSpec {
+            id: "symbolic_reasoning_gate".to_string(),
+            name: "Symbolic Reasoning Gate Agent".to_string(),
+            roi_rationale: "Uses deterministic symbolic/KRR inference to gate execution."
+                .to_string(),
+            kernel_module: "crates/helix-core/src/reasoning.rs::SymbolicReasoningKernel"
+                .to_string(),
+            formal_model: "formal/models/reasoning/symbolic_reasoning_gate.yaml".to_string(),
+        },
+        DeterministicAgentSpec {
+            id: "expert_system_gate".to_string(),
+            name: "Expert System Gate Agent".to_string(),
+            roi_rationale: "Applies weighted expert rules for bounded deterministic decisions."
+                .to_string(),
+            kernel_module: "crates/helix-core/src/reasoning.rs::ExpertSystemKernel".to_string(),
+            formal_model: "formal/models/reasoning/expert_system_gate.yaml".to_string(),
+        },
+        DeterministicAgentSpec {
+            id: "neuro_risk_gate".to_string(),
+            name: "Neuro Risk Gate Agent".to_string(),
+            roi_rationale: "Scores deterministic ML risk model outputs for controlled admission."
+                .to_string(),
+            kernel_module: "crates/helix-core/src/reasoning.rs::NeuroRiskKernel".to_string(),
+            formal_model: "formal/models/reasoning/neuro_risk_gate.yaml".to_string(),
+        },
+        DeterministicAgentSpec {
+            id: "neuro_symbolic_fusion_gate".to_string(),
+            name: "Neuro-Symbolic Fusion Gate Agent".to_string(),
+            roi_rationale:
+                "Combines symbolic proof gate with neural confidence under fail-closed policy."
+                    .to_string(),
+            kernel_module: "crates/helix-core/src/reasoning.rs::NeuroSymbolicFusionKernel"
+                .to_string(),
+            formal_model: "formal/models/reasoning/neuro_symbolic_fusion_gate.yaml".to_string(),
+        },
+        DeterministicAgentSpec {
             id: "onchain_tx_intent".to_string(),
             name: "Onchain Transaction Intent Agent".to_string(),
             roi_rationale:
@@ -172,6 +232,23 @@ fn expanded_agent_catalog() -> Vec<DeterministicAgentSpec> {
         .collect()
 }
 
+/// Returns measurable catalog quality metrics.
+pub fn agent_catalog_quality() -> AgentCatalogQuality {
+    let summary = expanded_agent_quality_summary();
+    let total = high_roi_agent_catalog().len();
+    let foundational = total.saturating_sub(summary.expanded_agents);
+    AgentCatalogQuality {
+        total_agents: total,
+        foundational_agents: foundational,
+        expanded_agents: summary.expanded_agents,
+        expanded_categories: summary.categories,
+        temporal_inputs: summary.temporal_inputs,
+        temporal_decisions: summary.temporal_decisions,
+        huginn_baseline_agents: HUGINN_BASELINE_AGENTS,
+        exceeds_huginn: total > HUGINN_BASELINE_AGENTS,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,8 +257,8 @@ mod tests {
     #[test]
     fn catalog_exceeds_huginn_floor() {
         assert!(
-            high_roi_agent_catalog().len() > 68,
-            "Helix should expose more agent classes than Huginn's 68-class baseline."
+            high_roi_agent_catalog().len() > HUGINN_BASELINE_AGENTS,
+            "Helix should expose more agent classes than Huginn's baseline."
         );
     }
 
@@ -190,5 +267,14 @@ mod tests {
         let catalog = high_roi_agent_catalog();
         let unique: HashSet<&str> = catalog.iter().map(|agent| agent.id.as_str()).collect();
         assert_eq!(catalog.len(), unique.len());
+    }
+
+    #[test]
+    fn quality_metrics_report_baseline_win() {
+        let quality = agent_catalog_quality();
+        assert!(quality.exceeds_huginn);
+        assert!(quality.expanded_categories >= 6);
+        assert_eq!(quality.temporal_inputs, 3);
+        assert_eq!(quality.temporal_decisions, 4);
     }
 }

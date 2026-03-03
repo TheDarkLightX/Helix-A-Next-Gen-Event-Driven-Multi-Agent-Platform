@@ -26,9 +26,14 @@ use helix_core::autopilot_guard::{
     AutopilotActionClass, AutopilotGuardConfig, AutopilotGuardDecision, AutopilotGuardInput,
     AutopilotGuardMachine, AutopilotMode, AutopilotStats,
 };
-use helix_core::deterministic_agent_catalog::{high_roi_agent_catalog, DeterministicAgentSpec};
+use helix_core::deterministic_agent_catalog::{
+    agent_catalog_quality, high_roi_agent_catalog, AgentCatalogQuality, DeterministicAgentSpec,
+};
 use helix_core::deterministic_agent_profiles::{
     find_agent_template, high_roi_agent_templates, DeterministicAgentTemplate,
+};
+use helix_core::deterministic_agents_expanded::{
+    simulate_expanded_guard, TemporalGuardInput, TemporalGuardSimulation,
 };
 use helix_core::deterministic_policy::{
     DeterministicPolicyConfig, DeterministicPolicyEngine, PolicyCommand, PolicyDecision,
@@ -37,6 +42,7 @@ use helix_core::deterministic_policy::{
 use helix_core::onchain_intent::{
     step as onchain_step, OnchainInput, OnchainKernelError, OnchainPhase, OnchainState,
 };
+use helix_core::reasoning::{evaluate_reasoning, ReasoningDecision, ReasoningEvaluationRequest};
 use helix_core::HelixError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -99,6 +105,38 @@ struct AgentCatalogResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct AgentCatalogQualityResponse {
+    quality: AgentCatalogQuality,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GuardSimulationRequest {
+    agent_id: String,
+    threshold: Option<u32>,
+    strike_limit: Option<u8>,
+    cooldown_ticks: Option<u8>,
+    commands: Vec<GuardSimulationCommand>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum GuardSimulationCommand {
+    Evaluate { value: u32 },
+    Tick,
+    Reset,
+}
+
+impl From<GuardSimulationCommand> for TemporalGuardInput {
+    fn from(value: GuardSimulationCommand) -> Self {
+        match value {
+            GuardSimulationCommand::Evaluate { value } => TemporalGuardInput::Evaluate { value },
+            GuardSimulationCommand::Tick => TemporalGuardInput::Tick,
+            GuardSimulationCommand::Reset => TemporalGuardInput::Reset,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct AgentTemplateCatalogResponse {
     templates: Vec<DeterministicAgentTemplate>,
 }
@@ -154,6 +192,11 @@ struct OnchainReceiptResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ApiErrorResponse {
     error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReasoningEvaluateResponse {
+    decision: ReasoningDecision,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +271,42 @@ async fn get_agent_catalog() -> impl IntoResponse {
             agents: high_roi_agent_catalog(),
         }),
     )
+}
+
+async fn get_agent_catalog_quality() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(AgentCatalogQualityResponse {
+            quality: agent_catalog_quality(),
+        }),
+    )
+}
+
+async fn post_simulate_guard_agent(Json(req): Json<GuardSimulationRequest>) -> Response {
+    let commands: Vec<TemporalGuardInput> = req.commands.into_iter().map(Into::into).collect();
+    match simulate_expanded_guard(
+        &req.agent_id,
+        req.threshold,
+        req.strike_limit,
+        req.cooldown_ticks,
+        &commands,
+    ) {
+        Ok(simulation) => (StatusCode::OK, Json(simulation)).into_response(),
+        Err(message) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiErrorResponse { error: message }),
+        )
+            .into_response(),
+    }
+}
+
+async fn post_reasoning_evaluate(Json(req): Json<ReasoningEvaluationRequest>) -> Response {
+    match evaluate_reasoning(req) {
+        Ok(decision) => {
+            (StatusCode::OK, Json(ReasoningEvaluateResponse { decision })).into_response()
+        }
+        Err(err) => api_error_response(err),
+    }
 }
 
 async fn get_agent_templates() -> impl IntoResponse {
@@ -559,11 +638,17 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/v1/policy/simulate", post(simulate_policy))
         .route("/api/v1/agents", get(get_agent_catalog))
+        .route("/api/v1/agents/quality", get(get_agent_catalog_quality))
+        .route(
+            "/api/v1/agents/guards/simulate",
+            post(post_simulate_guard_agent),
+        )
         .route("/api/v1/agents/templates", get(get_agent_templates))
         .route(
             "/api/v1/agents/templates/:template_id",
             get(get_agent_template).post(post_apply_agent_template),
         )
+        .route("/api/v1/reasoning/evaluate", post(post_reasoning_evaluate))
         .route("/api/v1/autopilot/status", get(get_autopilot_status))
         .route(
             "/api/v1/autopilot/config",
@@ -732,7 +817,111 @@ mod tests {
 
         let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         let response: AgentCatalogResponse = serde_json::from_slice(&body).unwrap();
-        assert!(response.agents.len() >= 8);
+        assert!(response.agents.len() > 68);
+    }
+
+    #[tokio::test]
+    async fn agents_quality_endpoint_reports_baseline_win() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/agents/quality")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: AgentCatalogQualityResponse = serde_json::from_slice(&body).unwrap();
+        assert!(payload.quality.exceeds_huginn);
+        assert!(payload.quality.expanded_categories >= 6);
+    }
+
+    #[tokio::test]
+    async fn agents_guard_simulation_endpoint_returns_temporal_trace() {
+        let request = GuardSimulationRequest {
+            agent_id: "oracle_deviation_guard".to_string(),
+            threshold: Some(3),
+            strike_limit: Some(2),
+            cooldown_ticks: Some(2),
+            commands: vec![
+                GuardSimulationCommand::Evaluate { value: 4 },
+                GuardSimulationCommand::Evaluate { value: 5 },
+                GuardSimulationCommand::Tick,
+                GuardSimulationCommand::Tick,
+                GuardSimulationCommand::Evaluate { value: 1 },
+            ],
+        };
+
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/agents/guards/simulate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: TemporalGuardSimulation = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.steps.len(), 5);
+        assert_eq!(
+            payload.steps[0].decision,
+            helix_core::deterministic_agents_expanded::TemporalGuardDecision::Warn
+        );
+        assert_eq!(
+            payload.steps[1].decision,
+            helix_core::deterministic_agents_expanded::TemporalGuardDecision::Block
+        );
+    }
+
+    #[tokio::test]
+    async fn reasoning_endpoint_supports_neuro_symbolic_backend() {
+        let request = ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["trusted(user)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: std::collections::BTreeMap::from([("risk".to_string(), 10.0)]),
+            model: helix_core::reasoning::LinearModel {
+                bias: 0.0,
+                weights: std::collections::BTreeMap::from([("risk".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            max_rounds: Some(8),
+        };
+
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/reasoning/evaluate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: ReasoningEvaluateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.decision.backend,
+            helix_core::reasoning::ReasoningBackend::NeuroSymbolic
+        );
+        assert_eq!(
+            payload.decision.verdict,
+            helix_core::reasoning::ReasoningVerdict::Deny
+        );
     }
 
     #[tokio::test]

@@ -109,6 +109,17 @@ export type DeterministicAgentTemplate = {
   bootstrap_commands: PolicyCommand[];
 };
 
+export type AgentCatalogQuality = {
+  total_agents: number;
+  foundational_agents: number;
+  expanded_agents: number;
+  expanded_categories: number;
+  temporal_inputs: number;
+  temporal_decisions: number;
+  huginn_baseline_agents: number;
+  exceeds_huginn: boolean;
+};
+
 export type ApplyAgentTemplateResponse = {
   template: DeterministicAgentTemplate;
   config: DeterministicPolicyConfig;
@@ -218,6 +229,12 @@ export async function fetchAgentCatalog(): Promise<DeterministicAgentSpec[]> {
   const response = await fetch(`${API_BASE}/api/v1/agents`);
   const payload = await parseOrThrow<{ agents: DeterministicAgentSpec[] }>(response);
   return payload.agents;
+}
+
+export async function fetchAgentCatalogQuality(): Promise<AgentCatalogQuality> {
+  const response = await fetch(`${API_BASE}/api/v1/agents/quality`);
+  const payload = await parseOrThrow<{ quality: AgentCatalogQuality }>(response);
+  return payload.quality;
 }
 
 export async function fetchAgentTemplates(): Promise<DeterministicAgentTemplate[]> {

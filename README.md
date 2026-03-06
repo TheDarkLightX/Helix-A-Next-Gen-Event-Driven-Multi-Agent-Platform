@@ -131,8 +131,9 @@ Reasoning requests are evaluated by deterministic compiled kernels:
 
 - Symbolic mode uses indexed closure over normalized facts, rules, and triples.
 - Symbolic responses include a deterministic support graph for replay and explanation.
+- Symbolic requests accept `consistency_scope` with strict `global` default and `query_support` for intelligence-style localized contradiction handling.
 - Symbolic traces report whether the closure saturated or hit the round bound, along with remaining ready rules.
-- Symbolic traces include a minimal query-support slice and a stable compiled-program fingerprint for replay.
+- Symbolic traces include a minimal query-support slice, a stable compiled-program fingerprint, and the subset of contradictions that actually blocked the verdict.
 - Contradictory symbolic closures deny automatically and return both sides of the contradiction.
 - Expert mode uses compiled threshold matching with deterministic fail-closed voting.
 - Neuro-symbolic mode still requires symbolic justification before neural confidence can permit execution.

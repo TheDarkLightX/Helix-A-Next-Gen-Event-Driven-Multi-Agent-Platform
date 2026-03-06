@@ -60,6 +60,17 @@ pub enum ReasoningVerdict {
     Deny,
 }
 
+/// Contradiction scope used for symbolic consistency checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningConsistencyScope {
+    /// Any contradiction in the symbolic closure blocks the decision.
+    #[default]
+    Global,
+    /// Only contradictions touching the query support slice block the decision.
+    QuerySupport,
+}
+
 /// Symbolic implication rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SymbolicRule {
@@ -122,6 +133,8 @@ pub enum ReasoningEvaluationRequest {
         rules: Vec<SymbolicRule>,
         /// Knowledge graph triples converted to symbolic facts.
         triples: Vec<KrrTriple>,
+        /// Contradiction scope used for fail-closed consistency checks.
+        consistency_scope: Option<ReasoningConsistencyScope>,
         /// Maximum fixpoint rounds.
         max_rounds: Option<u8>,
     },
@@ -155,6 +168,8 @@ pub enum ReasoningEvaluationRequest {
         model: LinearModel,
         /// Minimum neural probability required when symbolic gate passes.
         min_probability: Option<f64>,
+        /// Contradiction scope used for fail-closed consistency checks.
+        consistency_scope: Option<ReasoningConsistencyScope>,
         /// Maximum symbolic closure rounds.
         max_rounds: Option<u8>,
     },
@@ -231,9 +246,15 @@ pub struct ReasoningTrace {
     /// Stable fingerprint for the compiled symbolic program used in evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program_fingerprint: Option<String>,
+    /// Contradiction scope used for the symbolic decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consistency_scope: Option<ReasoningConsistencyScope>,
     /// Minimal support slice for the requested symbolic query.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub query_support: Vec<String>,
+    /// Contradictions that actually blocked the verdict under the selected scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocking_contradictions: Vec<ReasoningContradiction>,
 }
 
 /// Deterministic reasoning decision.
@@ -267,6 +288,7 @@ impl SymbolicReasoningKernel {
             facts,
             rules,
             triples,
+            consistency_scope: None,
             max_rounds: Some(16),
         })
     }
@@ -321,6 +343,7 @@ impl NeuroSymbolicFusionKernel {
             features,
             model,
             min_probability,
+            consistency_scope: None,
             max_rounds: Some(16),
         })
     }
@@ -336,10 +359,17 @@ pub fn evaluate_reasoning(
             facts,
             rules,
             triples,
+            consistency_scope,
             max_rounds,
         } => {
             let program = compile_symbolic_program(rules, triples)?;
-            evaluate_compiled_symbolic_reasoning(query, facts, &program, max_rounds)
+            evaluate_compiled_symbolic_reasoning(
+                query,
+                facts,
+                &program,
+                consistency_scope,
+                max_rounds,
+            )
         }
         ReasoningEvaluationRequest::ExpertSystem { features, rules } => {
             let expert = evaluate_expert_system(features, rules)?;
@@ -359,7 +389,9 @@ pub fn evaluate_reasoning(
                     symbolic_rounds: None,
                     pending_rule_count: None,
                     program_fingerprint: None,
+                    consistency_scope: None,
                     query_support: Vec::new(),
+                    blocking_contradictions: Vec::new(),
                 },
             })
         }
@@ -381,7 +413,9 @@ pub fn evaluate_reasoning(
                     symbolic_rounds: None,
                     pending_rule_count: None,
                     program_fingerprint: None,
+                    consistency_scope: None,
                     query_support: Vec::new(),
+                    blocking_contradictions: Vec::new(),
                 },
             })
         }
@@ -393,6 +427,7 @@ pub fn evaluate_reasoning(
             features,
             model,
             min_probability,
+            consistency_scope,
             max_rounds,
         } => {
             let program = compile_symbolic_program(rules, triples)?;
@@ -403,6 +438,7 @@ pub fn evaluate_reasoning(
                 features,
                 model,
                 min_probability,
+                consistency_scope,
                 max_rounds,
             )
         }
@@ -420,10 +456,12 @@ pub fn evaluate_compiled_symbolic_reasoning(
     query: String,
     facts: Vec<String>,
     program: &CompiledSymbolicProgram,
+    consistency_scope: Option<ReasoningConsistencyScope>,
     max_rounds: Option<u8>,
 ) -> Result<ReasoningDecision, HelixError> {
     let query = normalize_non_empty(&query, "reasoning.query", "query")?;
     let max_rounds = resolve_max_rounds(max_rounds)?;
+    let consistency_scope = consistency_scope.unwrap_or_default();
     let relevant = evaluate_compiled_symbolic(
         program,
         query.clone(),
@@ -436,17 +474,19 @@ pub fn evaluate_compiled_symbolic_reasoning(
             query,
             relevant,
             program.fingerprint(),
+            consistency_scope,
             Some(
                 "symbolic query evaluation truncated before saturation; fail-closed deny"
                     .to_string(),
             ),
         ));
     }
-    if !relevant.entailed || !relevant.contradictions.is_empty() {
+    if !relevant.entailed || has_blocking_contradictions(&relevant, consistency_scope) {
         return Ok(build_symbolic_decision(
             query,
             relevant,
             program.fingerprint(),
+            consistency_scope,
             None,
         ));
     }
@@ -465,6 +505,7 @@ pub fn evaluate_compiled_symbolic_reasoning(
         query,
         symbolic,
         program.fingerprint(),
+        consistency_scope,
         rationale,
     ))
 }
@@ -476,12 +517,14 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
     features: BTreeMap<String, f64>,
     model: LinearModel,
     min_probability: Option<f64>,
+    consistency_scope: Option<ReasoningConsistencyScope>,
     max_rounds: Option<u8>,
 ) -> Result<ReasoningDecision, HelixError> {
     let query = normalize_non_empty(&query, "reasoning.query", "query")?;
     let max_rounds = resolve_max_rounds(max_rounds)?;
     let min_probability =
         validate_probability(min_probability.unwrap_or(0.8), "reasoning.min_probability")?;
+    let consistency_scope = consistency_scope.unwrap_or_default();
     let neuro = evaluate_neuro(features, model)?;
     let relevant = evaluate_compiled_symbolic(
         program,
@@ -496,17 +539,19 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
             relevant,
             neuro.probability,
             program.fingerprint(),
+            consistency_scope,
             ReasoningVerdict::Deny,
             1.0,
             "symbolic query evaluation truncated before saturation; denying regardless of neural score"
                 .to_string(),
         ));
     }
-    if !relevant.contradictions.is_empty() {
+    if has_blocking_contradictions(&relevant, consistency_scope) {
         return Ok(build_neuro_symbolic_decision(
             relevant,
             neuro.probability,
             program.fingerprint(),
+            consistency_scope,
             ReasoningVerdict::Deny,
             1.0,
             "symbolic contradiction detected; denying regardless of neural score".to_string(),
@@ -517,6 +562,7 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
             relevant,
             neuro.probability,
             program.fingerprint(),
+            consistency_scope,
             ReasoningVerdict::Deny,
             1.0,
             "symbolic gate failed; denying regardless of neural score".to_string(),
@@ -539,7 +585,7 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
             "symbolic consistency evaluation truncated before saturation; denying regardless of neural score".to_string(),
             1.0,
         )
-    } else if !symbolic.contradictions.is_empty() {
+    } else if has_blocking_contradictions(&symbolic, consistency_scope) {
         (
             ReasoningVerdict::Deny,
             "symbolic contradiction detected; denying regardless of neural score".to_string(),
@@ -569,6 +615,7 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
         symbolic,
         neuro.probability,
         program.fingerprint(),
+        consistency_scope,
         verdict,
         confidence,
         rationale,
@@ -579,10 +626,11 @@ fn build_symbolic_decision(
     query: String,
     symbolic: SymbolicEvaluation,
     program_fingerprint: &str,
+    consistency_scope: ReasoningConsistencyScope,
     rationale_override: Option<String>,
 ) -> ReasoningDecision {
     let entailed = symbolic.entailed;
-    let contradiction_detected = !symbolic.contradictions.is_empty();
+    let contradiction_detected = has_blocking_contradictions(&symbolic, consistency_scope);
     let truncated = symbolic.closure_status == SymbolicClosureStatus::Truncated;
     ReasoningDecision {
         backend: ReasoningBackend::KrrSymbolic,
@@ -612,7 +660,7 @@ fn build_symbolic_decision(
                 format!("symbolic query not entailed: {query}")
             }
         }),
-        trace: build_symbolic_trace(symbolic, None, program_fingerprint),
+        trace: build_symbolic_trace(symbolic, None, program_fingerprint, consistency_scope),
     }
 }
 
@@ -620,6 +668,7 @@ fn build_neuro_symbolic_decision(
     symbolic: SymbolicEvaluation,
     neural_probability: f64,
     program_fingerprint: &str,
+    consistency_scope: ReasoningConsistencyScope,
     verdict: ReasoningVerdict,
     confidence: f64,
     rationale: String,
@@ -629,7 +678,12 @@ fn build_neuro_symbolic_decision(
         verdict,
         confidence,
         rationale,
-        trace: build_symbolic_trace(symbolic, Some(neural_probability), program_fingerprint),
+        trace: build_symbolic_trace(
+            symbolic,
+            Some(neural_probability),
+            program_fingerprint,
+            consistency_scope,
+        ),
     }
 }
 
@@ -637,7 +691,13 @@ fn build_symbolic_trace(
     symbolic: SymbolicEvaluation,
     neural_probability: Option<f64>,
     program_fingerprint: &str,
+    consistency_scope: ReasoningConsistencyScope,
 ) -> ReasoningTrace {
+    let blocking_contradictions = filter_blocking_contradictions(
+        &symbolic.contradictions,
+        &symbolic.query_support,
+        consistency_scope,
+    );
     ReasoningTrace {
         derived_facts: symbolic.derived_facts,
         matched_rules: symbolic.matched_rules,
@@ -649,7 +709,9 @@ fn build_symbolic_trace(
         symbolic_rounds: Some(symbolic.rounds_executed),
         pending_rule_count: Some(symbolic.pending_rule_count),
         program_fingerprint: Some(program_fingerprint.to_string()),
+        consistency_scope: Some(consistency_scope),
         query_support: symbolic.query_support,
+        blocking_contradictions,
     }
 }
 
@@ -658,6 +720,49 @@ fn map_symbolic_status(status: SymbolicClosureStatus) -> ReasoningSymbolicStatus
         SymbolicClosureStatus::Saturated => ReasoningSymbolicStatus::Saturated,
         SymbolicClosureStatus::Truncated => ReasoningSymbolicStatus::Truncated,
     }
+}
+
+fn has_blocking_contradictions(
+    symbolic: &SymbolicEvaluation,
+    consistency_scope: ReasoningConsistencyScope,
+) -> bool {
+    !filter_blocking_contradictions(
+        &symbolic.contradictions,
+        &symbolic.query_support,
+        consistency_scope,
+    )
+    .is_empty()
+}
+
+fn filter_blocking_contradictions(
+    contradictions: &[ReasoningContradiction],
+    query_support: &[String],
+    consistency_scope: ReasoningConsistencyScope,
+) -> Vec<ReasoningContradiction> {
+    match consistency_scope {
+        ReasoningConsistencyScope::Global => contradictions.to_vec(),
+        ReasoningConsistencyScope::QuerySupport => {
+            let relevant_atoms: std::collections::BTreeSet<String> = query_support
+                .iter()
+                .map(|fact| contradiction_atom_key(fact))
+                .collect();
+            contradictions
+                .iter()
+                .filter(|contradiction| {
+                    relevant_atoms.contains(&contradiction_atom_key(&contradiction.positive))
+                })
+                .cloned()
+                .collect()
+        }
+    }
+}
+
+fn contradiction_atom_key(value: &str) -> String {
+    value
+        .trim()
+        .strip_prefix("not ")
+        .unwrap_or(value.trim())
+        .to_string()
 }
 
 pub(crate) fn normalize_non_empty(
@@ -723,6 +828,7 @@ mod tests {
                 consequent: "allow(tx)".to_string(),
             }],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(8),
         })
         .unwrap();
@@ -736,8 +842,13 @@ mod tests {
         );
         assert_eq!(decision.trace.pending_rule_count, Some(0));
         assert!(decision.trace.program_fingerprint.is_some());
+        assert_eq!(
+            decision.trace.consistency_scope,
+            Some(ReasoningConsistencyScope::Global)
+        );
         assert_eq!(decision.trace.support_graph.len(), 3);
         assert!(decision.trace.contradictions.is_empty());
+        assert!(decision.trace.blocking_contradictions.is_empty());
         assert_eq!(
             decision.trace.query_support,
             vec![
@@ -771,6 +882,7 @@ mod tests {
                 },
             ],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(2),
         })
         .unwrap();
@@ -790,6 +902,7 @@ mod tests {
                 consequent: "allow(tx)".to_string(),
             }],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(1),
         })
         .unwrap();
@@ -811,6 +924,7 @@ mod tests {
                 consequent: "allow(tx)".to_string(),
             }],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(8),
         })
         .unwrap();
@@ -846,6 +960,7 @@ mod tests {
             facts: vec!["allow(tx)".to_string(), "!allow(tx)".to_string()],
             rules: vec![],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(4),
         })
         .unwrap();
@@ -874,6 +989,7 @@ mod tests {
                 },
             ],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(1),
         })
         .unwrap();
@@ -906,6 +1022,7 @@ mod tests {
                 },
             ],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(4),
         })
         .unwrap();
@@ -918,6 +1035,60 @@ mod tests {
         assert_eq!(
             decision.trace.query_support,
             vec!["allow(tx)".to_string(), "trusted(user)".to_string()]
+        );
+    }
+
+    #[test]
+    fn symbolic_query_support_scope_allows_unrelated_contradictions() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec![
+                "trusted(user)".to_string(),
+                "noise".to_string(),
+                "!noise".to_string(),
+            ],
+            rules: vec![SymbolicRule {
+                id: "permit".to_string(),
+                antecedents: vec!["trusted(user)".to_string()],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            consistency_scope: Some(ReasoningConsistencyScope::QuerySupport),
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+        assert_eq!(
+            decision.trace.consistency_scope,
+            Some(ReasoningConsistencyScope::QuerySupport)
+        );
+        assert_eq!(decision.trace.contradictions.len(), 1);
+        assert!(decision.trace.blocking_contradictions.is_empty());
+    }
+
+    #[test]
+    fn symbolic_query_support_scope_blocks_support_contradictions() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["trusted(user)".to_string(), "!trusted(user)".to_string()],
+            rules: vec![SymbolicRule {
+                id: "permit".to_string(),
+                antecedents: vec!["trusted(user)".to_string()],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            consistency_scope: Some(ReasoningConsistencyScope::QuerySupport),
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert_eq!(decision.trace.contradictions.len(), 1);
+        assert_eq!(decision.trace.blocking_contradictions.len(), 1);
+        assert_eq!(
+            decision.trace.blocking_contradictions[0].positive,
+            "trusted(user)"
         );
     }
 
@@ -1025,6 +1196,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(0.8),
+            consistency_scope: None,
             max_rounds: Some(8),
         })
         .unwrap();
@@ -1049,6 +1221,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(0.8),
+            consistency_scope: None,
             max_rounds: Some(8),
         })
         .unwrap();
@@ -1088,6 +1261,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(0.8),
+            consistency_scope: None,
             max_rounds: Some(1),
         })
         .unwrap();
@@ -1101,6 +1275,39 @@ mod tests {
         assert!(decision
             .rationale
             .contains("consistency evaluation truncated"));
+    }
+
+    #[test]
+    fn neuro_symbolic_query_support_scope_allows_unrelated_contradictions() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec![
+                "trusted(user)".to_string(),
+                "noise".to_string(),
+                "!noise".to_string(),
+            ],
+            rules: vec![SymbolicRule {
+                id: "permit".to_string(),
+                antecedents: vec!["trusted(user)".to_string()],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 10.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            consistency_scope: Some(ReasoningConsistencyScope::QuerySupport),
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+        assert_eq!(decision.trace.contradictions.len(), 1);
+        assert!(decision.trace.blocking_contradictions.is_empty());
     }
 
     #[test]
@@ -1151,6 +1358,7 @@ mod tests {
             facts: vec!["trusted(user)".to_string()],
             rules: vec![],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(4),
         });
         assert!(matches!(
@@ -1167,6 +1375,7 @@ mod tests {
                 predicate: " ".to_string(),
                 object: "tx".to_string(),
             }],
+            consistency_scope: None,
             max_rounds: Some(4),
         });
         assert!(matches!(
@@ -1190,6 +1399,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(0.8),
+            consistency_scope: None,
             max_rounds: Some(4),
         });
         assert!(matches!(
@@ -1210,6 +1420,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(f64::NAN),
+            consistency_scope: None,
             max_rounds: Some(4),
         });
         assert!(matches!(
@@ -1233,6 +1444,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(1.1),
+            consistency_scope: None,
             max_rounds: Some(4),
         });
         assert!(matches!(above_one, Err(HelixError::ValidationError { .. })));
@@ -1250,6 +1462,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(-0.1),
+            consistency_scope: None,
             max_rounds: Some(4),
         });
         assert!(matches!(
@@ -1296,6 +1509,7 @@ mod tests {
             facts: vec!["allow(tx)".to_string()],
             rules: vec![],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(0),
         });
         assert!(matches!(symbolic, Err(HelixError::ValidationError { .. })));
@@ -1313,6 +1527,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(0.8),
+            consistency_scope: None,
             max_rounds: Some(0),
         });
         assert!(matches!(

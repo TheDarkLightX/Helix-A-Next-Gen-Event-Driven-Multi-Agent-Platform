@@ -456,11 +456,18 @@ async fn post_reasoning_evaluate(
             facts,
             rules,
             triples,
+            consistency_scope,
             max_rounds,
         } => get_or_compile_symbolic_program(&state, rules, triples)
             .await
             .and_then(|program| {
-                evaluate_compiled_symbolic_reasoning(query, facts, program.as_ref(), max_rounds)
+                evaluate_compiled_symbolic_reasoning(
+                    query,
+                    facts,
+                    program.as_ref(),
+                    consistency_scope,
+                    max_rounds,
+                )
             }),
         ReasoningEvaluationRequest::NeuroSymbolic {
             query,
@@ -470,6 +477,7 @@ async fn post_reasoning_evaluate(
             features,
             model,
             min_probability,
+            consistency_scope,
             max_rounds,
         } => get_or_compile_symbolic_program(&state, rules, triples)
             .await
@@ -481,6 +489,7 @@ async fn post_reasoning_evaluate(
                     features,
                     model,
                     min_probability,
+                    consistency_scope,
                     max_rounds,
                 )
             }),
@@ -1538,6 +1547,7 @@ mod tests {
                 review_threshold: 0.5,
             },
             min_probability: Some(0.8),
+            consistency_scope: None,
             max_rounds: Some(8),
         };
 
@@ -1579,6 +1589,7 @@ mod tests {
                 consequent: "allow(tx)".to_string(),
             }],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(8),
         };
 
@@ -1606,6 +1617,11 @@ mod tests {
             assert_eq!(payload.decision.trace.pending_rule_count, Some(0));
             assert!(payload.decision.trace.program_fingerprint.is_some());
             assert_eq!(
+                payload.decision.trace.consistency_scope,
+                Some(helix_core::reasoning::ReasoningConsistencyScope::Global)
+            );
+            assert!(payload.decision.trace.blocking_contradictions.is_empty());
+            assert_eq!(
                 payload.decision.trace.query_support,
                 vec![
                     "allow(tx)".to_string(),
@@ -1632,6 +1648,7 @@ mod tests {
             facts: vec!["allow(tx)".to_string(), "!allow(tx)".to_string()],
             rules: vec![],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(4),
         };
 
@@ -1658,6 +1675,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn symbolic_reasoning_endpoint_supports_query_support_scope() {
+        let request = ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec![
+                "trusted(user)".to_string(),
+                "noise".to_string(),
+                "!noise".to_string(),
+            ],
+            rules: vec![SymbolicRule {
+                id: "permit".to_string(),
+                antecedents: vec!["trusted(user)".to_string()],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            consistency_scope: Some(helix_core::reasoning::ReasoningConsistencyScope::QuerySupport),
+            max_rounds: Some(4),
+        };
+
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/reasoning/evaluate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: ReasoningEvaluateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.decision.verdict,
+            helix_core::reasoning::ReasoningVerdict::Allow
+        );
+        assert_eq!(payload.decision.trace.contradictions.len(), 1);
+        assert!(payload.decision.trace.blocking_contradictions.is_empty());
+        assert_eq!(
+            payload.decision.trace.consistency_scope,
+            Some(helix_core::reasoning::ReasoningConsistencyScope::QuerySupport)
+        );
+    }
+
+    #[tokio::test]
     async fn symbolic_reasoning_endpoint_reports_truncation_metadata() {
         let request = ReasoningEvaluationRequest::KrrSymbolic {
             query: "c".to_string(),
@@ -1675,6 +1738,7 @@ mod tests {
                 },
             ],
             triples: vec![],
+            consistency_scope: None,
             max_rounds: Some(1),
         };
 

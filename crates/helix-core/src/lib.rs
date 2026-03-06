@@ -38,6 +38,7 @@ pub mod state;
 pub mod types;
 
 pub mod filter_agent;
+pub mod intel_desk;
 pub mod llm_agent;
 pub mod timer_agent;
 

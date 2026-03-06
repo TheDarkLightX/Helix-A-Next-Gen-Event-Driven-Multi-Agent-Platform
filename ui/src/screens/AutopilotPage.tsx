@@ -3,6 +3,7 @@ import {
   AutopilotGuardConfig,
   executeAutopilot,
   fetchAutopilotStatus,
+  proposeAutopilot,
   updateAutopilotConfig,
 } from "../lib/api";
 
@@ -45,6 +46,8 @@ export function AutopilotPage() {
   const [config, setConfig] = useState<AutopilotGuardConfig | null>(null);
   const [statusLine, setStatusLine] = useState<string>("Loading autopilot status...");
   const [statsLine, setStatsLine] = useState<string>("");
+  const [policyGoal, setPolicyGoal] = useState<string>("");
+  const [onchainGoal, setOnchainGoal] = useState<string>("");
   const [policyActionText, setPolicyActionText] = useState<string>(DEFAULT_POLICY_ACTION);
   const [onchainActionText, setOnchainActionText] = useState<string>(DEFAULT_ONCHAIN_ACTION);
   const [policyResult, setPolicyResult] = useState<string>("");
@@ -90,6 +93,33 @@ export function AutopilotPage() {
     }
   }
 
+  async function onProposePolicyAction() {
+    if (!policyGoal.trim()) {
+      setPolicyResult("Proposal goal is required.");
+      return;
+    }
+
+    setPolicyResult("Requesting policy proposal...");
+    try {
+      const result = await proposeAutopilot({ goal: policyGoal, kind: "policy_simulation" });
+      if (!result.ok) {
+        setPolicyResult(JSON.stringify({ status: result.status, ...result.error }, null, 2));
+        return;
+      }
+
+      setPolicyActionText(
+        JSON.stringify(
+          { confirmed_by_human: true, action: result.response.action },
+          null,
+          2
+        )
+      );
+      setPolicyResult(JSON.stringify(result.response, null, 2));
+    } catch (error) {
+      setPolicyResult(`Proposal failed: ${(error as Error).message}`);
+    }
+  }
+
   async function onRunOnchainAction() {
     setOnchainResult("Executing onchain autopilot action...");
     try {
@@ -100,6 +130,48 @@ export function AutopilotPage() {
       setStatsLine(`evaluations=${status.stats.evaluations}, denied=${status.stats.denied}`);
     } catch (error) {
       setOnchainResult(`Execution failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function onProposeOnchainAction() {
+    if (!onchainGoal.trim()) {
+      setOnchainResult("Proposal goal is required.");
+      return;
+    }
+
+    setOnchainResult("Requesting onchain proposal...");
+    let hints: { rpc_url?: string; raw_tx_hex?: string; dry_run?: boolean } = {};
+    try {
+      const parsed = JSON.parse(onchainActionText);
+      const req = parsed?.action?.request;
+      if (typeof req?.rpc_url === "string") hints.rpc_url = req.rpc_url;
+      if (typeof req?.raw_tx_hex === "string") hints.raw_tx_hex = req.raw_tx_hex;
+      if (typeof req?.dry_run === "boolean") hints.dry_run = req.dry_run;
+    } catch {
+      // Ignore parse failures and let the proposer decide.
+    }
+
+    try {
+      const result = await proposeAutopilot({
+        goal: onchainGoal,
+        kind: "onchain_broadcast",
+        ...hints,
+      });
+      if (!result.ok) {
+        setOnchainResult(JSON.stringify({ status: result.status, ...result.error }, null, 2));
+        return;
+      }
+
+      setOnchainActionText(
+        JSON.stringify(
+          { confirmed_by_human: true, action: result.response.action },
+          null,
+          2
+        )
+      );
+      setOnchainResult(JSON.stringify(result.response, null, 2));
+    } catch (error) {
+      setOnchainResult(`Proposal failed: ${(error as Error).message}`);
     }
   }
 
@@ -148,6 +220,17 @@ export function AutopilotPage() {
               <label className="field checkbox-field">
                 <input
                   type="checkbox"
+                  checked={config.require_onchain_confirmation}
+                  onChange={(e) =>
+                    setConfig({ ...config, require_onchain_confirmation: e.target.checked })
+                  }
+                />
+                <span>require_onchain_confirmation</span>
+              </label>
+
+              <label className="field checkbox-field">
+                <input
+                  type="checkbox"
                   checked={config.require_onchain_dry_run}
                   onChange={(e) =>
                     setConfig({ ...config, require_onchain_dry_run: e.target.checked })
@@ -182,6 +265,20 @@ export function AutopilotPage() {
 
       <article className="panel">
         <p className="mono-label">Policy Action</p>
+        <label className="field">
+          <span>proposal_goal</span>
+          <input
+            type="text"
+            value={policyGoal}
+            onChange={(e) => setPolicyGoal(e.target.value)}
+            placeholder="e.g. simulate allowlist and fee quote before broadcast"
+          />
+        </label>
+        <div className="button-row">
+          <button className="btn-secondary" onClick={onProposePolicyAction}>
+            Propose Policy Action
+          </button>
+        </div>
         <textarea
           className="command-editor"
           rows={16}
@@ -201,6 +298,20 @@ export function AutopilotPage() {
 
       <article className="panel">
         <p className="mono-label">Onchain Action</p>
+        <label className="field">
+          <span>proposal_goal</span>
+          <input
+            type="text"
+            value={onchainGoal}
+            onChange={(e) => setOnchainGoal(e.target.value)}
+            placeholder="e.g. propose a safe dry-run broadcast payload"
+          />
+        </label>
+        <div className="button-row">
+          <button className="btn-secondary" onClick={onProposeOnchainAction}>
+            Propose Onchain Action
+          </button>
+        </div>
         <textarea
           className="command-editor"
           rows={16}

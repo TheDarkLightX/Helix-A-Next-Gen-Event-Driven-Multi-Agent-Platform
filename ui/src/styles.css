@@ -360,6 +360,18 @@ a {
   color: #ffe19f;
 }
 
+.status-pill.info {
+  border: 1px solid rgba(125, 216, 255, 0.4);
+  background: rgba(125, 216, 255, 0.15);
+  color: #cceeff;
+}
+
+.status-pill.danger {
+  border: 1px solid rgba(255, 143, 143, 0.45);
+  background: rgba(255, 143, 143, 0.16);
+  color: #ffd0d0;
+}
+
 .command-stack {
   margin-top: 0.8rem;
   display: grid;
@@ -574,6 +586,46 @@ a {
   display: flex;
   gap: 0.52rem;
   flex-wrap: wrap;
+}
+
+.pill-row {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.info-pill,
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.28rem 0.56rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.69rem;
+}
+
+.info-pill {
+  border: 1px solid rgba(126, 174, 224, 0.25);
+  background: rgba(8, 14, 22, 0.7);
+  color: #d6eaff;
+}
+
+.tag-chip {
+  border: 1px solid rgba(255, 173, 74, 0.32);
+  background: rgba(255, 173, 74, 0.14);
+  color: #ffd8a4;
+}
+
+.stack-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.panel-note {
+  margin-top: 0.7rem !important;
+  font-size: 0.8rem;
+  color: var(--text-muted) !important;
+  overflow-wrap: anywhere;
 }
 
 .table-wrap {

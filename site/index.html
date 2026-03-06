@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Helix is a self-hosted personal intelligence agency and OSINT Desk reference product: sources, evidence, watchlists, cases, neuro-symbolic guardrails, and fail-closed autopilot for LLM-proposed actions."
+    />
+    <meta name="color-scheme" content="dark" />
+
+    <meta property="og:title" content="Helix | Self-Hosted Personal Intelligence Agency" />
+    <meta
+      property="og:description"
+      content="OSINT Desk reference product. Sources, evidence, watchlists, and cases on deterministic kernels. Neuro-symbolic guardrails. Optional fail-closed autopilot."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="./assets/og-card.svg" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=IBM+Plex+Mono:wght@400;600&family=Space+Grotesk:wght@300..700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+
+    <title>Helix | Self-Hosted Personal Intelligence Agency</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <a class="brand" href="./">
+          <img class="brand-mark" src="./assets/logo.svg" alt="" width="28" height="28" />
+          <span class="brand-name">Helix</span>
+          <span class="brand-tag mono">OSINT Desk</span>
+        </a>
+
+        <nav class="nav" aria-label="Primary">
+          <a class="nav-link" href="#desk">Desk</a>
+          <a class="nav-link" href="#workflow">Workflow</a>
+          <a class="nav-link" href="#architecture">Architecture</a>
+          <a class="nav-link" href="#autopilot">Autopilot</a>
+          <a class="nav-link" href="#verification">Verification</a>
+        </nav>
+
+        <div class="topbar-cta">
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
+            rel="noreferrer"
+            target="_blank"
+          >
+            GitHub
+          </a>
+          <a class="btn btn-primary" href="#quickstart">Get Started</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="content">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="kicker mono reveal">Self-hosted personal intelligence agency.</p>
+            <h1 class="reveal">Run your own OSINT desk without surrendering control.</h1>
+            <p class="lead reveal">
+              Helix is the open-source reference product for operators who need more than webhook
+              automations. Register sources, normalize evidence, drive watchlists, build cases, and
+              let LLMs propose next actions only after deterministic, fail-closed kernels decide
+              what is valid.
+            </p>
+
+            <div class="hero-actions reveal">
+              <a class="btn btn-primary" href="#quickstart">Run Helix locally</a>
+              <a
+                class="btn btn-ghost"
+                href="https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
+                rel="noreferrer"
+                target="_blank"
+              >
+                View source
+              </a>
+            </div>
+
+            <div class="signal-strip reveal" aria-label="Desk surface">
+              <span class="signal-chip mono">RSS + web diff + APIs</span>
+              <span class="signal-chip mono">Evidence + provenance</span>
+              <span class="signal-chip mono">Watchlists + cases</span>
+              <span class="signal-chip mono">Neuro-symbolic review</span>
+            </div>
+
+            <div class="hero-badges reveal" aria-label="Highlights">
+              <div class="badge">
+                <span class="badge-title mono">Reference product</span>
+                <span class="badge-body">OSINT Desk, not a generic automation toy</span>
+              </div>
+              <div class="badge">
+                <span class="badge-title mono">Deterministic core</span>
+                <span class="badge-body">Every case and guard decision is auditable</span>
+              </div>
+              <div class="badge">
+                <span class="badge-title mono">Guarded autopilot</span>
+                <span class="badge-body">LLMs suggest. Kernels decide. Operators approve.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-visual reveal" aria-hidden="true">
+            <div class="scanner"></div>
+            <div class="dossier">
+              <div class="dossier-header">
+                <span class="stamp mono">DETERMINISTIC</span>
+                <span class="stamp stamp-warn mono">FAIL CLOSED</span>
+              </div>
+              <pre class="dossier-code mono"><code>{
+  "reference_product": "osint_desk",
+  "autopilot": { "mode": "assist", "llm_role": "proposal_only" },
+  "desk": ["sources", "evidence", "watchlists", "cases", "briefings"],
+  "guardrails": [
+    "policy_command_limit",
+    "onchain_disabled",
+    "onchain_requires_confirmation",
+    "dry_run_required"
+  ],
+  "reasoning": "neuro_symbolic",
+  "workflow": "collect -> normalize -> match -> case -> review"
+}</code></pre>
+              <div class="dossier-footer mono">
+                <span>sources: bounded</span>
+                <span>claims: reviewable</span>
+                <span>trace: replayable</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="desk">
+        <div class="container">
+          <header class="section-head reveal">
+            <p class="section-kicker mono">Reference product</p>
+            <h2>From intake lanes to dossiers</h2>
+            <p>
+              Helix is positioned beyond Huginn-style event wiring. The desk surface is concrete:
+              bounded source intake, provenance-first evidence, explainable watchlists, and case
+              lifecycles that stay deterministic even when neural systems help with triage.
+            </p>
+          </header>
+
+          <div class="grid-2">
+            <article class="card capability-card reveal">
+              <div class="capability-head">
+                <span class="capability-kicker mono">01 / Sources</span>
+                <h3>Bound every intake lane before it speaks.</h3>
+              </div>
+              <p>
+                Register feeds, website diff monitors, JSON APIs, webhooks, digests, and manual
+                imports with explicit cadence, trust, scope, and health state.
+              </p>
+              <ul class="feature-list">
+                <li>Trust-scored source registry with replayable collection boundaries</li>
+                <li>Explicit tags, cadence, and ownership for every source definition</li>
+                <li>Fail-closed collection posture when config or provenance is missing</li>
+              </ul>
+            </article>
+            <article class="card capability-card reveal">
+              <div class="capability-head">
+                <span class="capability-kicker mono">02 / Evidence</span>
+                <h3>Normalize raw signals into usable evidence.</h3>
+              </div>
+              <p>
+                Every artifact becomes an immutable evidence item with provenance, timestamps,
+                tags, entities, and bounded claim proposals instead of free-form drift.
+              </p>
+              <ul class="feature-list">
+                <li>Evidence hashes, timestamps, and source references travel with the record</li>
+                <li>Neural extraction can suggest claims, but cannot silently mutate state</li>
+                <li>Contradictions stay visible instead of being overwritten by summaries</li>
+              </ul>
+            </article>
+            <article class="card capability-card reveal">
+              <div class="capability-head">
+                <span class="capability-kicker mono">03 / Watchlists</span>
+                <h3>Keep detection explainable.</h3>
+              </div>
+              <p>
+                Watchlists match on deterministic keywords, entities, trust floors, and severity
+                bands so the operator always knows why the desk opened work.
+              </p>
+              <ul class="feature-list">
+                <li>Stable hit rationale with exact rule, source, and threshold context</li>
+                <li>Cooldowns and severity tiers to prevent noisy operator fatigue</li>
+                <li>No opaque ranking model deciding whether something matters</li>
+              </ul>
+            </article>
+            <article class="card capability-card reveal">
+              <div class="capability-head">
+                <span class="capability-kicker mono">04 / Cases</span>
+                <h3>Run dossiers through a finite lifecycle.</h3>
+              </div>
+              <p>
+                Cases collect evidence, claims, and notes behind a deterministic lifecycle:
+                monitoring, ready for briefing, escalated, or closed with a replayable trace.
+              </p>
+              <ul class="feature-list">
+                <li>Analyst ownership, linked evidence, and explicit transition history</li>
+                <li>Brief-ready status without bypassing case-state invariants</li>
+                <li>Autopilot can propose follow-up steps, never bypass the case kernel</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="callout reveal" role="note">
+            <div class="callout-title mono">Positioning</div>
+            <div class="callout-body">
+              Helix is what you run when you want a personal intelligence agency that stays
+              self-hosted, open source, explainable, and deterministic where it matters.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="architecture">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Functional Core, Imperative Shell</h2>
+            <p>
+              Deterministic state machines are the source of truth. Side effects live at explicit
+              boundaries. This keeps runs auditable, replayable, and safe to automate.
+            </p>
+          </header>
+
+          <div class="grid-3">
+            <article class="card reveal">
+              <h3 class="mono">Pure kernels</h3>
+              <p>
+                Finite state machines for policy, guards, and on-chain intent. Deterministic for
+                deterministic inputs.
+              </p>
+            </article>
+            <article class="card reveal">
+              <h3 class="mono">Adapters</h3>
+              <p>
+                Network, storage, webhooks, and LLM calls happen outside the core. Results are fed
+                back as explicit inputs.
+              </p>
+            </article>
+            <article class="card reveal">
+              <h3 class="mono">Replay</h3>
+              <p>
+                Store inputs and outcomes to replay runs. Non-deterministic proposals become
+                deterministic evidence once recorded.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="autopilot">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Autopilot With Guardrails</h2>
+            <p>
+              Some proposal engines are non-deterministic by design. Helix treats them as
+              untrusted planners: they can suggest actions, collection plans, or case updates, but
+              every proposed step is evaluated through a deterministic guard machine with stable
+              denial reasons.
+            </p>
+          </header>
+
+          <div class="grid-2">
+            <article class="card reveal">
+              <h3>Modes</h3>
+              <ul class="list">
+                <li><span class="mono">off</span>: deny autonomous actions</li>
+                <li><span class="mono">assist</span>: require <span class="mono">confirmed_by_human=true</span></li>
+                <li><span class="mono">auto</span>: allow bounded actions within guardrails</li>
+              </ul>
+            </article>
+
+            <article class="card reveal">
+              <h3>High-risk defaults</h3>
+              <ul class="list">
+                <li>On-chain actions are disabled by default</li>
+                <li>Optional dry-run requirement for on-chain actions</li>
+                <li>Optional mandatory human confirmation for on-chain actions</li>
+                <li>Hard upper bounds on policy command batch size</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="callout reveal" role="note">
+            <div class="callout-title mono">Design rule</div>
+            <div class="callout-body">
+              When an LLM is involved, fail closed on ambiguity, missing context, invalid input, or
+              unknown state. Autopilot is power under constraints, not a bypass.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Neuro-Symbolic, Not Vibes</h2>
+            <p>
+              Symbolic checks go first. Neural systems add extraction, scoring, and hypothesis
+              proposals second. If the symbolic side cannot justify the move, the fusion path
+              denies by default.
+            </p>
+          </header>
+
+          <div class="timeline reveal" aria-label="Neuro-symbolic pipeline">
+            <div class="timeline-step">
+              <div class="timeline-num mono">01</div>
+              <div class="timeline-body">
+                <div class="timeline-title mono">Symbolic entailment</div>
+                <p>Bounded forward chaining over facts, rules, and triples.</p>
+              </div>
+            </div>
+            <div class="timeline-step">
+              <div class="timeline-num mono">02</div>
+              <div class="timeline-body">
+                <div class="timeline-title mono">Neural scoring</div>
+                <p>Compute confidence (bounded to <span class="mono">[0, 1]</span>).</p>
+              </div>
+            </div>
+            <div class="timeline-step">
+              <div class="timeline-num mono">03</div>
+              <div class="timeline-body">
+                <div class="timeline-title mono">Fusion decision</div>
+                <p>Allow, review, or deny with deterministic rationale and trace.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="workflow">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Operator Workflow</h2>
+            <p>
+              The operator loop is designed for actual desk work, not demo theater: intake,
+              normalize, detect, escalate, and review autopilot proposals without losing control of
+              the evidence trail.
+            </p>
+          </header>
+
+          <div class="workflow-grid">
+            <div class="timeline reveal" aria-label="Operator workflow">
+              <div class="timeline-step">
+                <div class="timeline-num mono">01</div>
+                <div class="timeline-body">
+                  <div class="timeline-title mono">Register sources</div>
+                  <p>Bound cadence, trust, tags, and scope before collection starts.</p>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-num mono">02</div>
+                <div class="timeline-body">
+                  <div class="timeline-title mono">Collect and normalize</div>
+                  <p>Turn incoming artifacts into evidence with provenance, entities, and claims.</p>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-num mono">03</div>
+                <div class="timeline-body">
+                  <div class="timeline-title mono">Match watchlists</div>
+                  <p>Deterministic rules decide whether the desk opens or updates a case.</p>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-num mono">04</div>
+                <div class="timeline-body">
+                  <div class="timeline-title mono">Drive the case</div>
+                  <p>Move dossiers through monitoring, briefing, escalation, or closure.</p>
+                </div>
+              </div>
+              <div class="timeline-step">
+                <div class="timeline-num mono">05</div>
+                <div class="timeline-body">
+                  <div class="timeline-title mono">Review autopilot proposals</div>
+                  <p>Accept, deny, or simulate LLM-suggested next steps with explicit rationale.</p>
+                </div>
+              </div>
+            </div>
+
+            <aside class="workflow-board reveal" aria-label="Example operator state">
+              <div class="workflow-board-head mono">Case trace / monitored network</div>
+              <div class="workflow-board-list">
+                <div class="workflow-lane">
+                  <span class="workflow-label mono">sources</span>
+                  <p>7 active feeds, 2 site diffs, 1 analyst import, trust floor enforced.</p>
+                </div>
+                <div class="workflow-lane">
+                  <span class="workflow-label mono">evidence</span>
+                  <p>19 normalized artifacts, 6 claim proposals, 1 contradiction flagged.</p>
+                </div>
+                <div class="workflow-lane">
+                  <span class="workflow-label mono">watchlists</span>
+                  <p>Vendor names, sanctioned aliases, and high-risk terms matched deterministically.</p>
+                </div>
+                <div class="workflow-lane">
+                  <span class="workflow-label mono">case</span>
+                  <p>Status moved from monitoring to brief-ready with every transition recorded.</p>
+                </div>
+                <div class="workflow-lane workflow-lane-accent">
+                  <span class="workflow-label mono">autopilot review</span>
+                  <p>LLM suggests a collection expansion; Helix returns a simulation before approval.</p>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="quickstart">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Quickstart</h2>
+            <p>Launch the desk locally, keep the stack self-hosted, and point operators at the UI.</p>
+          </header>
+
+          <div class="codepanel reveal">
+            <div class="codepanel-head">
+              <span class="mono">Run locally</span>
+              <button class="btn btn-small btn-ghost" data-copy="./scripts/setup_local.sh\n./scripts/run_local.sh">
+                Copy
+              </button>
+            </div>
+            <pre class="mono"><code>./scripts/setup_local.sh
+./scripts/run_local.sh</code></pre>
+            <div class="codepanel-foot mono">
+              <span>API: http://127.0.0.1:3000</span>
+              <span>UI: http://127.0.0.1:5173</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="verification">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Verification Gates</h2>
+            <p>
+              Verification failures are release blockers. Helix treats missing solvers and missing
+              dependencies as failures unless explicitly waived.
+            </p>
+          </header>
+
+          <div class="codepanel reveal">
+            <div class="codepanel-head">
+              <span class="mono">Formal checks</span>
+              <button
+                class="btn btn-small btn-ghost"
+                data-copy="bash scripts/verify_formal_core.sh\nbash scripts/verify_formal_agents.sh"
+              >
+                Copy
+              </button>
+            </div>
+            <pre class="mono"><code>bash scripts/verify_formal_core.sh
+bash scripts/verify_formal_agents.sh</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="roadmap">
+        <div class="container">
+          <header class="section-head reveal">
+            <h2>Roadmap</h2>
+            <p>What comes after the desk core: public, self-hosted, and correctness-first.</p>
+          </header>
+
+          <div class="grid-3">
+            <article class="card reveal">
+              <h3 class="mono">Connector depth</h3>
+              <p>More first-party OSINT connectors, collection jobs, source health, and replayable demo datasets.</p>
+            </article>
+            <article class="card reveal">
+              <h3 class="mono">Briefings</h3>
+              <p>Analyst-facing briefs with evidence citations, contradiction handling, and shareable open artifacts.</p>
+            </article>
+            <article class="card reveal">
+              <h3 class="mono">Guarded autopilot plans</h3>
+              <p>LLM-drafted plans for collection and triage, reviewed through deterministic policy before execution.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <div>
+          <div class="footer-brand">
+            <img src="./assets/logo.svg" alt="" width="22" height="22" />
+            <span class="mono">Helix</span>
+          </div>
+          <p class="footer-note">
+            Open source. Self-hosted. Deterministic where it matters. Neural where it helps.
+          </p>
+        </div>
+        <div class="footer-links mono">
+          <a
+            href="https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
+            rel="noreferrer"
+            target="_blank"
+          >
+            GitHub
+          </a>
+          <a href="#desk">Desk</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#quickstart">Quickstart</a>
+          <a href="#verification">Verification</a>
+        </div>
+      </div>
+    </footer>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

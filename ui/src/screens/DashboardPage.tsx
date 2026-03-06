@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { DeterministicAgentSpec } from "../lib/api";
-import { fetchAgentCatalog, fetchAgentCatalogQuality } from "../lib/api";
+import { fetchAgentCatalog, fetchAgentCatalogQuality, fetchIntelOverview } from "../lib/api";
 
 const lanes = [
   { name: "Formal Kernel", status: "Healthy", note: "Finite-state transitions + invariants" },
   { name: "Imperative Shell", status: "Healthy", note: "Effects isolated behind execution port" },
-  { name: "Rule Engine", status: "In Progress", note: "Event matching + recipe triggers" },
-  { name: "WASM Runtime", status: "In Progress", note: "Host APIs and sandbox hardening" },
+  { name: "Source Registry", status: "Healthy", note: "Trust-scored collection adapters for the desk" },
+  { name: "Evidence Pipeline", status: "Healthy", note: "Provenance-linked evidence, claims, and watchlist hits" },
+  { name: "Case Lifecycle", status: "Healthy", note: "Deterministic dossier transitions for analyst workflow" },
   { name: "Onchain Shell", status: "Healthy", note: "EVM JSON-RPC raw tx + receipt lifecycle" },
   { name: "Autopilot Guard", status: "Healthy", note: "LLM-operable control plane with fail-closed gating" },
 ];
@@ -14,11 +15,12 @@ const lanes = [
 const controls = [
   { title: "Run Formal Core Verification", command: "./scripts/verify_formal_core.sh" },
   { title: "Verify ROI Agent Models", command: "./scripts/verify_formal_agents.sh" },
-  { title: "Apply Secure Onchain Template", command: "POST /api/v1/agents/templates/secure_onchain_executor" },
+  { title: "Source Registry", command: "GET /api/v1/sources" },
+  { title: "Evidence Ingest", command: "POST /api/v1/evidence/ingest" },
+  { title: "Case Queue", command: "GET /api/v1/cases" },
   { title: "Autopilot Status", command: "GET /api/v1/autopilot/status" },
-  { title: "Core Kernel Tests", command: "cargo test --manifest-path crates/helix-core/Cargo.toml execution_kernel" },
   { title: "Onchain Dry Run", command: "POST /api/v1/onchain/send_raw with dry_run=true" },
-  { title: "Launch UI", command: "cd ui && npm install && npm run dev" },
+  { title: "Launch UI", command: "cd ui && npm run dev" },
 ];
 
 const fallbackAgents = [
@@ -136,27 +138,43 @@ export function DashboardPage() {
   const [categoryCoverage, setCategoryCoverage] = useState<number>(0);
   const [huginnBaseline, setHuginnBaseline] = useState<number>(68);
   const [baselineGap, setBaselineGap] = useState<number>(agentClassCount - 68);
+  const [sourceCount, setSourceCount] = useState<number>(0);
+  const [watchlistCount, setWatchlistCount] = useState<number>(0);
+  const [evidenceCount, setEvidenceCount] = useState<number>(0);
+  const [openCaseCount, setOpenCaseCount] = useState<number>(0);
+  const [escalatedCaseCount, setEscalatedCaseCount] = useState<number>(0);
   const superiorityRatio = (agentClassCount / Math.max(huginnBaseline, 1)).toFixed(2);
   const healthyLaneCount = lanes.filter((lane) => lane.status === "Healthy").length;
 
   useEffect(() => {
     void (async () => {
       try {
-        const [catalog, quality] = await Promise.all([
+        const [catalog, quality, overview] = await Promise.all([
           fetchAgentCatalog(),
           fetchAgentCatalogQuality(),
+          fetchIntelOverview(),
         ]);
         setAgentClassCount(catalog.length);
         setFeaturedAgents(pickFeaturedAgents(catalog));
         setCategoryCoverage(quality.expanded_categories);
         setHuginnBaseline(quality.huginn_baseline_agents);
         setBaselineGap(quality.total_agents - quality.huginn_baseline_agents);
+        setSourceCount(overview.source_count);
+        setWatchlistCount(overview.watchlist_count);
+        setEvidenceCount(overview.evidence_count);
+        setOpenCaseCount(overview.open_case_count);
+        setEscalatedCaseCount(overview.escalated_case_count);
       } catch {
         setAgentClassCount(fallbackAgents.length);
         setFeaturedAgents(fallbackAgents);
         setCategoryCoverage(0);
         setHuginnBaseline(68);
         setBaselineGap(fallbackAgents.length - 68);
+        setSourceCount(0);
+        setWatchlistCount(0);
+        setEvidenceCount(0);
+        setOpenCaseCount(0);
+        setEscalatedCaseCount(0);
       }
     })();
   }, []);
@@ -165,12 +183,33 @@ export function DashboardPage() {
     <section className="dashboard-grid">
       <article className="panel panel-hero panel-span-12">
         <p className="mono-label">System Thesis</p>
-        <h2>Formal Functional Core, Imperative Shell</h2>
+        <h2>Self-Hosted Personal Intelligence Agency</h2>
         <p>
-          Helix execution state is modeled as a deterministic finite machine with formal model
-          parity. Runtime performs side effects only through explicit effect handlers.
+          Helix now exposes an OSINT Desk workflow on top of the verified substrate: trust-scored
+          sources, provenance-linked evidence, bounded claims, watchlists, cases, and guarded
+          autopilot.
         </p>
         <div className="metrics-grid">
+          <div className="metric-card">
+            <p className="metric-label">Sources</p>
+            <p className="metric-value">{sourceCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Watchlists</p>
+            <p className="metric-value">{watchlistCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Evidence</p>
+            <p className="metric-value">{evidenceCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Open Cases</p>
+            <p className="metric-value">{openCaseCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Escalated Cases</p>
+            <p className="metric-value">{escalatedCaseCount}</p>
+          </div>
           <div className="metric-card">
             <p className="metric-label">Runtime Lanes</p>
             <p className="metric-value">{lanes.length}</p>

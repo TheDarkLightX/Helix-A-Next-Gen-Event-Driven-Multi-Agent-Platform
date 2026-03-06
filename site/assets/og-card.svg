@@ -1,0 +1,54 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#070A0F" />
+      <stop offset="0.5" stop-color="#0B1020" />
+      <stop offset="1" stop-color="#070A0F" />
+    </linearGradient>
+    <linearGradient id="g" x1="300" y1="140" x2="900" y2="490" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A8FF60" stop-opacity="0.95" />
+      <stop offset="0.55" stop-color="#58B7FF" stop-opacity="0.92" />
+      <stop offset="1" stop-color="#A8FF60" stop-opacity="0.8" />
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="b" />
+      <feMerge>
+        <feMergeNode in="b" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)" />
+
+  <g opacity="0.22">
+    <path d="M0 140H1200" stroke="#E9EEFC" stroke-opacity="0.15" />
+    <path d="M0 315H1200" stroke="#E9EEFC" stroke-opacity="0.12" />
+    <path d="M0 490H1200" stroke="#E9EEFC" stroke-opacity="0.1" />
+    <path d="M220 0V630" stroke="#E9EEFC" stroke-opacity="0.12" />
+    <path d="M600 0V630" stroke="#E9EEFC" stroke-opacity="0.1" />
+    <path d="M980 0V630" stroke="#E9EEFC" stroke-opacity="0.08" />
+  </g>
+
+  <g filter="url(#glow)">
+    <path
+      d="M790 160C685 126 555 170 500 260C430 376 490 475 610 515C730 555 895 505 930 370C965 235 805 205 700 275C595 345 625 465 745 525C865 585 1015 555 1080 470"
+      stroke="url(#g)"
+      stroke-width="18"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      opacity="0.9"
+    />
+  </g>
+
+  <text x="90" y="270" fill="#E9EEFC" font-size="72" font-family="Georgia, serif" font-weight="700">
+    Helix
+  </text>
+  <text x="90" y="332" fill="#E9EEFC" fill-opacity="0.78" font-size="28" font-family="Arial, sans-serif">
+    Personal intelligence agency, self-hosted.
+  </text>
+  <text x="90" y="392" fill="#A8FF60" fill-opacity="0.92" font-size="20" font-family="Courier New, monospace">
+    deterministic kernels · neuro-symbolic gates · guarded autopilot
+  </text>
+</svg>
+

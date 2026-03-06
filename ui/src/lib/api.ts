@@ -131,6 +131,7 @@ export type AutopilotMode = "off" | "assist" | "auto";
 export type AutopilotGuardConfig = {
   mode: AutopilotMode;
   allow_onchain: boolean;
+  require_onchain_confirmation: boolean;
   require_onchain_dry_run: boolean;
   max_policy_commands: number;
 };
@@ -141,6 +142,15 @@ export type AutopilotStatusResponse = {
     evaluations: number;
     denied: number;
   };
+};
+
+export type OnchainBroadcastRequest = {
+  rpc_url: string;
+  raw_tx_hex: string;
+  await_receipt?: boolean;
+  max_poll_rounds?: number;
+  poll_interval_ms?: number;
+  dry_run?: boolean;
 };
 
 export type AutopilotExecuteRequest = {
@@ -157,14 +167,36 @@ export type AutopilotExecuteResponse = {
   result: unknown | null;
 };
 
-export type OnchainBroadcastRequest = {
-  rpc_url: string;
-  raw_tx_hex: string;
-  await_receipt?: boolean;
-  max_poll_rounds?: number;
-  poll_interval_ms?: number;
-  dry_run?: boolean;
+export type AutopilotProposeKind = "policy_simulation" | "onchain_broadcast";
+
+export type AutopilotProposeRequest = {
+  goal: string;
+  kind: AutopilotProposeKind;
+  rpc_url?: string | null;
+  raw_tx_hex?: string | null;
+  dry_run?: boolean | null;
 };
+
+export type AutopilotProposeResponse = {
+  model: string;
+  raw: string;
+  action: AutopilotExecuteRequest["action"];
+  guard_preview: {
+    action_class: unknown;
+    decision_unconfirmed: unknown;
+    decision_confirmed: unknown;
+  };
+};
+
+export type AutopilotProposeErrorResponse = {
+  error: string;
+  model: string | null;
+  raw: string | null;
+};
+
+export type AutopilotProposeResult =
+  | { ok: true; response: AutopilotProposeResponse }
+  | { ok: false; status: number; error: AutopilotProposeErrorResponse };
 
 export type OnchainBroadcastResponse = {
   phase: "Idle" | "Submitting" | "PendingReceipt" | "Confirmed" | "Reverted" | "Failed";
@@ -185,6 +217,161 @@ export type OnchainReceiptResponse = {
     status?: string;
     blockNumber?: string;
   } | null;
+};
+
+export type SourceKind =
+  | "rss_feed"
+  | "website_diff"
+  | "json_api"
+  | "webhook_ingest"
+  | "email_digest"
+  | "file_import";
+
+export type WatchlistSeverity = "low" | "medium" | "high" | "critical";
+
+export type ClaimReviewStatus = "needs_review" | "corroborated" | "rejected";
+
+export type SourceDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  kind: SourceKind;
+  cadence_minutes: number;
+  trust_score: number;
+  enabled: boolean;
+  tags: string[];
+};
+
+export type Watchlist = {
+  id: string;
+  name: string;
+  description: string;
+  keywords: string[];
+  entities: string[];
+  min_source_trust: number;
+  severity: WatchlistSeverity;
+  enabled: boolean;
+};
+
+export type ProposedClaim = {
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence_bps: number;
+  rationale?: string | null;
+};
+
+export type EvidenceItem = {
+  id: string;
+  source_id: string;
+  title: string;
+  summary: string;
+  content: string;
+  url: string | null;
+  observed_at: string;
+  tags: string[];
+  entity_labels: string[];
+  provenance_hash: string;
+};
+
+export type ClaimRecord = {
+  id: string;
+  evidence_id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence_bps: number;
+  review_status: ClaimReviewStatus;
+  rationale: string;
+};
+
+export type WatchlistHit = {
+  watchlist_id: string;
+  watchlist_name: string;
+  evidence_id: string;
+  severity: WatchlistSeverity;
+  matched_keywords: string[];
+  matched_entities: string[];
+  reason: string;
+};
+
+export type CaseStatus = "open" | "monitoring" | "brief_ready" | "escalated" | "closed";
+
+export type CaseFile = {
+  id: string;
+  title: string;
+  watchlist_id: string;
+  status: CaseStatus;
+  primary_entity: string | null;
+  evidence_ids: string[];
+  claim_ids: string[];
+  latest_reason: string;
+  briefing_summary: string | null;
+};
+
+export type CaseCommand =
+  | { type: "mark_monitoring" }
+  | { type: "attach_brief"; summary: string }
+  | { type: "escalate"; reason: string }
+  | { type: "close" }
+  | { type: "reopen"; reason: string };
+
+export type CaseTransition = {
+  case: CaseFile;
+  decision:
+    | { kind: "opened" }
+    | { kind: "updated" }
+    | { kind: "status_changed"; status: CaseStatus }
+    | { kind: "denied"; reason: string };
+};
+
+export type IntelDeskOverviewResponse = {
+  source_count: number;
+  watchlist_count: number;
+  evidence_count: number;
+  claim_count: number;
+  open_case_count: number;
+  escalated_case_count: number;
+};
+
+export type CreateSourceRequest = {
+  name: string;
+  description: string;
+  kind: SourceKind;
+  cadence_minutes: number;
+  trust_score: number;
+  enabled: boolean;
+  tags: string[];
+};
+
+export type CreateWatchlistRequest = {
+  name: string;
+  description: string;
+  keywords: string[];
+  entities: string[];
+  min_source_trust: number;
+  severity: WatchlistSeverity;
+  enabled: boolean;
+};
+
+export type IngestEvidenceRequest = {
+  source_id: string;
+  title: string;
+  summary: string;
+  content: string;
+  url?: string | null;
+  observed_at: string;
+  tags: string[];
+  entity_labels: string[];
+  proposed_claims: ProposedClaim[];
+};
+
+export type IngestEvidenceResponse = {
+  duplicate: boolean;
+  evidence: EvidenceItem;
+  claims: ClaimRecord[];
+  hits: WatchlistHit[];
+  case_updates: CaseTransition[];
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3000";
@@ -309,4 +496,125 @@ export async function executeAutopilot(
     body: JSON.stringify(request),
   });
   return parseOrThrow<AutopilotExecuteResponse>(response);
+}
+
+export async function proposeAutopilot(
+  request: AutopilotProposeRequest
+): Promise<AutopilotProposeResult> {
+  const response = await fetch(`${API_BASE}/api/v1/autopilot/propose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  const text = await response.text();
+  let payload: unknown = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = { error: text || `HTTP ${response.status}`, model: null, raw: null };
+  }
+
+  if (response.ok) {
+    return { ok: true, response: payload as AutopilotProposeResponse };
+  }
+
+  return {
+    ok: false,
+    status: response.status,
+    error: payload as AutopilotProposeErrorResponse,
+  };
+}
+
+export async function fetchIntelOverview(): Promise<IntelDeskOverviewResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/intel/overview`);
+  return parseOrThrow<IntelDeskOverviewResponse>(response);
+}
+
+export async function fetchSources(): Promise<SourceDefinition[]> {
+  const response = await fetch(`${API_BASE}/api/v1/sources`);
+  const payload = await parseOrThrow<{ sources: SourceDefinition[] }>(response);
+  return payload.sources;
+}
+
+export async function createSource(request: CreateSourceRequest): Promise<SourceDefinition> {
+  const response = await fetch(`${API_BASE}/api/v1/sources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  const payload = await parseOrThrow<{ source: SourceDefinition }>(response);
+  return payload.source;
+}
+
+export async function fetchWatchlists(): Promise<Watchlist[]> {
+  const response = await fetch(`${API_BASE}/api/v1/watchlists`);
+  const payload = await parseOrThrow<{ watchlists: Watchlist[] }>(response);
+  return payload.watchlists;
+}
+
+export async function createWatchlist(request: CreateWatchlistRequest): Promise<Watchlist> {
+  const response = await fetch(`${API_BASE}/api/v1/watchlists`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  const payload = await parseOrThrow<{ watchlist: Watchlist }>(response);
+  return payload.watchlist;
+}
+
+export async function fetchEvidence(): Promise<EvidenceItem[]> {
+  const response = await fetch(`${API_BASE}/api/v1/evidence`);
+  const payload = await parseOrThrow<{ evidence: EvidenceItem[] }>(response);
+  return payload.evidence;
+}
+
+export async function ingestEvidence(request: IngestEvidenceRequest): Promise<IngestEvidenceResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/evidence/ingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  return parseOrThrow<IngestEvidenceResponse>(response);
+}
+
+export async function fetchClaims(): Promise<ClaimRecord[]> {
+  const response = await fetch(`${API_BASE}/api/v1/claims`);
+  const payload = await parseOrThrow<{ claims: ClaimRecord[] }>(response);
+  return payload.claims;
+}
+
+export async function reviewClaim(
+  claimId: string,
+  status: ClaimReviewStatus
+): Promise<ClaimRecord> {
+  const response = await fetch(`${API_BASE}/api/v1/claims/${encodeURIComponent(claimId)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const payload = await parseOrThrow<{ claim: ClaimRecord }>(response);
+  return payload.claim;
+}
+
+export async function fetchCases(): Promise<CaseFile[]> {
+  const response = await fetch(`${API_BASE}/api/v1/cases`);
+  const payload = await parseOrThrow<{ cases: CaseFile[] }>(response);
+  return payload.cases;
+}
+
+export async function transitionCase(
+  caseId: string,
+  command: CaseCommand
+): Promise<CaseTransition> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/cases/${encodeURIComponent(caseId)}/transition`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command }),
+    }
+  );
+  const payload = await parseOrThrow<{ transition: CaseTransition }>(response);
+  return payload.transition;
 }

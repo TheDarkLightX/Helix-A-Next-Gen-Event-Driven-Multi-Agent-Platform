@@ -32,11 +32,11 @@ tracing = "0.1"
 thiserror = "1.0"
 async-trait = "0.1"
 async-nats = { version = "0.38.0" }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "json", "uuid"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "json", "uuid", "chrono"] }
 axum = { version = "0.7", features = ["json"] }
 
 # LLM and AI dependencies
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 # Error handling
 anyhow = "1.0"
 # tiktoken-rs = "0.5"  # Commented out for now

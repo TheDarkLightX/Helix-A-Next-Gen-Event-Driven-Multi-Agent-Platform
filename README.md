@@ -1,57 +1,84 @@
-# Helix Platform 1.0
+# Helix Platform 2.0
 
-Helix is a correctness-first, event-driven multi-agent platform with:
+Helix is a self-hosted personal intelligence agency platform for operators who want deterministic control, replayable evidence, and optional autopilot.
 
-- Formal functional core (pure deterministic state machines)
-- Imperative shell (all side effects at explicit boundaries)
-- Operator UI control plane
-- LLM-operable autopilot API with fail-closed guardrails
+Core rule: LLMs can propose actions, summaries, and claims. Deterministic kernels decide what is accepted, denied, escalated, or executed.
 
-## What Ships In 1.0
+## Product Thesis
+
+Helix is not positioned as a generic automation clone. The main product surface is an OSINT Desk built on a functional core and imperative shell:
+
+- Sources with explicit trust scores and bounded collection cadence
+- Evidence with provenance, timestamps, entities, and claim proposals
+- Watchlists with deterministic keyword/entity matching and severity
+- Case files with deterministic lifecycle transitions
+- Neuro-symbolic and expert reasoning backends with fail-closed decisions
+- Guarded autopilot for LLM-proposed actions
+
+## What Ships
 
 - Deterministic policy engine with replayable simulations
-- Deterministic high-ROI agent catalog
-- Deterministic KRR/symbolic/expert/neuro/neuro-symbolic reasoning backends
-- On-chain EVM transaction shell (`send_raw` + receipt polling + dry-run)
-- Autopilot guard for LLM-driven operation (`off` / `assist` / `auto`)
+- Deterministic agent catalog and deployment templates
+- Reasoning backends: symbolic, expert, neural-risk, and neuro-symbolic
+- Intelligence desk APIs for sources, evidence, claims, watchlists, and cases
+- Onchain EVM transaction shell with dry-run support and receipt polling
+- Autopilot control plane with `off`, `assist`, and `auto` modes
+- Operator UI for dashboard, sources, watchlists, evidence, cases, policy, agents, onchain, and autopilot
+- GitHub Pages marketing site under `site/`
 
-## Repository Layout
+## Architecture
 
-- `crates/helix-core`: deterministic kernels and policy/autopilot guard logic
-- `crates/helix-api`: HTTP API and imperative adapters (onchain JSON-RPC)
-- `crates/helix-runtime`: runtime shell and messaging
-- `ui/`: React + TypeScript control plane
-- `formal/`: formal model specs for core agents
-- `scripts/`: setup, run, and verification scripts
+Helix uses a functional core / imperative shell design:
 
-## Fast Setup
+- Pure kernels own policy, guardrails, reasoning decisions, and case lifecycle
+- Adapters own HTTP, storage, JSON-RPC, webhooks, and LLM calls
+- Non-deterministic systems can propose inputs, but they do not mutate trusted state directly
+- Every risky path is designed to fail closed on ambiguity, invalid input, timeout, or unknown state
+
+## Quickstart
 
 ```bash
 ./scripts/setup_local.sh
 ./scripts/run_local.sh
 ```
 
-Endpoints after startup:
+Default local addresses:
 
 - API: `http://127.0.0.1:3000`
 - UI: `http://127.0.0.1:5173`
 
-## Quint Translator
+## Public Environment Configuration
 
-`helix-llm` includes a CLI translator from plain English to [Quint](https://quint-lang.org) specs.
+See [`.env.example`](.env.example) for the public runtime surface.
+
+Important variables:
+
+- `HELIX_AUTOPILOT_MODE`
+- `HELIX_AUTOPILOT_ALLOW_ONCHAIN`
+- `HELIX_AUTOPILOT_REQUIRE_ONCHAIN_CONFIRMATION`
+- `HELIX_AUTOPILOT_REQUIRE_DRY_RUN`
+- `HELIX_AUTOPILOT_MAX_POLICY_COMMANDS`
+- `HELIX_AUTOPILOT_LLM_MODEL`
+- `LLM_API_KEY`
+- `LLM_BASE_URL`
+
+Self-hosted LLM example:
 
 ```bash
-OPENAI_API_KEY=your_key_here \
-cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
+export HELIX_AUTOPILOT_LLM_MODEL="qwen-3.5"
+export LLM_BASE_URL="http://127.0.0.1:8000/v1"
+export LLM_API_KEY="local"
 ```
 
-You can also:
+## OSINT Desk Workflow
 
-- Set `--model`, `--temperature`, `--output`, and `--base-url`
-- Use `--prompt-file spec.txt`
-- Use `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, or `LLM_API_KEY`
-
-The translator runs a lightweight intent-facet pass and surfaces clarifying questions when prompts are ambiguous.
+1. Register trust-scored sources.
+2. Define deterministic watchlists.
+3. Ingest evidence with provenance and claim proposals.
+4. Review claims and corroborate or reject them.
+5. Let watchlist hits open or update case files.
+6. Move cases through monitoring, brief-ready, escalation, closure, and reopen flows.
+7. Use autopilot only as a guarded proposer.
 
 ## Core API
 
@@ -71,21 +98,39 @@ The translator runs a lightweight intent-facet pass and surfaces clarifying ques
 - `GET /api/v1/agents/templates/:template_id`
 - `POST /api/v1/agents/templates/:template_id`
 
-### Reasoning Backends
+### Intelligence Desk
+- `GET /api/v1/intel/overview`
+- `GET /api/v1/sources`
+- `POST /api/v1/sources`
+- `GET /api/v1/watchlists`
+- `POST /api/v1/watchlists`
+- `GET /api/v1/evidence`
+- `POST /api/v1/evidence/ingest`
+- `GET /api/v1/claims`
+- `POST /api/v1/claims/:claim_id/review`
+- `GET /api/v1/cases`
+- `POST /api/v1/cases/:case_id/transition`
+
+### Reasoning
 - `POST /api/v1/reasoning/evaluate`
 
-### Onchain (EVM)
+### Onchain
 - `POST /api/v1/onchain/send_raw`
 - `POST /api/v1/onchain/receipt`
 
-### Autopilot (LLM Operable)
+### Autopilot
 - `GET /api/v1/autopilot/status`
 - `PUT /api/v1/autopilot/config`
+- `POST /api/v1/autopilot/propose`
 - `POST /api/v1/autopilot/execute`
 
 ## UI Routes
 
 - `/` Dashboard
+- `/sources` Source registry
+- `/watchlists` Watchlist management
+- `/evidence` Evidence ingest and claim review
+- `/cases` Case queue and lifecycle controls
 - `/policies` Policy workbench
 - `/agents` Deterministic agent catalog
 - `/onchain` Onchain shell
@@ -93,95 +138,65 @@ The translator runs a lightweight intent-facet pass and surfaces clarifying ques
 
 ## Autopilot Model
 
-Autopilot is designed so an LLM can operate Helix the way a human operator would, with deterministic constraints:
+Autopilot treats model output as untrusted input.
 
 - `off`: deny autonomous actions
-- `assist`: require `confirmed_by_human=true` for every action
-- `auto`: permit autonomous execution within guardrails
+- `assist`: require `confirmed_by_human=true`
+- `auto`: allow bounded execution within the configured guardrails
 
-Guardrails include:
+Default guardrails include:
 
-- Max policy command batch size
-- On-chain enable/disable switch
-- Optional mandatory `dry_run` for on-chain actions
-- Denial reason codes for deterministic auditing
+- bounded policy command batch size
+- onchain enable or disable switch
+- optional required human confirmation for onchain actions
+- optional required `dry_run` for onchain actions
+- stable denial reasons for audit and replay
 
-Environment controls (see `.env.example`):
+`POST /api/v1/autopilot/propose` calls an OpenAI-compatible endpoint to draft a typed action and then previews how the deterministic guard would evaluate it with and without human confirmation.
 
-- `HELIX_AUTOPILOT_MODE`
-- `HELIX_AUTOPILOT_ALLOW_ONCHAIN`
-- `HELIX_AUTOPILOT_REQUIRE_DRY_RUN`
-- `HELIX_AUTOPILOT_MAX_POLICY_COMMANDS`
+## GitHub Pages Site
 
-## Deterministic Agent Set (1.0)
+The public marketing site lives in `site/` and deploys through `.github/workflows/pages.yml`.
 
-Helix now ships **77 deterministic agent classes**:
-
-- 17 foundational high-ROI kernels (core execution + onchain + symbolic/expert/neuro/neuro-symbolic reasoning gates).
-- 60 expanded guard classes spanning ingress integrity, SLO/incident control, tenant/compliance boundaries, payment/risk controls, and onchain execution safety.
-
-Query the full live catalog:
+Preview locally:
 
 ```bash
-curl -s http://127.0.0.1:3000/api/v1/agents | jq '.agents | length'
-curl -s http://127.0.0.1:3000/api/v1/agents/quality | jq '.quality'
+python3 -m http.server -d site 8080
 ```
 
-## Template-Driven Setup
+## Documentation
 
-Helix ships deterministic deployment templates so operators (or LLM autopilot flows) can apply proven policy profiles without manual tuning.
+- [`docs/intelligence_desk.md`](docs/intelligence_desk.md): product model, workflow, APIs, and operator surfaces
+- [`docs/formal_core_imperative_shell.md`](docs/formal_core_imperative_shell.md): functional core / imperative shell rationale
+- [`docs/high_roi_deterministic_agents.md`](docs/high_roi_deterministic_agents.md): deterministic agent set and deployment posture
 
-Example: inspect templates
+## Additional Component
+
+`helix-llm` includes a CLI translator from plain English to [Quint](https://quint-lang.org) specs.
 
 ```bash
-curl -s http://127.0.0.1:3000/api/v1/agents/templates | jq
+OPENAI_API_KEY=your_key_here \
+cargo run -p helix-llm --bin quint_translator -- "describe a simple counter that increments"
 ```
 
-Example: apply secure onchain executor template and run bootstrap simulation
+The translator supports:
 
-```bash
-curl -s -X POST \
-  http://127.0.0.1:3000/api/v1/agents/templates/secure_onchain_executor \
-  -H 'content-type: application/json' \
-  -d '{"run_bootstrap_simulation": true}' | jq
-```
+- `--model`
+- `--temperature`
+- `--output`
+- `--base-url`
+- `--prompt-file`
 
 ## Verification
 
-### Rust tests
+Run the project verification gates before release work:
 
 ```bash
-cargo test --manifest-path crates/helix-core/Cargo.toml --lib deterministic_agents
-cargo test --manifest-path crates/helix-core/Cargo.toml --lib deterministic_policy
-cargo test --manifest-path crates/helix-core/Cargo.toml --lib onchain_intent
+bash scripts/verify_formal_core.sh
+bash scripts/verify_formal_agents.sh
+cargo test --manifest-path crates/helix-core/Cargo.toml
 cargo test --manifest-path crates/helix-api/Cargo.toml
 cd ui && npm run build
 ```
 
-### Formal checks
-
-```bash
-./scripts/verify_formal_core.sh
-./scripts/verify_formal_agents.sh
-```
-
-Formal scripts are fail-closed and will try, in order:
-
-- `HELIX_FORMAL_MODULE` (default: `formal_verifier`)
-- `HELIX_FORMAL_FALLBACK_MODULE` (optional)
-- auto-discovered vendored backend under `external/`
-
-Optional overrides:
-
-```bash
-export HELIX_FORMAL_MODULE=formal_verifier
-export HELIX_FORMAL_FALLBACK_MODULE=alternate_formal_backend
-export HELIX_FORMAL_PYTHONPATH=/path/to/private/formal_backend
-export HELIX_FORMAL_VENDORED_ROOT=/path/to/external
-```
-
-## Privacy/Sanitization Notes
-
-- Private formal-verifier integration is treated as internal operational tooling.
-- Private/local verification artifacts are kept out of git (`/external`, `/runs`, local env files).
-- Public docs describe verification entrypoints, not private internal infrastructure.
+Public docs intentionally describe the verification entrypoints, not private internal tooling details.

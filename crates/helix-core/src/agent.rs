@@ -16,7 +16,7 @@
 
 use crate::credential::CredentialProvider;
 use crate::event::Event;
-use crate::state::{StateStore, InMemoryStateStore};
+use crate::state::StateStore;
 use crate::types::{AgentId, CredentialId, ProfileId};
 use crate::HelixError;
 use async_trait::async_trait;
@@ -205,6 +205,7 @@ pub trait Agent: Send + Sync {
 }
 
 /// Context provided to Source agents when they run.
+#[derive(Clone)]
 pub struct SourceContext {
     /// The unique ID of the agent instance using this context.
     pub agent_id: AgentId,
@@ -291,13 +292,14 @@ pub trait ActionAgent: Agent {
 mod tests {
     // Add tests for agent structures and traits
     use super::*;
-    use crate::event::Event;
     use crate::credential::Credential;
+    use crate::event::Event;
+    use crate::state::InMemoryStateStore;
     use crate::types::AgentId;
-    use uuid::Uuid;
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::mpsc;
+    use uuid::Uuid;
 
     #[test]
     fn test_agent_config_creation() {

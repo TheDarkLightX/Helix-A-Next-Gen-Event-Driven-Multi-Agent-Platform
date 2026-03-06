@@ -8,6 +8,7 @@ repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Mul
 
 [dependencies]
 helix-core = { path = "../helix-core" }
+helix-llm = { path = "../helix-llm" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.7"
 hyper = { version = "1", features = ["full"] }
@@ -20,4 +21,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
 tower = { version = "0.5", features = ["util"] }

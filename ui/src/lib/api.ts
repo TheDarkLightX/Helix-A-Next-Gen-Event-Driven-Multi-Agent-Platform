@@ -361,6 +361,22 @@ export type MarketIntelPlaybook = {
   signals: string[];
 };
 
+export type MarketIntelCaseBrief = {
+  case_id: string;
+  title: string;
+  company: string | null;
+  theme_id: string;
+  theme_name: string;
+  status: CaseStatus;
+  latest_signal_at: string | null;
+  evidence_count: number;
+  claim_count: number;
+  attached_to_case: boolean;
+  summary: string;
+  key_claims: string[];
+  recommended_actions: string[];
+};
+
 export type MarketIntelOverviewResponse = {
   market_source_count: number;
   market_watchlist_count: number;
@@ -368,7 +384,17 @@ export type MarketIntelOverviewResponse = {
   active_case_count: number;
   theme_cards: MarketIntelThemeCard[];
   company_cards: MarketIntelCompanyCard[];
+  case_briefs: MarketIntelCaseBrief[];
   playbooks: MarketIntelPlaybook[];
+};
+
+export type GenerateMarketIntelBriefRequest = {
+  attach_to_case: boolean;
+};
+
+export type GenerateMarketIntelBriefResponse = {
+  briefing: MarketIntelCaseBrief;
+  transition: CaseTransition | null;
 };
 
 export type CreateSourceRequest = {
@@ -571,6 +597,21 @@ export async function fetchIntelOverview(): Promise<IntelDeskOverviewResponse> {
 export async function fetchMarketIntelOverview(): Promise<MarketIntelOverviewResponse> {
   const response = await fetch(`${API_BASE}/api/v1/market-intel/overview`);
   return parseOrThrow<MarketIntelOverviewResponse>(response);
+}
+
+export async function generateMarketIntelBrief(
+  caseId: string,
+  request: GenerateMarketIntelBriefRequest
+): Promise<GenerateMarketIntelBriefResponse> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/market-intel/cases/${encodeURIComponent(caseId)}/brief`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    }
+  );
+  return parseOrThrow<GenerateMarketIntelBriefResponse>(response);
 }
 
 export async function fetchSources(): Promise<SourceDefinition[]> {

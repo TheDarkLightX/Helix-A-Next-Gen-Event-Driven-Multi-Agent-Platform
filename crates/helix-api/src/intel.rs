@@ -63,7 +63,36 @@ pub(crate) struct MarketIntelOverviewResponse {
     pub(crate) active_case_count: usize,
     pub(crate) theme_cards: Vec<MarketIntelThemeCard>,
     pub(crate) company_cards: Vec<MarketIntelCompanyCard>,
+    pub(crate) case_briefs: Vec<MarketIntelCaseBrief>,
     pub(crate) playbooks: Vec<MarketIntelPlaybook>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct MarketIntelCaseBrief {
+    pub(crate) case_id: String,
+    pub(crate) title: String,
+    pub(crate) company: Option<String>,
+    pub(crate) theme_id: String,
+    pub(crate) theme_name: String,
+    pub(crate) status: CaseStatus,
+    pub(crate) latest_signal_at: Option<String>,
+    pub(crate) evidence_count: usize,
+    pub(crate) claim_count: usize,
+    pub(crate) attached_to_case: bool,
+    pub(crate) summary: String,
+    pub(crate) key_claims: Vec<String>,
+    pub(crate) recommended_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct GenerateMarketIntelBriefRequest {
+    pub(crate) attach_to_case: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct GenerateMarketIntelBriefResponse {
+    pub(crate) briefing: MarketIntelCaseBrief,
+    pub(crate) transition: Option<CaseTransition>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -382,7 +411,70 @@ impl IntelDeskStore {
             store.watchlists.insert(watchlist.id.clone(), watchlist);
         }
 
+        store.seed_market_activity_demo();
+
         store
+    }
+
+    fn seed_market_activity_demo(&mut self) {
+        let seed_requests = [
+            IngestEvidenceRequest {
+                source_id: "json_api_cloud_pricing".to_string(),
+                title: "Boreal Cloud adds bundled enterprise seat discount".to_string(),
+                summary: "Pricing page update lowers cost for annual enterprise bundles.".to_string(),
+                content: "Boreal Cloud introduced a bundled pricing discount for annual enterprise seat packages and updated bundle language on the pricing page.".to_string(),
+                url: Some("https://example.org/boreal/pricing".to_string()),
+                observed_at: "2026-03-06T08:00:00Z".to_string(),
+                tags: vec!["market-intel".to_string(), "pricing".to_string()],
+                entity_labels: vec!["boreal cloud".to_string()],
+                proposed_claims: vec![ProposedClaim {
+                    subject: "boreal cloud".to_string(),
+                    predicate: "discounted".to_string(),
+                    object: "enterprise bundle".to_string(),
+                    confidence_bps: 8800,
+                    rationale: Some("pricing page diff".to_string()),
+                }],
+            },
+            IngestEvidenceRequest {
+                source_id: "website_vector_launches".to_string(),
+                title: "Vector Works beta launch expands forecasting module".to_string(),
+                summary: "New beta launch adds AI forecasting and workflow automations.".to_string(),
+                content: "Vector Works announced a beta launch for its forecasting module and highlighted release plans for workflow automation features.".to_string(),
+                url: Some("https://example.org/vector/releases".to_string()),
+                observed_at: "2026-03-06T09:15:00Z".to_string(),
+                tags: vec!["market-intel".to_string(), "launch".to_string()],
+                entity_labels: vec!["vector works".to_string()],
+                proposed_claims: vec![ProposedClaim {
+                    subject: "vector works".to_string(),
+                    predicate: "launched_beta".to_string(),
+                    object: "forecasting module".to_string(),
+                    confidence_bps: 8600,
+                    rationale: Some("release diff".to_string()),
+                }],
+            },
+            IngestEvidenceRequest {
+                source_id: "rss_partner_ecosystem".to_string(),
+                title: "Atlas CRM expands reseller partnership with Nebula Retail".to_string(),
+                summary: "Ecosystem announcement adds a new retail channel partnership.".to_string(),
+                content: "Atlas CRM announced an ecosystem partnership and reseller program expansion with Nebula Retail.".to_string(),
+                url: Some("https://example.org/atlas/partners".to_string()),
+                observed_at: "2026-03-06T10:10:00Z".to_string(),
+                tags: vec!["market-intel".to_string(), "partnership".to_string()],
+                entity_labels: vec!["atlas crm".to_string(), "nebula retail".to_string()],
+                proposed_claims: vec![ProposedClaim {
+                    subject: "atlas crm".to_string(),
+                    predicate: "partnered_with".to_string(),
+                    object: "nebula retail".to_string(),
+                    confidence_bps: 8300,
+                    rationale: Some("partner ecosystem feed".to_string()),
+                }],
+            },
+        ];
+
+        for request in seed_requests {
+            self.ingest_evidence(request)
+                .expect("market intel demo seed should be valid");
+        }
     }
 
     fn overview(&self) -> IntelDeskOverviewResponse {
@@ -563,6 +655,17 @@ impl IntelDeskStore {
             .take(6)
             .collect::<Vec<_>>();
 
+        let mut case_briefs = active_market_cases
+            .iter()
+            .filter_map(|case| self.market_case_brief(case))
+            .collect::<Vec<_>>();
+        case_briefs.sort_by(|left, right| {
+            right
+                .latest_signal_at
+                .cmp(&left.latest_signal_at)
+                .then(left.case_id.cmp(&right.case_id))
+        });
+
         MarketIntelOverviewResponse {
             market_source_count: market_sources.len(),
             market_watchlist_count: market_watchlists.len(),
@@ -570,8 +673,93 @@ impl IntelDeskStore {
             active_case_count: active_market_cases.len(),
             theme_cards,
             company_cards,
+            case_briefs,
             playbooks: market_intelligence_playbooks(),
         }
+    }
+
+    fn market_case_brief(&self, case: &CaseFile) -> Option<MarketIntelCaseBrief> {
+        let watchlist = self.watchlists.get(&case.watchlist_id)?;
+        let theme_id = market_theme_id_for_watchlist(watchlist)?;
+        let theme_name = market_theme_name(theme_id).to_string();
+        let evidence = case
+            .evidence_ids
+            .iter()
+            .filter_map(|evidence_id| self.evidence.get(evidence_id).cloned())
+            .collect::<Vec<_>>();
+        let claims = case
+            .claim_ids
+            .iter()
+            .filter_map(|claim_id| self.claims.get(claim_id).cloned())
+            .collect::<Vec<_>>();
+        let latest_signal_at = evidence.iter().map(|item| item.observed_at.clone()).max();
+        let latest_titles = evidence
+            .iter()
+            .map(|item| item.title.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .take(2)
+            .collect::<Vec<_>>();
+        let key_claims = summarize_key_claims(&claims);
+        let summary = build_market_case_summary(
+            case,
+            &theme_name,
+            latest_signal_at.as_deref(),
+            &latest_titles,
+            &key_claims,
+        );
+
+        Some(MarketIntelCaseBrief {
+            case_id: case.id.clone(),
+            title: case.title.clone(),
+            company: case.primary_entity.clone(),
+            theme_id: theme_id.to_string(),
+            theme_name,
+            status: case.status,
+            latest_signal_at,
+            evidence_count: evidence.len(),
+            claim_count: claims.len(),
+            attached_to_case: case.briefing_summary.is_some(),
+            summary,
+            key_claims,
+            recommended_actions: market_brief_actions(theme_id),
+        })
+    }
+
+    fn generate_market_brief(
+        &mut self,
+        case_id: &str,
+        attach_to_case: bool,
+    ) -> Result<GenerateMarketIntelBriefResponse, HelixError> {
+        let case = self
+            .cases
+            .get(case_id)
+            .cloned()
+            .ok_or_else(|| HelixError::not_found(format!("case {}", case_id)))?;
+        let briefing = self
+            .market_case_brief(&case)
+            .ok_or_else(|| HelixError::validation_error("case", "case is not a market intelligence case"))?;
+
+        let transition = if attach_to_case {
+            let attached = self.transition_case(
+                case_id,
+                CaseCommand::AttachBrief {
+                    summary: briefing_text(&briefing),
+                },
+            )?;
+            Some(attached)
+        } else {
+            None
+        };
+
+        let briefing = if let Some(updated) = transition.as_ref() {
+            self.market_case_brief(&updated.case)
+                .ok_or_else(|| HelixError::internal_error("market briefing missing after attach"))?
+        } else {
+            briefing
+        };
+
+        Ok(GenerateMarketIntelBriefResponse { briefing, transition })
     }
 
     fn create_source(&mut self, request: CreateSourceRequest) -> Result<SourceDefinition, HelixError> {
@@ -1016,6 +1204,94 @@ fn market_intelligence_playbooks() -> Vec<MarketIntelPlaybook> {
     ]
 }
 
+fn summarize_key_claims(claims: &[ClaimRecord]) -> Vec<String> {
+    let mut ranked = claims.to_vec();
+    ranked.sort_by(|left, right| {
+        right
+            .confidence_bps
+            .cmp(&left.confidence_bps)
+            .then(left.subject.cmp(&right.subject))
+            .then(left.predicate.cmp(&right.predicate))
+            .then(left.object.cmp(&right.object))
+    });
+    ranked
+        .into_iter()
+        .take(3)
+        .map(|claim| format!("{} {} {}", claim.subject, claim.predicate, claim.object))
+        .collect()
+}
+
+fn build_market_case_summary(
+    case: &CaseFile,
+    theme_name: &str,
+    latest_signal_at: Option<&str>,
+    latest_titles: &[String],
+    key_claims: &[String],
+) -> String {
+    let company = case
+        .primary_entity
+        .as_deref()
+        .unwrap_or("tracked company");
+    let timing = latest_signal_at.unwrap_or("unknown_time");
+    let title_context = if latest_titles.is_empty() {
+        "no evidence titles captured".to_string()
+    } else {
+        latest_titles.join("; ")
+    };
+    let claims = if key_claims.is_empty() {
+        "no high-confidence claims yet".to_string()
+    } else {
+        key_claims.join("; ")
+    };
+
+    format!(
+        "{} signal for {} at {}. Recent evidence: {}. Key claims: {}.",
+        theme_name, company, timing, title_context, claims
+    )
+}
+
+fn market_brief_actions(theme_id: &str) -> Vec<String> {
+    match theme_id {
+        "pricing" => vec![
+            "compare current packaging against previous snapshot".to_string(),
+            "brief account team on renewal pressure".to_string(),
+            "record monetization deltas in competitor dossier".to_string(),
+        ],
+        "product" => vec![
+            "map launch claims against current product parity".to_string(),
+            "brief product and field teams on positioning impact".to_string(),
+            "capture supporting release-note evidence".to_string(),
+        ],
+        "partnerships" => vec![
+            "update ecosystem map and partner overlap notes".to_string(),
+            "assess channel displacement or expansion risk".to_string(),
+            "brief alliance team with cited evidence".to_string(),
+        ],
+        "hiring" => vec![
+            "track role clusters for territory or segment expansion".to_string(),
+            "update GTM expansion hypothesis with cited evidence".to_string(),
+            "brief field leadership on hiring velocity changes".to_string(),
+        ],
+        _ => vec![
+            "review case evidence and claims".to_string(),
+            "decide whether to escalate or attach a brief".to_string(),
+        ],
+    }
+}
+
+fn briefing_text(briefing: &MarketIntelCaseBrief) -> String {
+    format!(
+        "{} | key_claims: {} | actions: {}",
+        briefing.summary,
+        if briefing.key_claims.is_empty() {
+            "none".to_string()
+        } else {
+            briefing.key_claims.join("; ")
+        },
+        briefing.recommended_actions.join("; ")
+    )
+}
+
 pub(crate) async fn get_intel_overview(State(state): State<AppState>) -> impl IntoResponse {
     let store = state.intel_desk.read().await;
     (StatusCode::OK, Json(store.overview()))
@@ -1024,6 +1300,22 @@ pub(crate) async fn get_intel_overview(State(state): State<AppState>) -> impl In
 pub(crate) async fn get_market_intel_overview(State(state): State<AppState>) -> impl IntoResponse {
     let store = state.intel_desk.read().await;
     (StatusCode::OK, Json(store.market_intelligence_overview()))
+}
+
+pub(crate) async fn generate_market_intel_brief_handler(
+    State(state): State<AppState>,
+    Path(case_id): Path<String>,
+    Json(request): Json<GenerateMarketIntelBriefRequest>,
+) -> Response {
+    let result = state
+        .intel_desk
+        .write()
+        .await
+        .generate_market_brief(&case_id, request.attach_to_case);
+    match result {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(error) => api_error_response(error),
+    }
 }
 
 pub(crate) async fn list_sources(State(state): State<AppState>) -> impl IntoResponse {

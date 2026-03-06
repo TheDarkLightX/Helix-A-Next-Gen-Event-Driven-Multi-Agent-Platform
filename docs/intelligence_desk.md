@@ -33,8 +33,9 @@ The intelligence desk currently exposes these first-class records:
 
 1. Register pricing, launch, partnership, and hiring sources.
 2. Define deterministic watchlists for competitor motion.
-3. Review market-intel theme coverage and tracked-company summaries.
-4. Reuse the same evidence, claim, and case substrate to drive competitor monitoring.
+3. Review market-intel theme coverage, tracked-company summaries, and deterministic case briefs.
+4. Attach a deterministic brief to a market case when it is ready for handoff or escalation.
+5. Reuse the same evidence, claim, and case substrate to drive competitor monitoring.
 
 ## Deterministic Boundaries
 
@@ -51,6 +52,7 @@ Helix keeps trusted state inside the functional core.
 ### Overview
 - `GET /api/v1/intel/overview`
 - `GET /api/v1/market-intel/overview`
+- `POST /api/v1/market-intel/cases/:case_id/brief`
 
 ### Sources
 - `GET /api/v1/sources`
@@ -87,7 +89,7 @@ The operator console includes these desk-oriented screens:
 - Onchain
 - Autopilot
 
-The evidence screen handles ingestion, latest watchlist hits, latest case updates, and claim review decisions. The market-intel screen renders deterministic theme cards, tracked companies, and reference playbooks on top of the same desk state. The cases screen manages dossier lifecycle transitions.
+The evidence screen handles ingestion, latest watchlist hits, latest case updates, and claim review decisions. The market-intel screen renders deterministic theme cards, tracked companies, case briefs, and reference playbooks on top of the same desk state. The cases screen manages dossier lifecycle transitions.
 
 ## Autopilot Role
 

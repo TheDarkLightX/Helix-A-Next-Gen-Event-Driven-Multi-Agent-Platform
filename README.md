@@ -87,8 +87,9 @@ export LLM_API_KEY="local"
 
 1. Register competitor, pricing, launch, partner, and hiring sources.
 2. Define watchlists for pricing moves, product launches, partnerships, and expansion signals.
-3. Review deterministic market-intel summaries and tracked-company coverage.
-4. Use the same evidence, claim, and case substrate for competitor monitoring.
+3. Review deterministic market-intel summaries, case briefs, and tracked-company coverage.
+4. Attach deterministic briefs to market cases through an explicit case transition.
+5. Use the same evidence, claim, and case substrate for competitor monitoring.
 
 ## Core API
 
@@ -111,6 +112,7 @@ export LLM_API_KEY="local"
 ### Intelligence Desk
 - `GET /api/v1/intel/overview`
 - `GET /api/v1/market-intel/overview`
+- `POST /api/v1/market-intel/cases/:case_id/brief`
 - `GET /api/v1/sources`
 - `POST /api/v1/sources`
 - `GET /api/v1/watchlists`

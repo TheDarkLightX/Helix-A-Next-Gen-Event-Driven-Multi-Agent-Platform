@@ -24,13 +24,14 @@ use axum::{
     Router,
 };
 use crate::intel::{
-    create_source, create_watchlist, get_intel_overview, get_market_intel_overview,
-    ingest_evidence, list_cases, list_claims, list_evidence, list_sources, list_watchlists,
-    review_claim_handler, transition_case_handler, CaseCatalogResponse, CaseTransitionRequest,
-    CaseTransitionResponse, ClaimCatalogResponse, ClaimReviewRequest, ClaimResponse,
-    CreateSourceRequest, CreateWatchlistRequest, IngestEvidenceRequest, IngestEvidenceResponse,
-    IntelDeskOverviewResponse, IntelDeskStore, MarketIntelOverviewResponse,
-    SourceCatalogResponse, SourceResponse, WatchlistResponse,
+    create_source, create_watchlist, generate_market_intel_brief_handler, get_intel_overview,
+    get_market_intel_overview, ingest_evidence, list_cases, list_claims, list_evidence,
+    list_sources, list_watchlists, review_claim_handler, transition_case_handler,
+    CaseCatalogResponse, CaseTransitionRequest, CaseTransitionResponse, ClaimCatalogResponse,
+    ClaimReviewRequest, ClaimResponse, CreateSourceRequest, CreateWatchlistRequest,
+    GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse, IngestEvidenceRequest,
+    IngestEvidenceResponse, IntelDeskOverviewResponse, IntelDeskStore,
+    MarketIntelOverviewResponse, SourceCatalogResponse, SourceResponse, WatchlistResponse,
 };
 use helix_core::autopilot_guard::{
     AutopilotActionClass, AutopilotGuardConfig, AutopilotGuardDecision, AutopilotGuardInput,
@@ -1076,6 +1077,10 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/v1/intel/overview", get(get_intel_overview))
         .route("/api/v1/market-intel/overview", get(get_market_intel_overview))
+        .route(
+            "/api/v1/market-intel/cases/:case_id/brief",
+            post(generate_market_intel_brief_handler),
+        )
         .route("/api/v1/sources", get(list_sources).post(create_source))
         .route("/api/v1/watchlists", get(list_watchlists).post(create_watchlist))
         .route("/api/v1/evidence", get(list_evidence))
@@ -1560,7 +1565,66 @@ mod tests {
         assert!(payload.market_source_count >= 4);
         assert!(payload.market_watchlist_count >= 4);
         assert!(payload.tracked_company_count >= 4);
+        assert!(!payload.case_briefs.is_empty());
         assert_eq!(payload.playbooks.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn market_intel_brief_endpoint_attaches_summary_to_case() {
+        let app = test_app();
+        let overview_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/market-intel/overview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(overview_response.status(), StatusCode::OK);
+
+        let body = to_bytes(overview_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let overview: MarketIntelOverviewResponse = serde_json::from_slice(&body).unwrap();
+        let brief_case = overview
+            .case_briefs
+            .first()
+            .expect("seeded market brief should exist");
+
+        let brief_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!(
+                        "/api/v1/market-intel/cases/{}/brief",
+                        brief_case.case_id
+                    ))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&GenerateMarketIntelBriefRequest {
+                            attach_to_case: true,
+                        })
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(brief_response.status(), StatusCode::OK);
+
+        let body = to_bytes(brief_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let payload: GenerateMarketIntelBriefResponse = serde_json::from_slice(&body).unwrap();
+        assert!(payload.briefing.summary.contains("signal for"));
+        assert!(payload.briefing.attached_to_case);
+        assert!(payload.transition.is_some());
+        assert_eq!(
+            payload.transition.unwrap().case.status,
+            helix_core::intel_desk::CaseStatus::BriefReady
+        );
     }
 
     #[tokio::test]

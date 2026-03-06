@@ -16,22 +16,22 @@
 mod evm_rpc;
 mod intel;
 
+use crate::intel::{
+    create_source, create_watchlist, generate_market_intel_brief_handler, get_intel_overview,
+    get_market_intel_overview, ingest_evidence, list_cases, list_claims, list_evidence,
+    list_sources, list_watchlists, review_claim_handler, transition_case_handler,
+    CaseCatalogResponse, CaseTransitionRequest, CaseTransitionResponse, ClaimCatalogResponse,
+    ClaimResponse, ClaimReviewRequest, CreateSourceRequest, CreateWatchlistRequest,
+    GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse, IngestEvidenceRequest,
+    IngestEvidenceResponse, IntelDeskOverviewResponse, IntelDeskStore, MarketIntelOverviewResponse,
+    SourceCatalogResponse, SourceResponse, WatchlistResponse,
+};
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
-};
-use crate::intel::{
-    create_source, create_watchlist, generate_market_intel_brief_handler, get_intel_overview,
-    get_market_intel_overview, ingest_evidence, list_cases, list_claims, list_evidence,
-    list_sources, list_watchlists, review_claim_handler, transition_case_handler,
-    CaseCatalogResponse, CaseTransitionRequest, CaseTransitionResponse, ClaimCatalogResponse,
-    ClaimReviewRequest, ClaimResponse, CreateSourceRequest, CreateWatchlistRequest,
-    GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse, IngestEvidenceRequest,
-    IngestEvidenceResponse, IntelDeskOverviewResponse, IntelDeskStore,
-    MarketIntelOverviewResponse, SourceCatalogResponse, SourceResponse, WatchlistResponse,
 };
 use helix_core::autopilot_guard::{
     AutopilotActionClass, AutopilotGuardConfig, AutopilotGuardDecision, AutopilotGuardInput,
@@ -53,7 +53,12 @@ use helix_core::deterministic_policy::{
 use helix_core::onchain_intent::{
     step as onchain_step, OnchainInput, OnchainKernelError, OnchainPhase, OnchainState,
 };
-use helix_core::reasoning::{evaluate_reasoning, ReasoningDecision, ReasoningEvaluationRequest};
+use helix_core::reasoning::{
+    compile_symbolic_program, evaluate_compiled_neuro_symbolic_reasoning,
+    evaluate_compiled_symbolic_reasoning, evaluate_reasoning, fingerprint_symbolic_program,
+    CompiledSymbolicProgram, KrrTriple, ReasoningDecision, ReasoningEvaluationRequest,
+    SymbolicRule,
+};
 use helix_core::HelixError;
 use helix_llm::errors::LlmError;
 use helix_llm::providers::{LlmProvider, LlmRequest, Message, MessageRole, OpenAiProvider};
@@ -74,8 +79,48 @@ pub(crate) struct AppState {
     policy_config: Arc<RwLock<DeterministicPolicyConfig>>,
     autopilot_guard: Arc<RwLock<AutopilotGuardMachine>>,
     intel_desk: Arc<RwLock<IntelDeskStore>>,
+    symbolic_program_cache: Arc<RwLock<SymbolicProgramCache>>,
     llm_provider: Option<Arc<dyn LlmProvider>>,
     llm_model: Option<String>,
+}
+
+const SYMBOLIC_PROGRAM_CACHE_CAPACITY: usize = 128;
+
+#[derive(Debug, Default)]
+struct SymbolicProgramCache {
+    entries: HashMap<String, Arc<CompiledSymbolicProgram>>,
+    order: Vec<String>,
+    capacity: usize,
+}
+
+impl SymbolicProgramCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: Vec::new(),
+            capacity,
+        }
+    }
+
+    fn get(&self, fingerprint: &str) -> Option<Arc<CompiledSymbolicProgram>> {
+        self.entries.get(fingerprint).cloned()
+    }
+
+    fn insert(&mut self, program: Arc<CompiledSymbolicProgram>) {
+        let fingerprint = program.fingerprint().to_string();
+        self.order.retain(|existing| existing != &fingerprint);
+        self.order.push(fingerprint.clone());
+        self.entries.insert(fingerprint.clone(), program);
+
+        while self.order.len() > self.capacity {
+            let evicted = self.order.remove(0);
+            self.entries.remove(&evicted);
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 #[tokio::main]
@@ -93,6 +138,9 @@ async fn main() {
             autopilot_config_from_env(),
         ))),
         intel_desk: Arc::new(RwLock::new(IntelDeskStore::default())),
+        symbolic_program_cache: Arc::new(RwLock::new(SymbolicProgramCache::new(
+            SYMBOLIC_PROGRAM_CACHE_CAPACITY,
+        ))),
         llm_provider,
         llm_model,
     };
@@ -297,7 +345,9 @@ struct AutopilotProposeErrorResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum ProposedAction {
-    PolicySimulation { commands: Vec<PolicyCommand> },
+    PolicySimulation {
+        commands: Vec<PolicyCommand>,
+    },
     OnchainBroadcast {
         request: ProposedOnchainBroadcastRequest,
     },
@@ -396,13 +446,77 @@ async fn post_simulate_guard_agent(Json(req): Json<GuardSimulationRequest>) -> R
     }
 }
 
-async fn post_reasoning_evaluate(Json(req): Json<ReasoningEvaluationRequest>) -> Response {
-    match evaluate_reasoning(req) {
+async fn post_reasoning_evaluate(
+    State(state): State<AppState>,
+    Json(req): Json<ReasoningEvaluationRequest>,
+) -> Response {
+    let decision = match req {
+        ReasoningEvaluationRequest::KrrSymbolic {
+            query,
+            facts,
+            rules,
+            triples,
+            max_rounds,
+        } => get_or_compile_symbolic_program(&state, rules, triples)
+            .await
+            .and_then(|program| {
+                evaluate_compiled_symbolic_reasoning(query, facts, program.as_ref(), max_rounds)
+            }),
+        ReasoningEvaluationRequest::NeuroSymbolic {
+            query,
+            facts,
+            rules,
+            triples,
+            features,
+            model,
+            min_probability,
+            max_rounds,
+        } => get_or_compile_symbolic_program(&state, rules, triples)
+            .await
+            .and_then(|program| {
+                evaluate_compiled_neuro_symbolic_reasoning(
+                    query,
+                    facts,
+                    program.as_ref(),
+                    features,
+                    model,
+                    min_probability,
+                    max_rounds,
+                )
+            }),
+        other => evaluate_reasoning(other),
+    };
+
+    match decision {
         Ok(decision) => {
             (StatusCode::OK, Json(ReasoningEvaluateResponse { decision })).into_response()
         }
         Err(err) => api_error_response(err),
     }
+}
+
+async fn get_or_compile_symbolic_program(
+    state: &AppState,
+    rules: Vec<SymbolicRule>,
+    triples: Vec<KrrTriple>,
+) -> Result<Arc<CompiledSymbolicProgram>, HelixError> {
+    let fingerprint = fingerprint_symbolic_program(&rules, &triples)?;
+    if let Some(program) = state
+        .symbolic_program_cache
+        .read()
+        .await
+        .get(fingerprint.as_str())
+    {
+        return Ok(program);
+    }
+
+    let program = Arc::new(compile_symbolic_program(rules, triples)?);
+    let mut cache = state.symbolic_program_cache.write().await;
+    if let Some(existing) = cache.get(fingerprint.as_str()) {
+        return Ok(existing);
+    }
+    cache.insert(program.clone());
+    Ok(program)
 }
 
 async fn get_agent_templates() -> impl IntoResponse {
@@ -702,9 +816,11 @@ async fn post_autopilot_propose(
             ProposedAction::PolicySimulation { commands } => {
                 AutopilotActionRequest::PolicySimulation { commands }
             }
-            ProposedAction::OnchainBroadcast { request } => AutopilotActionRequest::OnchainBroadcast {
-                request: request.into(),
-            },
+            ProposedAction::OnchainBroadcast { request } => {
+                AutopilotActionRequest::OnchainBroadcast {
+                    request: request.into(),
+                }
+            }
         },
         Err(err) => {
             return (
@@ -739,9 +855,11 @@ async fn post_autopilot_propose(
                 command_count: count,
             }
         }
-        AutopilotActionRequest::OnchainBroadcast { request } => AutopilotActionClass::OnchainBroadcast {
-            dry_run: request.dry_run.unwrap_or(false),
-        },
+        AutopilotActionRequest::OnchainBroadcast { request } => {
+            AutopilotActionClass::OnchainBroadcast {
+                dry_run: request.dry_run.unwrap_or(false),
+            }
+        }
     };
 
     let guard = *state.autopilot_guard.read().await;
@@ -977,7 +1095,10 @@ fn extract_fenced_block<'a>(content: &'a str, lang: &str) -> Option<&'a str> {
 fn extract_any_fenced_block<'a>(content: &'a str) -> Option<&'a str> {
     let start = content.find("```")?;
     let after = &content[start + 3..];
-    let after = after.split_once('\n').map(|(_, rest)| rest).unwrap_or(after);
+    let after = after
+        .split_once('\n')
+        .map(|(_, rest)| rest)
+        .unwrap_or(after);
     let end = after.find("```")?;
     Some(after[..end].trim())
 }
@@ -1076,19 +1197,31 @@ fn app(state: AppState) -> Router {
             get(get_agent_template).post(post_apply_agent_template),
         )
         .route("/api/v1/intel/overview", get(get_intel_overview))
-        .route("/api/v1/market-intel/overview", get(get_market_intel_overview))
+        .route(
+            "/api/v1/market-intel/overview",
+            get(get_market_intel_overview),
+        )
         .route(
             "/api/v1/market-intel/cases/:case_id/brief",
             post(generate_market_intel_brief_handler),
         )
         .route("/api/v1/sources", get(list_sources).post(create_source))
-        .route("/api/v1/watchlists", get(list_watchlists).post(create_watchlist))
+        .route(
+            "/api/v1/watchlists",
+            get(list_watchlists).post(create_watchlist),
+        )
         .route("/api/v1/evidence", get(list_evidence))
         .route("/api/v1/evidence/ingest", post(ingest_evidence))
         .route("/api/v1/claims", get(list_claims))
-        .route("/api/v1/claims/:claim_id/review", post(review_claim_handler))
+        .route(
+            "/api/v1/claims/:claim_id/review",
+            post(review_claim_handler),
+        )
         .route("/api/v1/cases", get(list_cases))
-        .route("/api/v1/cases/:case_id/transition", post(transition_case_handler))
+        .route(
+            "/api/v1/cases/:case_id/transition",
+            post(transition_case_handler),
+        )
         .route("/api/v1/reasoning/evaluate", post(post_reasoning_evaluate))
         .route("/api/v1/autopilot/status", get(get_autopilot_status))
         .route(
@@ -1120,26 +1253,28 @@ mod tests {
     use std::collections::HashMap;
     use tower::ServiceExt;
 
-    fn test_app() -> Router {
-        let state = AppState {
+    fn default_app_state(
+        llm_provider: Option<Arc<dyn LlmProvider>>,
+        llm_model: Option<String>,
+    ) -> AppState {
+        AppState {
             policy_config: Arc::new(RwLock::new(DeterministicPolicyConfig::default())),
             autopilot_guard: Arc::new(RwLock::new(AutopilotGuardMachine::default())),
             intel_desk: Arc::new(RwLock::new(IntelDeskStore::default())),
-            llm_provider: None,
-            llm_model: None,
-        };
-        app(state)
+            symbolic_program_cache: Arc::new(RwLock::new(SymbolicProgramCache::new(
+                SYMBOLIC_PROGRAM_CACHE_CAPACITY,
+            ))),
+            llm_provider,
+            llm_model,
+        }
+    }
+
+    fn test_app() -> Router {
+        app(default_app_state(None, None))
     }
 
     fn test_app_with_llm(provider: Arc<dyn LlmProvider>, model: String) -> Router {
-        let state = AppState {
-            policy_config: Arc::new(RwLock::new(DeterministicPolicyConfig::default())),
-            autopilot_guard: Arc::new(RwLock::new(AutopilotGuardMachine::default())),
-            intel_desk: Arc::new(RwLock::new(IntelDeskStore::default())),
-            llm_provider: Some(provider),
-            llm_model: Some(model),
-        };
-        app(state)
+        app(default_app_state(Some(provider), Some(model)))
     }
 
     #[derive(Clone)]
@@ -1158,7 +1293,10 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn complete(&self, _request: LlmRequest) -> Result<helix_llm::providers::LlmResponse, LlmError> {
+        async fn complete(
+            &self,
+            _request: LlmRequest,
+        ) -> Result<helix_llm::providers::LlmResponse, LlmError> {
             Ok(helix_llm::providers::LlmResponse {
                 content: self.content.clone(),
                 function_call: None,
@@ -1429,6 +1567,145 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn symbolic_reasoning_endpoint_returns_support_graph_and_reuses_cache() {
+        let state = default_app_state(None, None);
+        let router = app(state.clone());
+        let request = ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["trusted(user)".to_string(), "kyc_passed(user)".to_string()],
+            rules: vec![SymbolicRule {
+                id: "r1".to_string(),
+                antecedents: vec!["trusted(user)".to_string(), "kyc_passed(user)".to_string()],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            max_rounds: Some(8),
+        };
+
+        for _ in 0..2 {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/v1/reasoning/evaluate")
+                        .header("content-type", "application/json")
+                        .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+            let payload: ReasoningEvaluateResponse = serde_json::from_slice(&body).unwrap();
+            assert_eq!(payload.decision.trace.support_graph.len(), 3);
+            assert_eq!(
+                payload.decision.trace.symbolic_status,
+                Some(helix_core::reasoning::ReasoningSymbolicStatus::Saturated)
+            );
+            assert_eq!(payload.decision.trace.pending_rule_count, Some(0));
+            assert!(payload.decision.trace.program_fingerprint.is_some());
+            assert_eq!(
+                payload.decision.trace.query_support,
+                vec![
+                    "allow(tx)".to_string(),
+                    "kyc_passed(user)".to_string(),
+                    "trusted(user)".to_string(),
+                ]
+            );
+            assert!(payload
+                .decision
+                .trace
+                .support_graph
+                .iter()
+                .any(|node| node.fact == "allow(tx)" && node.rule_id.as_deref() == Some("r1")));
+        }
+
+        let cache = state.symbolic_program_cache.read().await;
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn symbolic_reasoning_endpoint_denies_contradictions() {
+        let request = ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string(), "!allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            max_rounds: Some(4),
+        };
+
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/reasoning/evaluate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: ReasoningEvaluateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.decision.verdict,
+            helix_core::reasoning::ReasoningVerdict::Deny
+        );
+        assert_eq!(payload.decision.trace.contradictions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn symbolic_reasoning_endpoint_reports_truncation_metadata() {
+        let request = ReasoningEvaluationRequest::KrrSymbolic {
+            query: "c".to_string(),
+            facts: vec!["a".to_string()],
+            rules: vec![
+                SymbolicRule {
+                    id: "r1".to_string(),
+                    antecedents: vec!["a".to_string()],
+                    consequent: "b".to_string(),
+                },
+                SymbolicRule {
+                    id: "r2".to_string(),
+                    antecedents: vec!["b".to_string()],
+                    consequent: "c".to_string(),
+                },
+            ],
+            triples: vec![],
+            max_rounds: Some(1),
+        };
+
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/reasoning/evaluate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&request).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: ReasoningEvaluateResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            payload.decision.verdict,
+            helix_core::reasoning::ReasoningVerdict::Deny
+        );
+        assert_eq!(
+            payload.decision.trace.symbolic_status,
+            Some(helix_core::reasoning::ReasoningSymbolicStatus::Truncated)
+        );
+        assert_eq!(payload.decision.trace.pending_rule_count, Some(1));
+        assert!(payload.decision.rationale.contains("truncated"));
+    }
+
+    #[tokio::test]
     async fn agent_templates_endpoint_returns_items() {
         let response = test_app()
             .oneshot(
@@ -1659,7 +1936,10 @@ mod tests {
             .unwrap();
         let created: SourceResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(created.source.trust_score, 73);
-        assert_eq!(created.source.tags, vec!["manual".to_string(), "notes".to_string()]);
+        assert_eq!(
+            created.source.tags,
+            vec!["manual".to_string(), "notes".to_string()]
+        );
 
         let list_response = app
             .oneshot(
@@ -1675,7 +1955,10 @@ mod tests {
             .await
             .unwrap();
         let payload: SourceCatalogResponse = serde_json::from_slice(&body).unwrap();
-        assert!(payload.sources.iter().any(|source| source.name == "Field Notes"));
+        assert!(payload
+            .sources
+            .iter()
+            .any(|source| source.name == "Field Notes"));
     }
 
     #[tokio::test]
@@ -1715,7 +1998,8 @@ mod tests {
             source_id: "rss_national_security".to_string(),
             title: "Alice North resigned from Orion Dynamics".to_string(),
             summary: "Leadership change at Orion".to_string(),
-            content: "Alice North resigned after a brief detention, according to the report.".to_string(),
+            content: "Alice North resigned after a brief detention, according to the report."
+                .to_string(),
             url: Some("https://example.org/report".to_string()),
             observed_at: "2026-03-06T12:00:00Z".to_string(),
             tags: vec!["leadership".to_string(), "security".to_string()],
@@ -1832,7 +2116,10 @@ mod tests {
             .await
             .unwrap();
         let payload: CaseTransitionResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(payload.transition.case.status, helix_core::intel_desk::CaseStatus::Closed);
+        assert_eq!(
+            payload.transition.case.status,
+            helix_core::intel_desk::CaseStatus::Closed
+        );
     }
 
     #[tokio::test]
@@ -1970,7 +2257,8 @@ mod tests {
     #[tokio::test]
     async fn autopilot_propose_parses_action_and_previews_guard() {
         let provider = StubLlmProvider {
-            content: "{\"type\":\"policy_simulation\",\"commands\":[{\"type\":\"tick\"}]}".to_string(),
+            content: "{\"type\":\"policy_simulation\",\"commands\":[{\"type\":\"tick\"}]}"
+                .to_string(),
             model: "stub-model".to_string(),
         };
         let app = test_app_with_llm(Arc::new(provider), "stub-model".to_string());
@@ -2014,7 +2302,9 @@ mod tests {
         ));
         assert!(matches!(
             payload.guard_preview.decision_confirmed,
-            AutopilotGuardDecision::Allow { requires_confirmation: true }
+            AutopilotGuardDecision::Allow {
+                requires_confirmation: true
+            }
         ));
     }
 

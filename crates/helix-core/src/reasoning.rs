@@ -13,15 +13,26 @@
 
 //! Deterministic neuro-symbolic reasoning backends.
 //!
-//! This module provides a formal functional core for four reasoning modes:
-//! - `krr_symbolic`: finite forward-chaining over facts/rules/triples
-//! - `expert_system`: deterministic weighted rule voting
+//! This module provides a stable facade over compiled reasoning engines:
+//! - `krr_symbolic`: indexed symbolic closure over facts/rules/triples
+//! - `expert_system`: compiled threshold-rule matching with deterministic voting
 //! - `neuro`: deterministic linear model inference
 //! - `neuro_symbolic`: fail-closed symbolic gate + neural confidence fusion
 
+mod expert;
+mod neuro;
+mod symbolic;
+
 use crate::HelixError;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+
+use expert::evaluate_expert_system;
+use neuro::{evaluate_neuro, score_neuro_probability};
+use symbolic::{
+    evaluate_compiled_symbolic, SymbolicClosureStatus, SymbolicEvaluation, SymbolicEvaluationScope,
+};
+pub use symbolic::{fingerprint_symbolic_program, CompiledSymbolicProgram};
 
 /// Supported reasoning backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +161,48 @@ pub enum ReasoningEvaluationRequest {
 }
 
 /// Internal trace for deterministic replay/auditing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReasoningSupportNode {
+    /// Canonical fact proven or asserted in the symbolic closure.
+    pub fact: String,
+    /// Whether the fact was directly asserted or derived by a rule.
+    pub kind: ReasoningSupportKind,
+    /// Rule that produced the fact, when derived.
+    pub rule_id: Option<String>,
+    /// Antecedent facts that justified the derivation.
+    pub supports: Vec<String>,
+}
+
+/// Symbolic support node type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningSupportKind {
+    /// Fact originated from input facts or triples.
+    Seed,
+    /// Fact was produced by a rule firing.
+    Derived,
+}
+
+/// Contradictory literal pair discovered in a symbolic closure.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReasoningContradiction {
+    /// Positive literal in the contradiction pair.
+    pub positive: String,
+    /// Negative literal in the contradiction pair.
+    pub negative: String,
+}
+
+/// Symbolic closure completeness status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningSymbolicStatus {
+    /// Closure reached a fixed point within the configured round bound.
+    Saturated,
+    /// Closure hit the configured round bound before fixed point.
+    Truncated,
+}
+
+/// Internal trace for deterministic replay/auditing.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReasoningTrace {
     /// Derived symbolic facts (sorted).
@@ -160,6 +213,27 @@ pub struct ReasoningTrace {
     pub symbolic_entailed: Option<bool>,
     /// Neural backend probability output.
     pub neural_probability: Option<f64>,
+    /// Deterministic explanation graph for symbolic closures.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub support_graph: Vec<ReasoningSupportNode>,
+    /// Contradictions discovered in the symbolic closure.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contradictions: Vec<ReasoningContradiction>,
+    /// Whether symbolic evaluation saturated or hit the round bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbolic_status: Option<ReasoningSymbolicStatus>,
+    /// Number of symbolic rounds executed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbolic_rounds: Option<usize>,
+    /// Ready rules left unprocessed when a symbolic run was truncated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_rule_count: Option<usize>,
+    /// Stable fingerprint for the compiled symbolic program used in evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_fingerprint: Option<String>,
+    /// Minimal support slice for the requested symbolic query.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub query_support: Vec<String>,
 }
 
 /// Deterministic reasoning decision.
@@ -264,123 +338,50 @@ pub fn evaluate_reasoning(
             triples,
             max_rounds,
         } => {
-            let query = normalize_non_empty(&query, "reasoning.query", "query")?;
-            let max_rounds = resolve_max_rounds(max_rounds)?;
-            let (closure, matched_rules) =
-                infer_symbolic_closure(facts, rules, triples, max_rounds)?;
-            let entailed = closure.contains(query.as_str());
-            let verdict = if entailed {
-                ReasoningVerdict::Allow
-            } else {
-                ReasoningVerdict::Deny
-            };
-            Ok(ReasoningDecision {
-                backend: ReasoningBackend::KrrSymbolic,
-                verdict,
-                confidence: if entailed { 1.0 } else { 0.0 },
-                rationale: if entailed {
-                    format!("symbolic query entailed: {query}")
-                } else {
-                    format!("symbolic query not entailed: {query}")
-                },
-                trace: ReasoningTrace {
-                    derived_facts: closure.into_iter().collect(),
-                    matched_rules,
-                    symbolic_entailed: Some(entailed),
-                    neural_probability: None,
-                },
-            })
+            let program = compile_symbolic_program(rules, triples)?;
+            evaluate_compiled_symbolic_reasoning(query, facts, &program, max_rounds)
         }
         ReasoningEvaluationRequest::ExpertSystem { features, rules } => {
-            let mut allow_score = 0_u32;
-            let mut review_score = 0_u32;
-            let mut deny_score = 0_u32;
-            let mut matched_rules = Vec::new();
-
-            for rule in &rules {
-                let rule_id = normalize_non_empty(&rule.id, "reasoning.rules", "rule id")?;
-                let matches = rule.min_features.iter().all(|(feature, min)| {
-                    if feature.trim().is_empty() {
-                        return false;
-                    }
-                    features.get(feature).copied().unwrap_or(i64::MIN) >= *min
-                });
-                if matches {
-                    matched_rules.push(rule_id);
-                    match rule.verdict {
-                        ReasoningVerdict::Allow => {
-                            allow_score = allow_score.saturating_add(u32::from(rule.weight))
-                        }
-                        ReasoningVerdict::Review => {
-                            review_score = review_score.saturating_add(u32::from(rule.weight))
-                        }
-                        ReasoningVerdict::Deny => {
-                            deny_score = deny_score.saturating_add(u32::from(rule.weight))
-                        }
-                    }
-                }
-            }
-
-            if matched_rules.is_empty() {
-                return Ok(ReasoningDecision {
-                    backend: ReasoningBackend::ExpertSystem,
-                    verdict: ReasoningVerdict::Deny,
-                    confidence: 1.0,
-                    rationale: "no expert rules matched; fail-closed deny".to_string(),
-                    trace: ReasoningTrace {
-                        derived_facts: Vec::new(),
-                        matched_rules,
-                        symbolic_entailed: None,
-                        neural_probability: None,
-                    },
-                });
-            }
-
-            let total = allow_score
-                .saturating_add(review_score)
-                .saturating_add(deny_score)
-                .max(1);
-
-            let verdict = if deny_score >= review_score && deny_score >= allow_score {
-                ReasoningVerdict::Deny
-            } else if review_score >= allow_score {
-                ReasoningVerdict::Review
-            } else {
-                ReasoningVerdict::Allow
-            };
-
-            let selected_score = match verdict {
-                ReasoningVerdict::Allow => allow_score,
-                ReasoningVerdict::Review => review_score,
-                ReasoningVerdict::Deny => deny_score,
-            };
-
+            let expert = evaluate_expert_system(features, rules)?;
             Ok(ReasoningDecision {
                 backend: ReasoningBackend::ExpertSystem,
-                verdict,
-                confidence: (selected_score as f64 / total as f64).clamp(0.0, 1.0),
-                rationale: "expert-system weighted rule vote".to_string(),
+                verdict: expert.verdict,
+                confidence: expert.confidence,
+                rationale: expert.rationale,
                 trace: ReasoningTrace {
                     derived_facts: Vec::new(),
-                    matched_rules,
+                    matched_rules: expert.matched_rules,
                     symbolic_entailed: None,
                     neural_probability: None,
+                    support_graph: Vec::new(),
+                    contradictions: Vec::new(),
+                    symbolic_status: None,
+                    symbolic_rounds: None,
+                    pending_rule_count: None,
+                    program_fingerprint: None,
+                    query_support: Vec::new(),
                 },
             })
         }
         ReasoningEvaluationRequest::Neuro { features, model } => {
-            let probability = run_linear_model(&features, &model)?;
-            let verdict = ml_verdict(probability, &model)?;
+            let neuro = evaluate_neuro(features, model)?;
             Ok(ReasoningDecision {
                 backend: ReasoningBackend::Neuro,
-                verdict,
-                confidence: confidence_from_probability(probability, verdict),
+                verdict: neuro.verdict,
+                confidence: neuro.confidence,
                 rationale: "deterministic linear-model inference".to_string(),
                 trace: ReasoningTrace {
                     derived_facts: Vec::new(),
                     matched_rules: Vec::new(),
                     symbolic_entailed: None,
-                    neural_probability: Some(probability),
+                    neural_probability: Some(neuro.probability),
+                    support_graph: Vec::new(),
+                    contradictions: Vec::new(),
+                    symbolic_status: None,
+                    symbolic_rounds: None,
+                    pending_rule_count: None,
+                    program_fingerprint: None,
+                    query_support: Vec::new(),
                 },
             })
         }
@@ -394,193 +395,276 @@ pub fn evaluate_reasoning(
             min_probability,
             max_rounds,
         } => {
-            let query = normalize_non_empty(&query, "reasoning.query", "query")?;
-            let max_rounds = resolve_max_rounds(max_rounds)?;
-            let min_probability =
-                validate_probability(min_probability.unwrap_or(0.8), "reasoning.min_probability")?;
-            let (closure, matched_rules) =
-                infer_symbolic_closure(facts, rules, triples, max_rounds)?;
-            let entailed = closure.contains(query.as_str());
-            let probability = run_linear_model(&features, &model)?;
-
-            let (verdict, rationale, confidence) = if !entailed {
-                (
-                    ReasoningVerdict::Deny,
-                    "symbolic gate failed; denying regardless of neural score".to_string(),
-                    1.0,
-                )
-            } else if probability >= min_probability {
-                (
-                    ReasoningVerdict::Allow,
-                    "symbolic gate passed and neural confidence exceeded threshold".to_string(),
-                    confidence_from_probability(probability, ReasoningVerdict::Allow),
-                )
-            } else {
-                (
-                    ReasoningVerdict::Review,
-                    "symbolic gate passed but neural confidence below allow threshold".to_string(),
-                    confidence_from_probability(probability, ReasoningVerdict::Review),
-                )
-            };
-
-            Ok(ReasoningDecision {
-                backend: ReasoningBackend::NeuroSymbolic,
-                verdict,
-                confidence,
-                rationale,
-                trace: ReasoningTrace {
-                    derived_facts: closure.into_iter().collect(),
-                    matched_rules,
-                    symbolic_entailed: Some(entailed),
-                    neural_probability: Some(probability),
-                },
-            })
+            let program = compile_symbolic_program(rules, triples)?;
+            evaluate_compiled_neuro_symbolic_reasoning(
+                query,
+                facts,
+                &program,
+                features,
+                model,
+                min_probability,
+                max_rounds,
+            )
         }
     }
 }
 
-fn infer_symbolic_closure(
-    facts: Vec<String>,
+pub fn compile_symbolic_program(
     rules: Vec<SymbolicRule>,
     triples: Vec<KrrTriple>,
-    max_rounds: usize,
-) -> Result<(BTreeSet<String>, Vec<String>), HelixError> {
-    if max_rounds == 0 {
-        return Err(HelixError::validation_error(
-            "reasoning.max_rounds",
-            "max_rounds must be greater than zero",
-        ));
-    }
-
-    let mut closure: BTreeSet<String> = BTreeSet::new();
-    for fact in facts {
-        closure.insert(normalize_non_empty(
-            &fact,
-            "reasoning.facts",
-            "fact entries",
-        )?);
-    }
-
-    for triple in triples {
-        let predicate =
-            normalize_non_empty(&triple.predicate, "reasoning.triples", "triple predicate")?;
-        let subject = normalize_non_empty(&triple.subject, "reasoning.triples", "triple subject")?;
-        let object = normalize_non_empty(&triple.object, "reasoning.triples", "triple object")?;
-        closure.insert(format!("{}({},{})", predicate, subject, object));
-    }
-
-    let normalized_rules: Vec<(String, Vec<String>, String)> = rules
-        .into_iter()
-        .map(|rule| {
-            let id = normalize_non_empty(&rule.id, "reasoning.rules", "rule id")?;
-            let consequent =
-                normalize_non_empty(&rule.consequent, "reasoning.rules", "rule consequent")?;
-            let antecedents = rule
-                .antecedents
-                .into_iter()
-                .map(|ant| normalize_non_empty(&ant, "reasoning.rules", "rule antecedent"))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok::<_, HelixError>((id, antecedents, consequent))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let mut matched_rules = Vec::new();
-    for _ in 0..max_rounds {
-        let mut changed = false;
-        for (rule_id, antecedents, consequent) in &normalized_rules {
-            if antecedents.iter().all(|ant| closure.contains(ant))
-                && !closure.contains(consequent.as_str())
-            {
-                closure.insert(consequent.clone());
-                matched_rules.push(rule_id.clone());
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-
-    Ok((closure, matched_rules))
+) -> Result<CompiledSymbolicProgram, HelixError> {
+    CompiledSymbolicProgram::compile(rules, triples)
 }
 
-fn run_linear_model(
-    features: &BTreeMap<String, f64>,
-    model: &LinearModel,
-) -> Result<f64, HelixError> {
-    ensure_finite(model.bias, "reasoning.model", "model bias")?;
-    let review_threshold =
-        validate_probability(model.review_threshold, "reasoning.model.review_threshold")?;
-    let allow_threshold =
-        validate_probability(model.allow_threshold, "reasoning.model.allow_threshold")?;
-
-    if review_threshold > allow_threshold {
-        return Err(HelixError::validation_error(
-            "reasoning.model",
-            "review_threshold must be <= allow_threshold",
+pub fn evaluate_compiled_symbolic_reasoning(
+    query: String,
+    facts: Vec<String>,
+    program: &CompiledSymbolicProgram,
+    max_rounds: Option<u8>,
+) -> Result<ReasoningDecision, HelixError> {
+    let query = normalize_non_empty(&query, "reasoning.query", "query")?;
+    let max_rounds = resolve_max_rounds(max_rounds)?;
+    let relevant = evaluate_compiled_symbolic(
+        program,
+        query.clone(),
+        facts.clone(),
+        max_rounds,
+        SymbolicEvaluationScope::QueryDirected,
+    )?;
+    if relevant.closure_status == SymbolicClosureStatus::Truncated {
+        return Ok(build_symbolic_decision(
+            query,
+            relevant,
+            program.fingerprint(),
+            Some(
+                "symbolic query evaluation truncated before saturation; fail-closed deny"
+                    .to_string(),
+            ),
+        ));
+    }
+    if !relevant.entailed || !relevant.contradictions.is_empty() {
+        return Ok(build_symbolic_decision(
+            query,
+            relevant,
+            program.fingerprint(),
+            None,
         ));
     }
 
-    for (feature, value) in features {
-        if feature.trim().is_empty() {
-            return Err(HelixError::validation_error(
-                "reasoning.features",
-                "feature names must be non-empty",
-            ));
-        }
-        ensure_finite(*value, "reasoning.features", "feature value")?;
-    }
-
-    let mut score = model.bias;
-    for (feature, weight) in &model.weights {
-        if feature.trim().is_empty() {
-            return Err(HelixError::validation_error(
-                "reasoning.model",
-                "model feature names must be non-empty",
-            ));
-        }
-        ensure_finite(*weight, "reasoning.model", "model weight")?;
-        let value = features.get(feature).ok_or_else(|| {
-            HelixError::validation_error(
-                "reasoning.features".to_string(),
-                format!("missing required model feature: {feature}"),
-            )
-        })?;
-        score += weight * value;
-    }
-
-    let probability = 1.0 / (1.0 + (-score).exp());
-    validate_probability(probability, "reasoning.probability")
+    let symbolic = evaluate_compiled_symbolic(
+        program,
+        query.clone(),
+        facts,
+        max_rounds,
+        SymbolicEvaluationScope::Full,
+    )?;
+    let rationale = (symbolic.closure_status == SymbolicClosureStatus::Truncated).then(|| {
+        "symbolic consistency evaluation truncated before saturation; fail-closed deny".to_string()
+    });
+    Ok(build_symbolic_decision(
+        query,
+        symbolic,
+        program.fingerprint(),
+        rationale,
+    ))
 }
 
-fn ml_verdict(probability: f64, model: &LinearModel) -> Result<ReasoningVerdict, HelixError> {
-    if !(0.0..=1.0).contains(&probability) {
-        return Err(HelixError::validation_error(
-            "reasoning.probability",
-            "model probability must be in [0, 1]",
+pub fn evaluate_compiled_neuro_symbolic_reasoning(
+    query: String,
+    facts: Vec<String>,
+    program: &CompiledSymbolicProgram,
+    features: BTreeMap<String, f64>,
+    model: LinearModel,
+    min_probability: Option<f64>,
+    max_rounds: Option<u8>,
+) -> Result<ReasoningDecision, HelixError> {
+    let query = normalize_non_empty(&query, "reasoning.query", "query")?;
+    let max_rounds = resolve_max_rounds(max_rounds)?;
+    let min_probability =
+        validate_probability(min_probability.unwrap_or(0.8), "reasoning.min_probability")?;
+    let neuro = evaluate_neuro(features, model)?;
+    let relevant = evaluate_compiled_symbolic(
+        program,
+        query.clone(),
+        facts.clone(),
+        max_rounds,
+        SymbolicEvaluationScope::QueryDirected,
+    )?;
+
+    if relevant.closure_status == SymbolicClosureStatus::Truncated {
+        return Ok(build_neuro_symbolic_decision(
+            relevant,
+            neuro.probability,
+            program.fingerprint(),
+            ReasoningVerdict::Deny,
+            1.0,
+            "symbolic query evaluation truncated before saturation; denying regardless of neural score"
+                .to_string(),
+        ));
+    }
+    if !relevant.contradictions.is_empty() {
+        return Ok(build_neuro_symbolic_decision(
+            relevant,
+            neuro.probability,
+            program.fingerprint(),
+            ReasoningVerdict::Deny,
+            1.0,
+            "symbolic contradiction detected; denying regardless of neural score".to_string(),
+        ));
+    }
+    if !relevant.entailed {
+        return Ok(build_neuro_symbolic_decision(
+            relevant,
+            neuro.probability,
+            program.fingerprint(),
+            ReasoningVerdict::Deny,
+            1.0,
+            "symbolic gate failed; denying regardless of neural score".to_string(),
         ));
     }
 
-    let verdict = if probability >= model.allow_threshold {
-        ReasoningVerdict::Allow
-    } else if probability >= model.review_threshold {
-        ReasoningVerdict::Review
+    let symbolic = evaluate_compiled_symbolic(
+        program,
+        query,
+        facts,
+        max_rounds,
+        SymbolicEvaluationScope::Full,
+    )?;
+
+    let (verdict, rationale, confidence) = if symbolic.closure_status
+        == SymbolicClosureStatus::Truncated
+    {
+        (
+            ReasoningVerdict::Deny,
+            "symbolic consistency evaluation truncated before saturation; denying regardless of neural score".to_string(),
+            1.0,
+        )
+    } else if !symbolic.contradictions.is_empty() {
+        (
+            ReasoningVerdict::Deny,
+            "symbolic contradiction detected; denying regardless of neural score".to_string(),
+            1.0,
+        )
+    } else if !symbolic.entailed {
+        (
+            ReasoningVerdict::Deny,
+            "symbolic gate failed; denying regardless of neural score".to_string(),
+            1.0,
+        )
+    } else if neuro.probability >= min_probability {
+        (
+            ReasoningVerdict::Allow,
+            "symbolic gate passed and neural confidence exceeded threshold".to_string(),
+            score_neuro_probability(neuro.probability, ReasoningVerdict::Allow),
+        )
     } else {
-        ReasoningVerdict::Deny
+        (
+            ReasoningVerdict::Review,
+            "symbolic gate passed but neural confidence below allow threshold".to_string(),
+            score_neuro_probability(neuro.probability, ReasoningVerdict::Review),
+        )
     };
 
-    Ok(verdict)
+    Ok(build_neuro_symbolic_decision(
+        symbolic,
+        neuro.probability,
+        program.fingerprint(),
+        verdict,
+        confidence,
+        rationale,
+    ))
 }
 
-fn confidence_from_probability(probability: f64, verdict: ReasoningVerdict) -> f64 {
-    match verdict {
-        ReasoningVerdict::Allow => probability,
-        ReasoningVerdict::Review => (0.5 + (probability - 0.5).abs()).clamp(0.0, 1.0),
-        ReasoningVerdict::Deny => (1.0 - probability).clamp(0.0, 1.0),
+fn build_symbolic_decision(
+    query: String,
+    symbolic: SymbolicEvaluation,
+    program_fingerprint: &str,
+    rationale_override: Option<String>,
+) -> ReasoningDecision {
+    let entailed = symbolic.entailed;
+    let contradiction_detected = !symbolic.contradictions.is_empty();
+    let truncated = symbolic.closure_status == SymbolicClosureStatus::Truncated;
+    ReasoningDecision {
+        backend: ReasoningBackend::KrrSymbolic,
+        verdict: if truncated || contradiction_detected {
+            ReasoningVerdict::Deny
+        } else if entailed {
+            ReasoningVerdict::Allow
+        } else {
+            ReasoningVerdict::Deny
+        },
+        confidence: if truncated || contradiction_detected || entailed {
+            1.0
+        } else {
+            0.0
+        },
+        rationale: rationale_override.unwrap_or_else(|| {
+            if truncated {
+                "symbolic evaluation truncated before saturation; fail-closed deny".to_string()
+            } else if contradiction_detected {
+                "symbolic contradiction detected; fail-closed deny".to_string()
+            } else if entailed {
+                format!(
+                    "symbolic query entailed: {query} via {} compiled rules",
+                    symbolic.matched_rules.len()
+                )
+            } else {
+                format!("symbolic query not entailed: {query}")
+            }
+        }),
+        trace: build_symbolic_trace(symbolic, None, program_fingerprint),
     }
 }
 
-fn normalize_non_empty(value: &str, context: &str, field: &str) -> Result<String, HelixError> {
+fn build_neuro_symbolic_decision(
+    symbolic: SymbolicEvaluation,
+    neural_probability: f64,
+    program_fingerprint: &str,
+    verdict: ReasoningVerdict,
+    confidence: f64,
+    rationale: String,
+) -> ReasoningDecision {
+    ReasoningDecision {
+        backend: ReasoningBackend::NeuroSymbolic,
+        verdict,
+        confidence,
+        rationale,
+        trace: build_symbolic_trace(symbolic, Some(neural_probability), program_fingerprint),
+    }
+}
+
+fn build_symbolic_trace(
+    symbolic: SymbolicEvaluation,
+    neural_probability: Option<f64>,
+    program_fingerprint: &str,
+) -> ReasoningTrace {
+    ReasoningTrace {
+        derived_facts: symbolic.derived_facts,
+        matched_rules: symbolic.matched_rules,
+        symbolic_entailed: Some(symbolic.entailed),
+        neural_probability,
+        support_graph: symbolic.support_graph,
+        contradictions: symbolic.contradictions,
+        symbolic_status: Some(map_symbolic_status(symbolic.closure_status)),
+        symbolic_rounds: Some(symbolic.rounds_executed),
+        pending_rule_count: Some(symbolic.pending_rule_count),
+        program_fingerprint: Some(program_fingerprint.to_string()),
+        query_support: symbolic.query_support,
+    }
+}
+
+fn map_symbolic_status(status: SymbolicClosureStatus) -> ReasoningSymbolicStatus {
+    match status {
+        SymbolicClosureStatus::Saturated => ReasoningSymbolicStatus::Saturated,
+        SymbolicClosureStatus::Truncated => ReasoningSymbolicStatus::Truncated,
+    }
+}
+
+pub(crate) fn normalize_non_empty(
+    value: &str,
+    context: &str,
+    field: &str,
+) -> Result<String, HelixError> {
     let normalized = value.trim();
     if normalized.is_empty() {
         return Err(HelixError::validation_error(
@@ -591,7 +675,7 @@ fn normalize_non_empty(value: &str, context: &str, field: &str) -> Result<String
     Ok(normalized.to_string())
 }
 
-fn ensure_finite(value: f64, context: &str, field: &str) -> Result<(), HelixError> {
+pub(crate) fn ensure_finite(value: f64, context: &str, field: &str) -> Result<(), HelixError> {
     if value.is_finite() {
         Ok(())
     } else {
@@ -602,7 +686,7 @@ fn ensure_finite(value: f64, context: &str, field: &str) -> Result<(), HelixErro
     }
 }
 
-fn validate_probability(value: f64, context: &str) -> Result<f64, HelixError> {
+pub(crate) fn validate_probability(value: f64, context: &str) -> Result<f64, HelixError> {
     ensure_finite(value, context, "probability")?;
     if !(0.0..=1.0).contains(&value) {
         return Err(HelixError::validation_error(
@@ -613,7 +697,7 @@ fn validate_probability(value: f64, context: &str) -> Result<f64, HelixError> {
     Ok(value)
 }
 
-fn resolve_max_rounds(max_rounds: Option<u8>) -> Result<usize, HelixError> {
+pub(crate) fn resolve_max_rounds(max_rounds: Option<u8>) -> Result<usize, HelixError> {
     match max_rounds {
         Some(0) => Err(HelixError::validation_error(
             "reasoning.max_rounds",
@@ -646,6 +730,195 @@ mod tests {
         assert_eq!(decision.backend, ReasoningBackend::KrrSymbolic);
         assert_eq!(decision.verdict, ReasoningVerdict::Allow);
         assert_eq!(decision.trace.symbolic_entailed, Some(true));
+        assert_eq!(
+            decision.trace.symbolic_status,
+            Some(ReasoningSymbolicStatus::Saturated)
+        );
+        assert_eq!(decision.trace.pending_rule_count, Some(0));
+        assert!(decision.trace.program_fingerprint.is_some());
+        assert_eq!(decision.trace.support_graph.len(), 3);
+        assert!(decision.trace.contradictions.is_empty());
+        assert_eq!(
+            decision.trace.query_support,
+            vec![
+                "allow(tx)".to_string(),
+                "kyc_passed(user)".to_string(),
+                "trusted(user)".to_string(),
+            ]
+        );
+        assert!(decision
+            .trace
+            .support_graph
+            .iter()
+            .any(|node| node.fact == "allow(tx)" && node.rule_id.as_deref() == Some("r1")));
+    }
+
+    #[test]
+    fn symbolic_backend_preserves_rule_order_semantics_across_rounds() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "c".to_string(),
+            facts: vec!["a".to_string()],
+            rules: vec![
+                SymbolicRule {
+                    id: "r2".to_string(),
+                    antecedents: vec!["b".to_string()],
+                    consequent: "c".to_string(),
+                },
+                SymbolicRule {
+                    id: "r1".to_string(),
+                    antecedents: vec!["a".to_string()],
+                    consequent: "b".to_string(),
+                },
+            ],
+            triples: vec![],
+            max_rounds: Some(2),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+        assert_eq!(decision.trace.matched_rules, vec!["r1", "r2"]);
+    }
+
+    #[test]
+    fn symbolic_backend_supports_unconditional_rules() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec![],
+            rules: vec![SymbolicRule {
+                id: "bootstrap".to_string(),
+                antecedents: vec![],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            max_rounds: Some(1),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+    }
+
+    #[test]
+    fn symbolic_backend_canonicalizes_predicates_in_support_graph() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec![
+                "trusted( user )".to_string(),
+                "kyc_passed(user)".to_string(),
+            ],
+            rules: vec![SymbolicRule {
+                id: "r1".to_string(),
+                antecedents: vec!["trusted(user)".to_string(), "kyc_passed(user)".to_string()],
+                consequent: "allow(tx)".to_string(),
+            }],
+            triples: vec![],
+            max_rounds: Some(8),
+        })
+        .unwrap();
+
+        assert!(decision
+            .trace
+            .support_graph
+            .iter()
+            .any(|node| node.fact == "trusted(user)" && node.kind == ReasoningSupportKind::Seed));
+    }
+
+    #[test]
+    fn symbolic_program_fingerprint_is_stable() {
+        let rules = vec![SymbolicRule {
+            id: "r1".to_string(),
+            antecedents: vec!["trusted(user)".to_string()],
+            consequent: "allow(tx)".to_string(),
+        }];
+        let triples = vec![KrrTriple {
+            subject: "user".to_string(),
+            predicate: "owns".to_string(),
+            object: "tx".to_string(),
+        }];
+        let a = fingerprint_symbolic_program(&rules, &triples).unwrap();
+        let b = fingerprint_symbolic_program(&rules, &triples).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn symbolic_backend_denies_when_contradiction_is_present() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string(), "!allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert_eq!(decision.trace.contradictions.len(), 1);
+        assert_eq!(decision.trace.contradictions[0].positive, "allow(tx)");
+        assert_eq!(decision.trace.contradictions[0].negative, "not allow(tx)");
+    }
+
+    #[test]
+    fn symbolic_backend_reports_truncation_when_round_budget_is_exhausted() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "c".to_string(),
+            facts: vec!["a".to_string()],
+            rules: vec![
+                SymbolicRule {
+                    id: "r1".to_string(),
+                    antecedents: vec!["a".to_string()],
+                    consequent: "b".to_string(),
+                },
+                SymbolicRule {
+                    id: "r2".to_string(),
+                    antecedents: vec!["b".to_string()],
+                    consequent: "c".to_string(),
+                },
+            ],
+            triples: vec![],
+            max_rounds: Some(1),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert_eq!(
+            decision.trace.symbolic_status,
+            Some(ReasoningSymbolicStatus::Truncated)
+        );
+        assert_eq!(decision.trace.pending_rule_count, Some(1));
+        assert_eq!(decision.trace.symbolic_entailed, Some(false));
+        assert!(decision.rationale.contains("truncated"));
+    }
+
+    #[test]
+    fn symbolic_query_support_excludes_irrelevant_derivations() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::KrrSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["trusted(user)".to_string(), "news(noise)".to_string()],
+            rules: vec![
+                SymbolicRule {
+                    id: "permit".to_string(),
+                    antecedents: vec!["trusted(user)".to_string()],
+                    consequent: "allow(tx)".to_string(),
+                },
+                SymbolicRule {
+                    id: "noise".to_string(),
+                    antecedents: vec!["news(noise)".to_string()],
+                    consequent: "alert(side_channel)".to_string(),
+                },
+            ],
+            triples: vec![],
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+        assert!(decision
+            .trace
+            .derived_facts
+            .contains(&"alert(side_channel)".to_string()));
+        assert_eq!(
+            decision.trace.query_support,
+            vec!["allow(tx)".to_string(), "trusted(user)".to_string()]
+        );
     }
 
     #[test]
@@ -670,6 +943,54 @@ mod tests {
         .unwrap();
 
         assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+    }
+
+    #[test]
+    fn expert_backend_denies_when_no_rule_matches() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::ExpertSystem {
+            features: BTreeMap::from([("risk".to_string(), 1)]),
+            rules: vec![ExpertRule {
+                id: "allow_if_high".to_string(),
+                min_features: BTreeMap::from([("risk".to_string(), 5)]),
+                verdict: ReasoningVerdict::Allow,
+                weight: 10,
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert_eq!(decision.confidence, 1.0);
+    }
+
+    #[test]
+    fn expert_backend_supports_unconditional_rules() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::ExpertSystem {
+            features: BTreeMap::new(),
+            rules: vec![ExpertRule {
+                id: "default_review".to_string(),
+                min_features: BTreeMap::new(),
+                verdict: ReasoningVerdict::Review,
+                weight: 3,
+            }],
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Review);
+        assert_eq!(decision.trace.matched_rules, vec!["default_review"]);
+    }
+
+    #[test]
+    fn expert_backend_rejects_blank_feature_names() {
+        let result = evaluate_reasoning(ReasoningEvaluationRequest::ExpertSystem {
+            features: BTreeMap::from([(" ".to_string(), 5)]),
+            rules: vec![ExpertRule {
+                id: "allow_rule".to_string(),
+                min_features: BTreeMap::from([("risk".to_string(), 5)]),
+                verdict: ReasoningVerdict::Allow,
+                weight: 1,
+            }],
+        });
+        assert!(matches!(result, Err(HelixError::ValidationError { .. })));
     }
 
     #[test]
@@ -714,20 +1035,72 @@ mod tests {
     }
 
     #[test]
-    fn expert_backend_denies_when_no_rule_matches() {
-        let decision = evaluate_reasoning(ReasoningEvaluationRequest::ExpertSystem {
-            features: BTreeMap::from([("risk".to_string(), 1)]),
-            rules: vec![ExpertRule {
-                id: "allow_if_high".to_string(),
-                min_features: BTreeMap::from([("risk".to_string(), 5)]),
-                verdict: ReasoningVerdict::Allow,
-                weight: 10,
-            }],
+    fn neuro_symbolic_denies_when_symbolic_contradiction_exists() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string(), "!allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 10.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            max_rounds: Some(8),
         })
         .unwrap();
 
         assert_eq!(decision.verdict, ReasoningVerdict::Deny);
-        assert_eq!(decision.confidence, 1.0);
+        assert_eq!(decision.trace.contradictions.len(), 1);
+    }
+
+    #[test]
+    fn neuro_symbolic_denies_when_consistency_sweep_truncates() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["trusted(user)".to_string(), "seed(x0)".to_string()],
+            rules: vec![
+                SymbolicRule {
+                    id: "permit".to_string(),
+                    antecedents: vec!["trusted(user)".to_string()],
+                    consequent: "allow(tx)".to_string(),
+                },
+                SymbolicRule {
+                    id: "chain1".to_string(),
+                    antecedents: vec!["seed(x0)".to_string()],
+                    consequent: "seed(x1)".to_string(),
+                },
+                SymbolicRule {
+                    id: "chain2".to_string(),
+                    antecedents: vec!["seed(x1)".to_string()],
+                    consequent: "seed(x2)".to_string(),
+                },
+            ],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 10.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            max_rounds: Some(1),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert!(decision.trace.neural_probability.unwrap() > 0.99);
+        assert_eq!(
+            decision.trace.symbolic_status,
+            Some(ReasoningSymbolicStatus::Truncated)
+        );
+        assert!(decision
+            .rationale
+            .contains("consistency evaluation truncated"));
     }
 
     #[test]

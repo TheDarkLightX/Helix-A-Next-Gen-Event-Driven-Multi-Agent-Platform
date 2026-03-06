@@ -13,14 +13,14 @@ Helix is not positioned as a generic automation clone. The main product surface 
 - Watchlists with deterministic keyword/entity matching and severity
 - Case files with deterministic lifecycle transitions
 - First-party verticals for OSINT and market intelligence
-- Neuro-symbolic and expert reasoning backends with fail-closed decisions
+- Compiled symbolic, expert, neural-risk, and neuro-symbolic reasoning backends with fail-closed decisions
 - Guarded autopilot for LLM-proposed actions
 
 ## What Ships
 
 - Deterministic policy engine with replayable simulations
 - Deterministic agent catalog and deployment templates
-- Reasoning backends: symbolic, expert, neural-risk, and neuro-symbolic
+- Reasoning backends: indexed symbolic closure, compiled expert matching, neural-risk, and neuro-symbolic
 - Intelligence desk APIs for sources, evidence, claims, watchlists, cases, and market-intel projections
 - Onchain EVM transaction shell with dry-run support and receipt polling
 - Autopilot control plane with `off`, `assist`, and `auto` modes
@@ -126,6 +126,16 @@ export LLM_API_KEY="local"
 
 ### Reasoning
 - `POST /api/v1/reasoning/evaluate`
+
+Reasoning requests are evaluated by deterministic compiled kernels:
+
+- Symbolic mode uses indexed closure over normalized facts, rules, and triples.
+- Symbolic responses include a deterministic support graph for replay and explanation.
+- Symbolic traces report whether the closure saturated or hit the round bound, along with remaining ready rules.
+- Symbolic traces include a minimal query-support slice and a stable compiled-program fingerprint for replay.
+- Contradictory symbolic closures deny automatically and return both sides of the contradiction.
+- Expert mode uses compiled threshold matching with deterministic fail-closed voting.
+- Neuro-symbolic mode still requires symbolic justification before neural confidence can permit execution.
 
 ### Onchain
 - `POST /api/v1/onchain/send_raw`

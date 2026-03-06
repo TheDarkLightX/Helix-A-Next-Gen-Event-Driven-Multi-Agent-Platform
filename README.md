@@ -25,6 +25,7 @@ Helix is not positioned as a generic automation clone. The main product surface 
 - Onchain EVM transaction shell with dry-run support and receipt polling
 - Autopilot control plane with `off`, `assist`, and `auto` modes
 - Operator UI for dashboard, sources, watchlists, evidence, cases, policy, agents, onchain, and autopilot
+- Effect-powered UI transport layer for typed browser-side timeouts, retries, and HTTP error normalization
 - GitHub Pages marketing site under `site/`
 
 ## Architecture

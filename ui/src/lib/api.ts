@@ -1,3 +1,5 @@
+import { readTextResponse, requestJson, requestResponse } from "./effectHttp";
+
 export type DeterministicPolicyConfig = {
   dedup_window_ticks: number;
   rate_max_tokens: number;
@@ -439,63 +441,70 @@ export type IngestEvidenceResponse = {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3000";
 
-async function parseOrThrow<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
-  }
-  return response.json() as Promise<T>;
-}
-
 export async function fetchPolicyConfig(): Promise<DeterministicPolicyConfig> {
-  const response = await fetch(`${API_BASE}/api/v1/policy/config`);
-  const payload = await parseOrThrow<{ config: DeterministicPolicyConfig }>(response);
+  const payload = await requestJson<{ config: DeterministicPolicyConfig }>(
+    API_BASE,
+    "/api/v1/policy/config"
+  );
   return payload.config;
 }
 
 export async function updatePolicyConfig(
   config: DeterministicPolicyConfig
 ): Promise<DeterministicPolicyConfig> {
-  const response = await fetch(`${API_BASE}/api/v1/policy/config`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config }),
-  });
-  const payload = await parseOrThrow<{ config: DeterministicPolicyConfig }>(response);
+  const payload = await requestJson<{ config: DeterministicPolicyConfig }>(
+    API_BASE,
+    "/api/v1/policy/config",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    },
+    { retry: false }
+  );
   return payload.config;
 }
 
 export async function simulatePolicy(commands: PolicyCommand[]): Promise<PolicyStepResult[]> {
-  const response = await fetch(`${API_BASE}/api/v1/policy/simulate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ commands }),
-  });
-  const payload = await parseOrThrow<{ steps: PolicyStepResult[] }>(response);
+  const payload = await requestJson<{ steps: PolicyStepResult[] }>(
+    API_BASE,
+    "/api/v1/policy/simulate",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commands }),
+    },
+    { retry: false }
+  );
   return payload.steps;
 }
 
 export async function fetchAgentCatalog(): Promise<DeterministicAgentSpec[]> {
-  const response = await fetch(`${API_BASE}/api/v1/agents`);
-  const payload = await parseOrThrow<{ agents: DeterministicAgentSpec[] }>(response);
+  const payload = await requestJson<{ agents: DeterministicAgentSpec[] }>(API_BASE, "/api/v1/agents");
   return payload.agents;
 }
 
 export async function fetchAgentCatalogQuality(): Promise<AgentCatalogQuality> {
-  const response = await fetch(`${API_BASE}/api/v1/agents/quality`);
-  const payload = await parseOrThrow<{ quality: AgentCatalogQuality }>(response);
+  const payload = await requestJson<{ quality: AgentCatalogQuality }>(
+    API_BASE,
+    "/api/v1/agents/quality"
+  );
   return payload.quality;
 }
 
 export async function fetchAgentTemplates(): Promise<DeterministicAgentTemplate[]> {
-  const response = await fetch(`${API_BASE}/api/v1/agents/templates`);
-  const payload = await parseOrThrow<{ templates: DeterministicAgentTemplate[] }>(response);
+  const payload = await requestJson<{ templates: DeterministicAgentTemplate[] }>(
+    API_BASE,
+    "/api/v1/agents/templates"
+  );
   return payload.templates;
 }
 
 export async function fetchAgentTemplate(templateId: string): Promise<DeterministicAgentTemplate> {
-  const response = await fetch(`${API_BASE}/api/v1/agents/templates/${encodeURIComponent(templateId)}`);
-  const payload = await parseOrThrow<{ template: DeterministicAgentTemplate }>(response);
+  const payload = await requestJson<{ template: DeterministicAgentTemplate }>(
+    API_BASE,
+    `/api/v1/agents/templates/${encodeURIComponent(templateId)}`
+  );
   return payload.template;
 }
 
@@ -503,74 +512,99 @@ export async function applyAgentTemplate(
   templateId: string,
   runBootstrapSimulation: boolean = true
 ): Promise<ApplyAgentTemplateResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/agents/templates/${encodeURIComponent(templateId)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ run_bootstrap_simulation: runBootstrapSimulation }),
-  });
-  return parseOrThrow<ApplyAgentTemplateResponse>(response);
+  return requestJson<ApplyAgentTemplateResponse>(
+    API_BASE,
+    `/api/v1/agents/templates/${encodeURIComponent(templateId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_bootstrap_simulation: runBootstrapSimulation }),
+    },
+    { retry: false }
+  );
 }
 
 export async function sendRawOnchainTransaction(
   request: OnchainBroadcastRequest
 ): Promise<OnchainBroadcastResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/onchain/send_raw`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  return parseOrThrow<OnchainBroadcastResponse>(response);
+  return requestJson<OnchainBroadcastResponse>(
+    API_BASE,
+    "/api/v1/onchain/send_raw",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
 }
 
 export async function fetchOnchainReceipt(
   rpc_url: string,
   tx_hash: string
 ): Promise<OnchainReceiptResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/onchain/receipt`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rpc_url, tx_hash }),
-  });
-  return parseOrThrow<OnchainReceiptResponse>(response);
+  return requestJson<OnchainReceiptResponse>(
+    API_BASE,
+    "/api/v1/onchain/receipt",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rpc_url, tx_hash }),
+    },
+    { retry: false }
+  );
 }
 
 export async function fetchAutopilotStatus(): Promise<AutopilotStatusResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/autopilot/status`);
-  return parseOrThrow<AutopilotStatusResponse>(response);
+  return requestJson<AutopilotStatusResponse>(API_BASE, "/api/v1/autopilot/status");
 }
 
 export async function updateAutopilotConfig(
   config: AutopilotGuardConfig
 ): Promise<AutopilotStatusResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/autopilot/config`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ config }),
-  });
-  return parseOrThrow<AutopilotStatusResponse>(response);
+  return requestJson<AutopilotStatusResponse>(
+    API_BASE,
+    "/api/v1/autopilot/config",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    },
+    { retry: false }
+  );
 }
 
 export async function executeAutopilot(
   request: AutopilotExecuteRequest
 ): Promise<AutopilotExecuteResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/autopilot/execute`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  return parseOrThrow<AutopilotExecuteResponse>(response);
+  return requestJson<AutopilotExecuteResponse>(
+    API_BASE,
+    "/api/v1/autopilot/execute",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
 }
 
 export async function proposeAutopilot(
   request: AutopilotProposeRequest
 ): Promise<AutopilotProposeResult> {
-  const response = await fetch(`${API_BASE}/api/v1/autopilot/propose`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
+  const path = "/api/v1/autopilot/propose";
+  const response = await requestResponse(
+    API_BASE,
+    path,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false, allowHttpErrors: true }
+  );
 
-  const text = await response.text();
+  const text = await readTextResponse(response, "POST", path);
   let payload: unknown = null;
   try {
     payload = text ? JSON.parse(text) : null;
@@ -590,80 +624,90 @@ export async function proposeAutopilot(
 }
 
 export async function fetchIntelOverview(): Promise<IntelDeskOverviewResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/intel/overview`);
-  return parseOrThrow<IntelDeskOverviewResponse>(response);
+  return requestJson<IntelDeskOverviewResponse>(API_BASE, "/api/v1/intel/overview");
 }
 
 export async function fetchMarketIntelOverview(): Promise<MarketIntelOverviewResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/market-intel/overview`);
-  return parseOrThrow<MarketIntelOverviewResponse>(response);
+  return requestJson<MarketIntelOverviewResponse>(API_BASE, "/api/v1/market-intel/overview");
 }
 
 export async function generateMarketIntelBrief(
   caseId: string,
   request: GenerateMarketIntelBriefRequest
 ): Promise<GenerateMarketIntelBriefResponse> {
-  const response = await fetch(
-    `${API_BASE}/api/v1/market-intel/cases/${encodeURIComponent(caseId)}/brief`,
+  return requestJson<GenerateMarketIntelBriefResponse>(
+    API_BASE,
+    `/api/v1/market-intel/cases/${encodeURIComponent(caseId)}/brief`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(request),
-    }
+    },
+    { retry: false }
   );
-  return parseOrThrow<GenerateMarketIntelBriefResponse>(response);
 }
 
 export async function fetchSources(): Promise<SourceDefinition[]> {
-  const response = await fetch(`${API_BASE}/api/v1/sources`);
-  const payload = await parseOrThrow<{ sources: SourceDefinition[] }>(response);
+  const payload = await requestJson<{ sources: SourceDefinition[] }>(API_BASE, "/api/v1/sources");
   return payload.sources;
 }
 
 export async function createSource(request: CreateSourceRequest): Promise<SourceDefinition> {
-  const response = await fetch(`${API_BASE}/api/v1/sources`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  const payload = await parseOrThrow<{ source: SourceDefinition }>(response);
+  const payload = await requestJson<{ source: SourceDefinition }>(
+    API_BASE,
+    "/api/v1/sources",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
   return payload.source;
 }
 
 export async function fetchWatchlists(): Promise<Watchlist[]> {
-  const response = await fetch(`${API_BASE}/api/v1/watchlists`);
-  const payload = await parseOrThrow<{ watchlists: Watchlist[] }>(response);
+  const payload = await requestJson<{ watchlists: Watchlist[] }>(
+    API_BASE,
+    "/api/v1/watchlists"
+  );
   return payload.watchlists;
 }
 
 export async function createWatchlist(request: CreateWatchlistRequest): Promise<Watchlist> {
-  const response = await fetch(`${API_BASE}/api/v1/watchlists`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  const payload = await parseOrThrow<{ watchlist: Watchlist }>(response);
+  const payload = await requestJson<{ watchlist: Watchlist }>(
+    API_BASE,
+    "/api/v1/watchlists",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
   return payload.watchlist;
 }
 
 export async function fetchEvidence(): Promise<EvidenceItem[]> {
-  const response = await fetch(`${API_BASE}/api/v1/evidence`);
-  const payload = await parseOrThrow<{ evidence: EvidenceItem[] }>(response);
+  const payload = await requestJson<{ evidence: EvidenceItem[] }>(API_BASE, "/api/v1/evidence");
   return payload.evidence;
 }
 
 export async function ingestEvidence(request: IngestEvidenceRequest): Promise<IngestEvidenceResponse> {
-  const response = await fetch(`${API_BASE}/api/v1/evidence/ingest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  return parseOrThrow<IngestEvidenceResponse>(response);
+  return requestJson<IngestEvidenceResponse>(
+    API_BASE,
+    "/api/v1/evidence/ingest",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
 }
 
 export async function fetchClaims(): Promise<ClaimRecord[]> {
-  const response = await fetch(`${API_BASE}/api/v1/claims`);
-  const payload = await parseOrThrow<{ claims: ClaimRecord[] }>(response);
+  const payload = await requestJson<{ claims: ClaimRecord[] }>(API_BASE, "/api/v1/claims");
   return payload.claims;
 }
 
@@ -671,18 +715,21 @@ export async function reviewClaim(
   claimId: string,
   status: ClaimReviewStatus
 ): Promise<ClaimRecord> {
-  const response = await fetch(`${API_BASE}/api/v1/claims/${encodeURIComponent(claimId)}/review`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  const payload = await parseOrThrow<{ claim: ClaimRecord }>(response);
+  const payload = await requestJson<{ claim: ClaimRecord }>(
+    API_BASE,
+    `/api/v1/claims/${encodeURIComponent(claimId)}/review`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+    { retry: false }
+  );
   return payload.claim;
 }
 
 export async function fetchCases(): Promise<CaseFile[]> {
-  const response = await fetch(`${API_BASE}/api/v1/cases`);
-  const payload = await parseOrThrow<{ cases: CaseFile[] }>(response);
+  const payload = await requestJson<{ cases: CaseFile[] }>(API_BASE, "/api/v1/cases");
   return payload.cases;
 }
 
@@ -690,14 +737,15 @@ export async function transitionCase(
   caseId: string,
   command: CaseCommand
 ): Promise<CaseTransition> {
-  const response = await fetch(
-    `${API_BASE}/api/v1/cases/${encodeURIComponent(caseId)}/transition`,
+  const payload = await requestJson<{ transition: CaseTransition }>(
+    API_BASE,
+    `/api/v1/cases/${encodeURIComponent(caseId)}/transition`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command }),
-    }
+    },
+    { retry: false }
   );
-  const payload = await parseOrThrow<{ transition: CaseTransition }>(response);
   return payload.transition;
 }

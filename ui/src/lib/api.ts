@@ -334,6 +334,43 @@ export type IntelDeskOverviewResponse = {
   escalated_case_count: number;
 };
 
+export type MarketIntelThemeCard = {
+  theme_id: string;
+  name: string;
+  summary: string;
+  watchlist_count: number;
+  evidence_count: number;
+  active_case_count: number;
+  escalated_case_count: number;
+  top_entities: string[];
+};
+
+export type MarketIntelCompanyCard = {
+  company: string;
+  mention_count: number;
+  claim_count: number;
+  active_case_count: number;
+  themes: string[];
+  latest_signal_at: string | null;
+};
+
+export type MarketIntelPlaybook = {
+  id: string;
+  name: string;
+  objective: string;
+  signals: string[];
+};
+
+export type MarketIntelOverviewResponse = {
+  market_source_count: number;
+  market_watchlist_count: number;
+  tracked_company_count: number;
+  active_case_count: number;
+  theme_cards: MarketIntelThemeCard[];
+  company_cards: MarketIntelCompanyCard[];
+  playbooks: MarketIntelPlaybook[];
+};
+
 export type CreateSourceRequest = {
   name: string;
   description: string;
@@ -529,6 +566,11 @@ export async function proposeAutopilot(
 export async function fetchIntelOverview(): Promise<IntelDeskOverviewResponse> {
   const response = await fetch(`${API_BASE}/api/v1/intel/overview`);
   return parseOrThrow<IntelDeskOverviewResponse>(response);
+}
+
+export async function fetchMarketIntelOverview(): Promise<MarketIntelOverviewResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/market-intel/overview`);
+  return parseOrThrow<MarketIntelOverviewResponse>(response);
 }
 
 export async function fetchSources(): Promise<SourceDefinition[]> {

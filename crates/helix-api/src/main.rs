@@ -24,11 +24,12 @@ use axum::{
     Router,
 };
 use crate::intel::{
-    create_source, create_watchlist, get_intel_overview, ingest_evidence, list_cases, list_claims,
-    list_evidence, list_sources, list_watchlists, review_claim_handler, transition_case_handler,
-    CaseCatalogResponse, CaseTransitionRequest, CaseTransitionResponse, ClaimCatalogResponse,
-    ClaimReviewRequest, ClaimResponse, CreateSourceRequest, CreateWatchlistRequest,
-    IngestEvidenceRequest, IngestEvidenceResponse, IntelDeskOverviewResponse, IntelDeskStore,
+    create_source, create_watchlist, get_intel_overview, get_market_intel_overview,
+    ingest_evidence, list_cases, list_claims, list_evidence, list_sources, list_watchlists,
+    review_claim_handler, transition_case_handler, CaseCatalogResponse, CaseTransitionRequest,
+    CaseTransitionResponse, ClaimCatalogResponse, ClaimReviewRequest, ClaimResponse,
+    CreateSourceRequest, CreateWatchlistRequest, IngestEvidenceRequest, IngestEvidenceResponse,
+    IntelDeskOverviewResponse, IntelDeskStore, MarketIntelOverviewResponse,
     SourceCatalogResponse, SourceResponse, WatchlistResponse,
 };
 use helix_core::autopilot_guard::{
@@ -1074,6 +1075,7 @@ fn app(state: AppState) -> Router {
             get(get_agent_template).post(post_apply_agent_template),
         )
         .route("/api/v1/intel/overview", get(get_intel_overview))
+        .route("/api/v1/market-intel/overview", get(get_market_intel_overview))
         .route("/api/v1/sources", get(list_sources).post(create_source))
         .route("/api/v1/watchlists", get(list_watchlists).post(create_watchlist))
         .route("/api/v1/evidence", get(list_evidence))
@@ -1538,6 +1540,27 @@ mod tests {
         let payload: IntelDeskOverviewResponse = serde_json::from_slice(&body).unwrap();
         assert!(payload.source_count >= 2);
         assert!(payload.watchlist_count >= 2);
+    }
+
+    #[tokio::test]
+    async fn market_intel_overview_reports_seeded_market_coverage() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/market-intel/overview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let payload: MarketIntelOverviewResponse = serde_json::from_slice(&body).unwrap();
+        assert!(payload.market_source_count >= 4);
+        assert!(payload.market_watchlist_count >= 4);
+        assert!(payload.tracked_company_count >= 4);
+        assert_eq!(payload.playbooks.len(), 4);
     }
 
     #[tokio::test]

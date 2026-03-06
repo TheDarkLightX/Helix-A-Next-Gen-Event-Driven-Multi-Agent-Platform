@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Helix 2.0 turns the platform into a self-hosted personal intelligence agency with an OSINT Desk reference workflow.
+Helix 2.0 turns the platform into a self-hosted personal intelligence agency with reference workflows for OSINT and market intelligence.
 
 The system is designed around one constraint: non-deterministic models may propose, but deterministic kernels decide.
 
@@ -16,7 +16,9 @@ The intelligence desk currently exposes these first-class records:
 - `Watchlist`: deterministic keywords, entities, trust floor, severity, and enablement state
 - `CaseFile`: dossier with evidence links, claim links, lifecycle status, and optional briefing summary
 
-## Workflow
+## Workflows
+
+### OSINT Desk
 
 1. Register a source.
 2. Assign a trust score and collection cadence.
@@ -26,6 +28,13 @@ The intelligence desk currently exposes these first-class records:
 6. Let deterministic matching open or update case files.
 7. Move cases through `open`, `monitoring`, `brief_ready`, `escalated`, `closed`, and `reopen` transitions.
 8. Use autopilot as a guarded proposer for follow-up actions.
+
+### Market Intelligence
+
+1. Register pricing, launch, partnership, and hiring sources.
+2. Define deterministic watchlists for competitor motion.
+3. Review market-intel theme coverage and tracked-company summaries.
+4. Reuse the same evidence, claim, and case substrate to drive competitor monitoring.
 
 ## Deterministic Boundaries
 
@@ -41,6 +50,7 @@ Helix keeps trusted state inside the functional core.
 
 ### Overview
 - `GET /api/v1/intel/overview`
+- `GET /api/v1/market-intel/overview`
 
 ### Sources
 - `GET /api/v1/sources`
@@ -67,6 +77,7 @@ Helix keeps trusted state inside the functional core.
 The operator console includes these desk-oriented screens:
 
 - Dashboard
+- Market Intel
 - Sources
 - Watchlists
 - Evidence
@@ -76,7 +87,7 @@ The operator console includes these desk-oriented screens:
 - Onchain
 - Autopilot
 
-The evidence screen handles ingestion, latest watchlist hits, latest case updates, and claim review decisions. The cases screen manages dossier lifecycle transitions.
+The evidence screen handles ingestion, latest watchlist hits, latest case updates, and claim review decisions. The market-intel screen renders deterministic theme cards, tracked companies, and reference playbooks on top of the same desk state. The cases screen manages dossier lifecycle transitions.
 
 ## Autopilot Role
 

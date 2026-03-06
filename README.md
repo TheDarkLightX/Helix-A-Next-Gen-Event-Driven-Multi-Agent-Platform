@@ -6,12 +6,13 @@ Core rule: LLMs can propose actions, summaries, and claims. Deterministic kernel
 
 ## Product Thesis
 
-Helix is not positioned as a generic automation clone. The main product surface is an OSINT Desk built on a functional core and imperative shell:
+Helix is not positioned as a generic automation clone. The main product surface is a self-hosted intelligence desk built on a functional core and imperative shell:
 
 - Sources with explicit trust scores and bounded collection cadence
 - Evidence with provenance, timestamps, entities, and claim proposals
 - Watchlists with deterministic keyword/entity matching and severity
 - Case files with deterministic lifecycle transitions
+- First-party verticals for OSINT and market intelligence
 - Neuro-symbolic and expert reasoning backends with fail-closed decisions
 - Guarded autopilot for LLM-proposed actions
 
@@ -20,7 +21,7 @@ Helix is not positioned as a generic automation clone. The main product surface 
 - Deterministic policy engine with replayable simulations
 - Deterministic agent catalog and deployment templates
 - Reasoning backends: symbolic, expert, neural-risk, and neuro-symbolic
-- Intelligence desk APIs for sources, evidence, claims, watchlists, and cases
+- Intelligence desk APIs for sources, evidence, claims, watchlists, cases, and market-intel projections
 - Onchain EVM transaction shell with dry-run support and receipt polling
 - Autopilot control plane with `off`, `assist`, and `auto` modes
 - Operator UI for dashboard, sources, watchlists, evidence, cases, policy, agents, onchain, and autopilot
@@ -70,7 +71,9 @@ export LLM_BASE_URL="http://127.0.0.1:8000/v1"
 export LLM_API_KEY="local"
 ```
 
-## OSINT Desk Workflow
+## Reference Workflows
+
+### OSINT Desk
 
 1. Register trust-scored sources.
 2. Define deterministic watchlists.
@@ -79,6 +82,13 @@ export LLM_API_KEY="local"
 5. Let watchlist hits open or update case files.
 6. Move cases through monitoring, brief-ready, escalation, closure, and reopen flows.
 7. Use autopilot only as a guarded proposer.
+
+### Market Intelligence
+
+1. Register competitor, pricing, launch, partner, and hiring sources.
+2. Define watchlists for pricing moves, product launches, partnerships, and expansion signals.
+3. Review deterministic market-intel summaries and tracked-company coverage.
+4. Use the same evidence, claim, and case substrate for competitor monitoring.
 
 ## Core API
 
@@ -100,6 +110,7 @@ export LLM_API_KEY="local"
 
 ### Intelligence Desk
 - `GET /api/v1/intel/overview`
+- `GET /api/v1/market-intel/overview`
 - `GET /api/v1/sources`
 - `POST /api/v1/sources`
 - `GET /api/v1/watchlists`
@@ -127,6 +138,7 @@ export LLM_API_KEY="local"
 ## UI Routes
 
 - `/` Dashboard
+- `/market-intel` Market intelligence dashboard
 - `/sources` Source registry
 - `/watchlists` Watchlist management
 - `/evidence` Evidence ingest and claim review
@@ -166,7 +178,7 @@ python3 -m http.server -d site 8080
 
 ## Documentation
 
-- [`docs/intelligence_desk.md`](docs/intelligence_desk.md): product model, workflow, APIs, and operator surfaces
+- [`docs/intelligence_desk.md`](docs/intelligence_desk.md): product model, OSINT + market-intel workflows, APIs, and operator surfaces
 - [`docs/formal_core_imperative_shell.md`](docs/formal_core_imperative_shell.md): functional core / imperative shell rationale
 - [`docs/high_roi_deterministic_agents.md`](docs/high_roi_deterministic_agents.md): deterministic agent set and deployment posture
 

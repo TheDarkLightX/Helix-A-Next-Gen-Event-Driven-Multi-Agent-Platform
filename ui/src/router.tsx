@@ -4,6 +4,7 @@ import { AutopilotPage } from "./screens/AutopilotPage";
 import { CasesPage } from "./screens/CasesPage";
 import { DashboardPage } from "./screens/DashboardPage";
 import { EvidencePage } from "./screens/EvidencePage";
+import { MarketIntelPage } from "./screens/MarketIntelPage";
 import { OnchainPage } from "./screens/OnchainPage";
 import { PolicyWorkbenchPage } from "./screens/PolicyWorkbenchPage";
 import { SourcesPage } from "./screens/SourcesPage";
@@ -11,6 +12,7 @@ import { WatchlistsPage } from "./screens/WatchlistsPage";
 
 const NAV_ITEMS = [
   { to: "/" as const, label: "Dashboard", hint: "System posture and intelligence desk metrics" },
+  { to: "/market-intel" as const, label: "Market Intel", hint: "Competitors, pricing, and launches" },
   { to: "/sources" as const, label: "Sources", hint: "Collection registry and trust posture" },
   { to: "/watchlists" as const, label: "Watchlists", hint: "Deterministic detection rules" },
   { to: "/evidence" as const, label: "Evidence", hint: "Ingest signals and inspect claims" },
@@ -35,8 +37,8 @@ function RootLayout() {
             </div>
           </div>
           <p className="rail-note">
-            Self-hosted intelligence desk with deterministic kernels, provenance-first evidence,
-            and guarded autonomy.
+            Self-hosted intelligence desk for OSINT and market intelligence with deterministic
+            kernels, provenance-first evidence, and guarded autonomy.
           </p>
 
           <nav className="route-nav">
@@ -98,6 +100,12 @@ const policiesRoute = createRoute({
   component: PolicyWorkbenchPage,
 });
 
+const marketIntelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/market-intel",
+  component: MarketIntelPage,
+});
+
 const sourcesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sources",
@@ -142,6 +150,7 @@ const autopilotRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
+  marketIntelRoute,
   sourcesRoute,
   watchlistsRoute,
   evidenceRoute,

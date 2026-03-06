@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import type { DeterministicAgentSpec } from "../lib/api";
-import { fetchAgentCatalog, fetchAgentCatalogQuality, fetchIntelOverview } from "../lib/api";
+import {
+  fetchAgentCatalog,
+  fetchAgentCatalogQuality,
+  fetchIntelOverview,
+  fetchMarketIntelOverview,
+} from "../lib/api";
 
 const lanes = [
   { name: "Formal Kernel", status: "Healthy", note: "Finite-state transitions + invariants" },
@@ -8,6 +13,7 @@ const lanes = [
   { name: "Source Registry", status: "Healthy", note: "Trust-scored collection adapters for the desk" },
   { name: "Evidence Pipeline", status: "Healthy", note: "Provenance-linked evidence, claims, and watchlist hits" },
   { name: "Case Lifecycle", status: "Healthy", note: "Deterministic dossier transitions for analyst workflow" },
+  { name: "Market Intel View", status: "Healthy", note: "Deterministic market themes, companies, and playbooks" },
   { name: "Onchain Shell", status: "Healthy", note: "EVM JSON-RPC raw tx + receipt lifecycle" },
   { name: "Autopilot Guard", status: "Healthy", note: "LLM-operable control plane with fail-closed gating" },
 ];
@@ -18,6 +24,7 @@ const controls = [
   { title: "Source Registry", command: "GET /api/v1/sources" },
   { title: "Evidence Ingest", command: "POST /api/v1/evidence/ingest" },
   { title: "Case Queue", command: "GET /api/v1/cases" },
+  { title: "Market Overview", command: "GET /api/v1/market-intel/overview" },
   { title: "Autopilot Status", command: "GET /api/v1/autopilot/status" },
   { title: "Onchain Dry Run", command: "POST /api/v1/onchain/send_raw with dry_run=true" },
   { title: "Launch UI", command: "cd ui && npm run dev" },
@@ -143,16 +150,19 @@ export function DashboardPage() {
   const [evidenceCount, setEvidenceCount] = useState<number>(0);
   const [openCaseCount, setOpenCaseCount] = useState<number>(0);
   const [escalatedCaseCount, setEscalatedCaseCount] = useState<number>(0);
+  const [trackedCompanyCount, setTrackedCompanyCount] = useState<number>(0);
+  const [marketWatchlistCount, setMarketWatchlistCount] = useState<number>(0);
   const superiorityRatio = (agentClassCount / Math.max(huginnBaseline, 1)).toFixed(2);
   const healthyLaneCount = lanes.filter((lane) => lane.status === "Healthy").length;
 
   useEffect(() => {
     void (async () => {
       try {
-        const [catalog, quality, overview] = await Promise.all([
+        const [catalog, quality, overview, marketOverview] = await Promise.all([
           fetchAgentCatalog(),
           fetchAgentCatalogQuality(),
           fetchIntelOverview(),
+          fetchMarketIntelOverview(),
         ]);
         setAgentClassCount(catalog.length);
         setFeaturedAgents(pickFeaturedAgents(catalog));
@@ -164,6 +174,8 @@ export function DashboardPage() {
         setEvidenceCount(overview.evidence_count);
         setOpenCaseCount(overview.open_case_count);
         setEscalatedCaseCount(overview.escalated_case_count);
+        setTrackedCompanyCount(marketOverview.tracked_company_count);
+        setMarketWatchlistCount(marketOverview.market_watchlist_count);
       } catch {
         setAgentClassCount(fallbackAgents.length);
         setFeaturedAgents(fallbackAgents);
@@ -175,6 +187,8 @@ export function DashboardPage() {
         setEvidenceCount(0);
         setOpenCaseCount(0);
         setEscalatedCaseCount(0);
+        setTrackedCompanyCount(0);
+        setMarketWatchlistCount(0);
       }
     })();
   }, []);
@@ -185,9 +199,9 @@ export function DashboardPage() {
         <p className="mono-label">System Thesis</p>
         <h2>Self-Hosted Personal Intelligence Agency</h2>
         <p>
-          Helix now exposes an OSINT Desk workflow on top of the verified substrate: trust-scored
-          sources, provenance-linked evidence, bounded claims, watchlists, cases, and guarded
-          autopilot.
+          Helix now exposes OSINT and market intelligence workflows on top of the verified
+          substrate: trust-scored sources, provenance-linked evidence, bounded claims, watchlists,
+          cases, and guarded autopilot.
         </p>
         <div className="metrics-grid">
           <div className="metric-card">
@@ -209,6 +223,14 @@ export function DashboardPage() {
           <div className="metric-card">
             <p className="metric-label">Escalated Cases</p>
             <p className="metric-value">{escalatedCaseCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Tracked Companies</p>
+            <p className="metric-value">{trackedCompanyCount}</p>
+          </div>
+          <div className="metric-card">
+            <p className="metric-label">Market Watchlists</p>
+            <p className="metric-value">{marketWatchlistCount}</p>
           </div>
           <div className="metric-card">
             <p className="metric-label">Runtime Lanes</p>
@@ -279,6 +301,26 @@ export function DashboardPage() {
             </div>
           ))}
         </div>
+      </article>
+
+      <article className="panel panel-span-6">
+        <p className="mono-label">Reference Use Cases</p>
+        <ul className="lane-list">
+          <li className="lane-row">
+            <div>
+              <h3>OSINT Desk</h3>
+              <p>Leadership changes, facilities, detentions, and security signals with provenance-first evidence.</p>
+            </div>
+            <span className="status-pill ok">live</span>
+          </li>
+          <li className="lane-row">
+            <div>
+              <h3>Market Intelligence</h3>
+              <p>Pricing moves, product launches, partnerships, and hiring signals on the same deterministic substrate.</p>
+            </div>
+            <span className="status-pill ok">live</span>
+          </li>
+        </ul>
       </article>
 
       <article className="panel panel-span-12">

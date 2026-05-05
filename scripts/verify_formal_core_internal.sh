@@ -72,6 +72,8 @@ echo "[formal] using configured verification backend"
 
 models=(
   "helix_execution_kernel.yaml"
+  "autopilot_guard.yaml"
+  "intel_case_file.yaml"
   "onchain_tx_intent.yaml"
   "reasoning/symbolic_reasoning_gate.yaml"
   "reasoning/expert_system_gate.yaml"

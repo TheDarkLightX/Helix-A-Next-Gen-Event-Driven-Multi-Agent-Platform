@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! # Helix Mutation Testing Framework
 //!
 //! A comprehensive evolutionary mutation testing system for continuous code quality improvement.
@@ -94,14 +93,14 @@
 //! - **Setup Complexity**: Initial configuration may be involved
 
 // Core mutation testing modules
-pub mod mutator;
+pub mod demo;
 pub mod evaluator;
 pub mod evolution;
-pub mod operators;
-pub mod test_effectiveness;
-pub mod practical_analyzer;
-pub mod demo;
 pub mod evolutionary_demo;
+pub mod mutator;
+pub mod operators;
+pub mod practical_analyzer;
+pub mod test_effectiveness;
 
 // Quality assessment and reporting
 pub mod quality_assessment;
@@ -117,16 +116,16 @@ use thiserror::Error;
 pub enum MutationError {
     #[error("IO error: {0}")]
     IoError(String),
-    
+
     #[error("Parse error: {0}")]
     ParseError(String),
-    
+
     #[error("Test execution error: {0}")]
     TestExecutionError(String),
-    
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
 }
@@ -245,7 +244,7 @@ pub struct TestResult {
 pub trait MutationStrategy: Send + Sync {
     /// Generate mutations for given code
     fn generate_mutations(&self, code: &str) -> Result<Vec<Mutation>, HelixError>;
-    
+
     /// Apply a mutation to code
     fn apply_mutation(&self, code: &str, mutation: &Mutation) -> Result<String, HelixError>;
 }
@@ -259,7 +258,7 @@ pub trait FitnessEvaluator: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_mutation_config_default() {
         let config = MutationConfig::default();
@@ -267,7 +266,7 @@ mod tests {
         assert_eq!(config.population_size, 20);
         assert!((config.mutation_rate - 0.1).abs() < f64::EPSILON);
     }
-    
+
     #[test]
     fn test_mutation_creation() {
         let mutation = Mutation {
@@ -279,7 +278,7 @@ mod tests {
             original: "a + b".to_string(),
             mutated: "a - b".to_string(),
         };
-        
+
         assert_eq!(mutation.line, 10);
         assert_eq!(mutation.mutation_type, MutationType::ArithmeticOperator);
     }
@@ -309,8 +308,8 @@ mod tests {
 }
 
 // Re-export commonly used types for convenience
-pub use quality_assessment::{QualityMetrics, TESScore, TESComponents, analyze_helix_core_quality};
-pub use reporting::{generate_quality_report, QualityReporter, QualityReport};
+pub use quality_assessment::{analyze_helix_core_quality, QualityMetrics, TESComponents, TESScore};
+pub use reporting::{generate_quality_report, QualityReport, QualityReporter};
 
 /// Framework version for compatibility tracking
 pub const VERSION: &str = "1.0.0";
@@ -347,10 +346,6 @@ pub fn quick_assessment() -> String {
          Total Tests: {}\n\
          Test Coverage: {:.1}%\n\
          Mutation Score: {:.1}%",
-        tes.score,
-        tes.grade,
-        metrics.total_tests,
-        metrics.test_coverage,
-        metrics.mutation_score
+        tes.score, tes.grade, metrics.total_tests, metrics.test_coverage, metrics.mutation_score
     )
 }

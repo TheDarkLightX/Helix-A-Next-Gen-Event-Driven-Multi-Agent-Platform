@@ -32,9 +32,9 @@ use crate::{WasmError, WasmRuntimeConfig};
 /// State accessible by host functions.
 pub struct HostState {
     pub agent_config: Arc<AgentConfig>,
-    pub event_publisher: Arc<dyn EventPublisher + Send + Sync>,
-    pub credential_provider: Arc<dyn CredentialProvider + Send + Sync>,
-    pub state_store: Arc<dyn StateStore + Send + Sync>,
+    pub event_publisher: Arc<dyn EventPublisher>,
+    pub credential_provider: Arc<dyn CredentialProvider>,
+    pub state_store: Arc<dyn StateStore>,
     pub store_limits: StoreLimits,
 }
 

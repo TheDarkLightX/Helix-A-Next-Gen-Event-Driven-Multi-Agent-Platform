@@ -1,3 +1,9 @@
+---
+title: ARCHITECTURE
+type: note
+permalink: helix-platform-review/crates/helix-core/src/mutation-testing/architecture
+---
+
 # Mutation Testing Framework Architecture
 
 ## Overview

@@ -11,27 +11,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Example demonstrating evolutionary mutation testing
-//! 
+//!
 //! Run with: cargo run --example mutation_testing_demo --features mutation-testing
 
-#![cfg(feature = "mutation-testing")]
+#[cfg(not(feature = "mutation-testing"))]
+fn main() {
+    eprintln!(
+        "This example requires the `mutation-testing` feature.\n\
+Run:\n  cargo run --example mutation_testing_demo --features mutation-testing"
+    );
+}
 
+#[cfg(feature = "mutation-testing")]
 use helix_core::mutation_testing::{
-    MutationConfig,
     evolution::EvolutionaryMutationTester,
-    mutator::{Mutator, MutationFilter},
-    MutationStrategy,
+    mutator::{MutationFilter, Mutator},
+    MutationConfig, MutationStrategy,
 };
-use std::path::PathBuf;
+#[cfg(feature = "mutation-testing")]
 use std::fs;
+#[cfg(feature = "mutation-testing")]
+use std::path::PathBuf;
 
+#[cfg(feature = "mutation-testing")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Helix Evolutionary Mutation Testing Demo");
     println!("========================================\n");
-    
+
     // Create a sample file to test
     let sample_code = r#"
 /// Calculator module for demonstration
@@ -92,31 +100,32 @@ mod tests {
     }
 }
 "#;
-    
+
     // Save to temporary file
     let test_file = PathBuf::from("demo_calculator.rs");
     fs::write(&test_file, sample_code)?;
-    
+
     println!("Step 1: Generating mutations");
     println!("----------------------------");
-    
+
     // Generate mutations
     let mutator = Mutator::new();
     let mutations = mutator.generate_mutations(sample_code)?;
-    
+
     println!("Found {} possible mutations", mutations.len());
-    
+
     // Apply filtering
     let filter = MutationFilter;
     let filtered = filter.filter_equivalent(mutations);
     let prioritized = filter.prioritize(filtered);
-    
+
     println!("After filtering: {} mutations", prioritized.len());
-    
+
     // Show some example mutations
     println!("\nExample mutations:");
     for (i, mutation) in prioritized.iter().take(5).enumerate() {
-        println!("  {}. Line {}: {} -> {} ({})", 
+        println!(
+            "  {}. Line {}: {} -> {} ({})",
             i + 1,
             mutation.line,
             mutation.original,
@@ -124,10 +133,10 @@ mod tests {
             format!("{:?}", mutation.mutation_type)
         );
     }
-    
+
     println!("\nStep 2: Evolutionary Testing Configuration");
     println!("------------------------------------------");
-    
+
     // Configure evolutionary testing
     let config = MutationConfig {
         target_files: vec![test_file.clone()],
@@ -137,39 +146,39 @@ mod tests {
         crossover_rate: 0.70,
         test_timeout: 30,
     };
-    
+
     println!("Configuration:");
     println!("  Generations: {}", config.max_generations);
     println!("  Population size: {}", config.population_size);
     println!("  Mutation rate: {:.0}%", config.mutation_rate * 100.0);
     println!("  Crossover rate: {:.0}%", config.crossover_rate * 100.0);
-    
+
     println!("\nStep 3: Running Evolutionary Algorithm");
     println!("--------------------------------------");
-    
+
     // Note: In a real scenario, this would run actual tests
     // For demo purposes, we'll just show the structure
     let work_dir = std::env::current_dir()?;
     let mut tester = EvolutionaryMutationTester::new(config, work_dir);
-    
+
     println!("Evolutionary mutation testing would:");
     println!("  1. Create initial population of mutation combinations");
     println!("  2. Evaluate each individual by running tests");
     println!("  3. Select fittest individuals (mutations that are killed)");
     println!("  4. Apply crossover and mutation to create new generation");
     println!("  5. Repeat for {} generations", 3);
-    
+
     println!("\nMutation Testing Benefits:");
     println!("-------------------------");
     println!("✓ Identifies weak test coverage");
     println!("✓ Finds equivalent mutations");
     println!("✓ Improves test suite quality");
     println!("✓ Evolutionary approach finds optimal mutation sets");
-    
+
     // Clean up
     fs::remove_file(&test_file)?;
-    
+
     println!("\nDemo completed successfully!");
-    
+
     Ok(())
 }

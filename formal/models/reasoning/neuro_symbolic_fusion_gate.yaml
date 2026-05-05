@@ -3,75 +3,240 @@ meta:
   model_id: "neuro_symbolic_fusion_gate"
   created_by: "helix"
   seed: 0
-  notes: "Deterministic reasoning gate model with fail-closed transitions."
+  notes: "Deterministic neuro-symbolic fusion gate. Symbolic safety must pass before neural allow/review is even reachable."
 observables:
-  state_vars: ["phase", "score"]
+  state_vars:
+    ["closure_complete", "symbolic_entailed", "consistency_ok", "neural_band", "decision"]
   effects: []
 types: []
 state_vars:
-  - id: "phase"
+  - id: "closure_complete"
     role: "control"
-    type: { kind: "int", min: 0, max: 2 }
-  - id: "score"
-    role: "data"
-    type: { kind: "int", min: 0, max: 3 }
+    type: { kind: "bool" }
+  - id: "symbolic_entailed"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "consistency_ok"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "neural_band"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Pending", "Deny", "Review", "Allow"]
+  - id: "decision"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Pending", "Deny", "Review", "Allow"]
 invariants:
-  - id: "PhaseRange"
+  - id: "AllowRequiresFullSymbolicPass"
     kind: "safety"
     expr:
-      op: "and"
+      op: "=>"
       args:
-        - op: "<="
-          args: [{ const: 0 }, { var: "phase" }]
-        - op: "<="
-          args: [{ var: "phase" }, { const: 2 }]
-  - id: "ScoreRange"
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Allow" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "closure_complete" }, { bool: true }]
+            - op: "="
+              args: [{ var: "symbolic_entailed" }, { bool: true }]
+            - op: "="
+              args: [{ var: "consistency_ok" }, { bool: true }]
+            - op: "="
+              args: [{ var: "neural_band" }, { enum: "Allow" }]
+  - id: "ReviewRequiresFullSymbolicPass"
     kind: "safety"
     expr:
-      op: "and"
+      op: "=>"
       args:
-        - op: "<="
-          args: [{ const: 0 }, { var: "score" }]
-        - op: "<="
-          args: [{ var: "score" }, { const: 3 }]
+        - op: "="
+          args: [{ var: "decision" }, { enum: "Review" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "closure_complete" }, { bool: true }]
+            - op: "="
+              args: [{ var: "symbolic_entailed" }, { bool: true }]
+            - op: "="
+              args: [{ var: "consistency_ok" }, { bool: true }]
+            - op: "="
+              args: [{ var: "neural_band" }, { enum: "Review" }]
+  - id: "SymbolicFailurePreventsAllowOrReview"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "not"
+          args:
+            - op: "and"
+              args:
+                - op: "="
+                  args: [{ var: "closure_complete" }, { bool: true }]
+                - op: "="
+                  args: [{ var: "symbolic_entailed" }, { bool: true }]
+                - op: "="
+                  args: [{ var: "consistency_ok" }, { bool: true }]
+        - op: "and"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "decision" }, { enum: "Allow" }]
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "decision" }, { enum: "Review" }]
+  - id: "PendingBandCannotAllowOrReview"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "neural_band" }, { enum: "Pending" }]
+        - op: "and"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "decision" }, { enum: "Allow" }]
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "decision" }, { enum: "Review" }]
 init:
-  - var: "phase"
-    expr: { const: 0 }
-  - var: "score"
-    expr: { const: 0 }
+  - var: "closure_complete"
+    expr: { bool: false }
+  - var: "symbolic_entailed"
+    expr: { bool: false }
+  - var: "consistency_ok"
+    expr: { bool: true }
+  - var: "neural_band"
+    expr: { enum: "Pending" }
+  - var: "decision"
+    expr: { enum: "Pending" }
 actions:
-  - id: "observe_allow"
-    params: []
-    guard:
-      op: "<="
-      args: [{ var: "score" }, { const: 1 }]
-    updates:
-      - var: "phase"
-        expr: { const: 2 }
-      - var: "score"
-        expr: { var: "score" }
-    effects: {}
-  - id: "observe_review"
+  - id: "observe_symbolic_truncated"
     params: []
     guard:
       op: "="
-      args: [{ var: "score" }, { const: 2 }]
+      args: [{ const: 1 }, { const: 1 }]
     updates:
-      - var: "phase"
-        expr: { const: 1 }
-      - var: "score"
-        expr: { var: "score" }
+      - var: "closure_complete"
+        expr: { bool: false }
+      - var: "symbolic_entailed"
+        expr: { bool: false }
+      - var: "consistency_ok"
+        expr: { bool: true }
+      - var: "neural_band"
+        expr: { enum: "Pending" }
+      - var: "decision"
+        expr: { enum: "Deny" }
     effects: {}
-  - id: "observe_deny"
+  - id: "observe_symbolic_not_entailed"
     params: []
     guard:
       op: "="
-      args: [{ var: "score" }, { const: 3 }]
+      args: [{ const: 1 }, { const: 1 }]
     updates:
-      - var: "phase"
-        expr: { const: 0 }
-      - var: "score"
-        expr: { const: 3 }
+      - var: "closure_complete"
+        expr: { bool: true }
+      - var: "symbolic_entailed"
+        expr: { bool: false }
+      - var: "consistency_ok"
+        expr: { bool: true }
+      - var: "neural_band"
+        expr: { enum: "Pending" }
+      - var: "decision"
+        expr: { enum: "Deny" }
+    effects: {}
+  - id: "observe_symbolic_contradiction"
+    params: []
+    guard:
+      op: "="
+      args: [{ const: 1 }, { const: 1 }]
+    updates:
+      - var: "closure_complete"
+        expr: { bool: true }
+      - var: "symbolic_entailed"
+        expr: { bool: true }
+      - var: "consistency_ok"
+        expr: { bool: false }
+      - var: "neural_band"
+        expr: { enum: "Pending" }
+      - var: "decision"
+        expr: { enum: "Deny" }
+    effects: {}
+  - id: "observe_neural_allow"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "closure_complete" }, { bool: true }]
+        - op: "="
+          args: [{ var: "symbolic_entailed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "consistency_ok" }, { bool: true }]
+    updates:
+      - var: "closure_complete"
+        expr: { var: "closure_complete" }
+      - var: "symbolic_entailed"
+        expr: { var: "symbolic_entailed" }
+      - var: "consistency_ok"
+        expr: { var: "consistency_ok" }
+      - var: "neural_band"
+        expr: { enum: "Allow" }
+      - var: "decision"
+        expr: { enum: "Allow" }
+    effects: {}
+  - id: "observe_neural_review"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "closure_complete" }, { bool: true }]
+        - op: "="
+          args: [{ var: "symbolic_entailed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "consistency_ok" }, { bool: true }]
+    updates:
+      - var: "closure_complete"
+        expr: { var: "closure_complete" }
+      - var: "symbolic_entailed"
+        expr: { var: "symbolic_entailed" }
+      - var: "consistency_ok"
+        expr: { var: "consistency_ok" }
+      - var: "neural_band"
+        expr: { enum: "Review" }
+      - var: "decision"
+        expr: { enum: "Review" }
+    effects: {}
+  - id: "observe_neural_deny"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "closure_complete" }, { bool: true }]
+        - op: "="
+          args: [{ var: "symbolic_entailed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "consistency_ok" }, { bool: true }]
+    updates:
+      - var: "closure_complete"
+        expr: { var: "closure_complete" }
+      - var: "symbolic_entailed"
+        expr: { var: "symbolic_entailed" }
+      - var: "consistency_ok"
+        expr: { var: "consistency_ok" }
+      - var: "neural_band"
+        expr: { enum: "Deny" }
+      - var: "decision"
+        expr: { enum: "Deny" }
     effects: {}
   - id: "reset"
     params: []
@@ -79,14 +244,26 @@ actions:
       op: "="
       args: [{ const: 1 }, { const: 1 }]
     updates:
-      - var: "phase"
-        expr: { const: 0 }
-      - var: "score"
-        expr: { const: 0 }
+      - var: "closure_complete"
+        expr: { bool: false }
+      - var: "symbolic_entailed"
+        expr: { bool: false }
+      - var: "consistency_ok"
+        expr: { bool: true }
+      - var: "neural_band"
+        expr: { enum: "Pending" }
+      - var: "decision"
+        expr: { enum: "Pending" }
     effects: {}
 refinement:
   state_abstraction:
-    - var: "phase"
-      expr: { var: "phase" }
-    - var: "score"
-      expr: { var: "score" }
+    - var: "closure_complete"
+      expr: { var: "closure_complete" }
+    - var: "symbolic_entailed"
+      expr: { var: "symbolic_entailed" }
+    - var: "consistency_ok"
+      expr: { var: "consistency_ok" }
+    - var: "neural_band"
+      expr: { var: "neural_band" }
+    - var: "decision"
+      expr: { var: "decision" }

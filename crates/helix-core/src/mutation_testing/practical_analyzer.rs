@@ -11,21 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Practical mutation testing analyzer for improving code quality
-//! 
+//!
 //! This module provides a streamlined, production-ready mutation testing tool
 //! that integrates with the Helix platform to identify weak tests and improve code quality.
 
-use super::*;
-use super::test_effectiveness::TestEffectivenessScore;
-use super::mutator::{Mutator, MutationFilter};
 use super::evaluator::DefaultFitnessEvaluator;
+use super::mutator::{MutationFilter, Mutator};
+use super::test_effectiveness::TestEffectivenessScore;
+use super::*;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
-use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 /// Quality improvement recommendations based on mutation analysis
@@ -136,41 +135,39 @@ impl PracticalMutationAnalyzer {
     /// Analyze a specific module or file and generate quality report
     pub async fn analyze_module(&self, module_path: &Path) -> Result<QualityReport, MutationError> {
         let start = Instant::now();
-        
+
         // Read source code
-        let source = fs::read_to_string(module_path).await
+        let source = fs::read_to_string(module_path)
+            .await
             .map_err(|e| MutationError::IoError(e.to_string()))?;
-        
+
         // Generate mutations
         let mutations = self.mutator.generate_mutations(&source)?;
         let filtered = MutationFilter.filter_equivalent(mutations);
         let prioritized = MutationFilter.prioritize(filtered);
-        
+
         // Run baseline tests
         let baseline_results = self.run_tests().await?;
-        
+
         // Apply mutations and test
         let mutation_results = self.test_mutations(&prioritized, module_path).await?;
-        
+
         // Calculate metrics
         let metrics = self.calculate_metrics(&source, &baseline_results)?;
-        
+
         // Generate TES score
         let killed = mutation_results.iter().filter(|r| r.killed).count();
-        let tes_score = TestEffectivenessScore::from_results(
-            &baseline_results,
-            killed,
-            prioritized.len()
-        );
-        
+        let tes_score =
+            TestEffectivenessScore::from_results(&baseline_results, killed, prioritized.len());
+
         // Identify weak spots
         let weak_spots = self.identify_weak_spots(&mutation_results, module_path);
-        
+
         // Generate recommendations
         let recommendations = self.generate_recommendations(&tes_score, &metrics, &weak_spots);
-        
+
         let _duration = start.elapsed();
-        
+
         Ok(QualityReport {
             tes_score,
             weak_spots,
@@ -186,7 +183,7 @@ impl PracticalMutationAnalyzer {
             .arg(&self.config.test_command)
             .output()
             .map_err(|e| MutationError::TestExecutionError(e.to_string()))?;
-        
+
         // Parse test output (simplified for demo)
         let results = if output.status.success() {
             vec![
@@ -217,7 +214,7 @@ impl PracticalMutationAnalyzer {
                 duration: 100,
             }]
         };
-        
+
         Ok(results)
     }
 
@@ -228,12 +225,13 @@ impl PracticalMutationAnalyzer {
         module_path: &Path,
     ) -> Result<Vec<MutationResult>, MutationError> {
         let mut results = Vec::new();
-        
-        for mutation in mutations.iter().take(10) { // Limit for performance
+
+        for mutation in mutations.iter().take(10) {
+            // Limit for performance
             let result = self.test_single_mutation(mutation, module_path).await?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
 
@@ -246,11 +244,11 @@ impl PracticalMutationAnalyzer {
         // Simplified: In real implementation, apply mutation and run tests
         // For testing purposes, simulate some mutations being killed
         let killed = match mutation.mutation_type {
-            MutationType::BooleanLiteral => true,  // These are usually caught
-            MutationType::ComparisonOperator => true,  // These are usually caught
+            MutationType::BooleanLiteral => true, // These are usually caught
+            MutationType::ComparisonOperator => true, // These are usually caught
             MutationType::ArithmeticOperator => false, // These might survive
-            MutationType::LogicalOperator => false,    // These might survive
-            _ => true, // Default to killed for other types
+            MutationType::LogicalOperator => false, // These might survive
+            _ => true,                            // Default to killed for other types
         };
 
         let test_results = if killed {
@@ -296,7 +294,7 @@ impl PracticalMutationAnalyzer {
         let lines: Vec<&str> = source.lines().collect();
         let test_lines = lines.iter().filter(|l| l.contains("#[test]")).count();
         let code_lines = lines.len().saturating_sub(test_lines * 10); // Estimate
-        
+
         Ok(CodeMetrics {
             cyclomatic_complexity: self.estimate_complexity(source),
             test_ratio: test_lines as f64 / code_lines.max(1) as f64,
@@ -308,10 +306,11 @@ impl PracticalMutationAnalyzer {
     /// Estimate cyclomatic complexity
     fn estimate_complexity(&self, source: &str) -> f64 {
         let complexity_indicators = ["if ", "match ", "while ", "for ", "loop ", "?", "&&", "||"];
-        let count: usize = complexity_indicators.iter()
+        let count: usize = complexity_indicators
+            .iter()
             .map(|&indicator| source.matches(indicator).count())
             .sum();
-        
+
         (count as f64 / source.lines().count().max(1) as f64) * 10.0
     }
 
@@ -319,10 +318,11 @@ impl PracticalMutationAnalyzer {
     fn estimate_assertion_density(&self, source: &str) -> f64 {
         let assertion_patterns = ["assert", "expect", "unwrap", "should", "must"];
         let test_count = source.matches("#[test]").count().max(1);
-        let assertion_count: usize = assertion_patterns.iter()
+        let assertion_count: usize = assertion_patterns
+            .iter()
             .map(|&pattern| source.matches(pattern).count())
             .sum();
-        
+
         assertion_count as f64 / test_count as f64
     }
 
@@ -330,14 +330,14 @@ impl PracticalMutationAnalyzer {
     fn estimate_duplication(&self, source: &str) -> f64 {
         let lines: Vec<&str> = source.lines().collect();
         let mut line_counts = HashMap::new();
-        
+
         for line in lines.iter() {
             let trimmed = line.trim();
             if trimmed.len() > 10 && !trimmed.starts_with("//") {
                 *line_counts.entry(trimmed).or_insert(0) += 1;
             }
         }
-        
+
         let duplicated = line_counts.values().filter(|&&count| count > 1).count();
         duplicated as f64 / lines.len().max(1) as f64
     }
@@ -350,14 +350,15 @@ impl PracticalMutationAnalyzer {
     ) -> Vec<WeakSpot> {
         let mut weak_spots = Vec::new();
         let mut line_mutations: HashMap<usize, Vec<MutationType>> = HashMap::new();
-        
+
         // Group surviving mutations by line
         for result in mutation_results.iter().filter(|r| !r.killed) {
-            line_mutations.entry(result.mutation.line)
+            line_mutations
+                .entry(result.mutation.line)
                 .or_default()
                 .push(result.mutation.mutation_type.clone());
         }
-        
+
         // Create weak spots
         for (line, mutations) in line_mutations {
             let severity = match mutations.len() {
@@ -367,7 +368,7 @@ impl PracticalMutationAnalyzer {
                 3 => Severity::High,
                 _ => Severity::Critical,
             };
-            
+
             weak_spots.push(WeakSpot {
                 file: module_path.to_path_buf(),
                 line,
@@ -376,14 +377,14 @@ impl PracticalMutationAnalyzer {
                 surviving_mutations: mutations,
             });
         }
-        
+
         weak_spots.sort_by_key(|w| match w.severity {
             Severity::Critical => 0,
             Severity::High => 1,
             Severity::Medium => 2,
             Severity::Low => 3,
         });
-        
+
         weak_spots
     }
 
@@ -395,7 +396,7 @@ impl PracticalMutationAnalyzer {
         weak_spots: &[WeakSpot],
     ) -> Vec<Recommendation> {
         let mut recommendations = Vec::new();
-        
+
         // Check mutation score
         if tes_score.mutation_score < 0.85 {
             recommendations.push(Recommendation {
@@ -408,7 +409,7 @@ impl PracticalMutationAnalyzer {
                 example: Some("assert_eq!(result.status(), Status::Success);".to_string()),
             });
         }
-        
+
         // Check assertion density
         if metrics.assertion_density < self.config.min_assertion_density {
             recommendations.push(Recommendation {
@@ -416,13 +417,14 @@ impl PracticalMutationAnalyzer {
                 category: RecommendationCategory::AddAssertion,
                 description: format!(
                     "Low assertion density ({:.1} per test, target: {:.1})",
-                    metrics.assertion_density,
-                    self.config.min_assertion_density
+                    metrics.assertion_density, self.config.min_assertion_density
                 ),
-                example: Some("Add boundary checks: assert!(value >= MIN && value <= MAX);".to_string()),
+                example: Some(
+                    "Add boundary checks: assert!(value >= MIN && value <= MAX);".to_string(),
+                ),
             });
         }
-        
+
         // Check complexity
         if metrics.cyclomatic_complexity > self.config.complexity_threshold {
             recommendations.push(Recommendation {
@@ -430,18 +432,18 @@ impl PracticalMutationAnalyzer {
                 category: RecommendationCategory::RefactorComplexCode,
                 description: format!(
                     "High complexity ({:.1}, threshold: {:.1}). Consider extracting methods.",
-                    metrics.cyclomatic_complexity,
-                    self.config.complexity_threshold
+                    metrics.cyclomatic_complexity, self.config.complexity_threshold
                 ),
                 example: None,
             });
         }
-        
+
         // Check for critical weak spots
-        let critical_count = weak_spots.iter()
+        let critical_count = weak_spots
+            .iter()
             .filter(|w| w.severity == Severity::Critical)
             .count();
-        
+
         if critical_count > 0 {
             recommendations.push(Recommendation {
                 priority: Priority::Immediate,
@@ -453,7 +455,7 @@ impl PracticalMutationAnalyzer {
                 example: Some("Test error conditions and boundary values".to_string()),
             });
         }
-        
+
         // Sort by priority
         recommendations.sort_by_key(|r| match r.priority {
             Priority::Immediate => 0,
@@ -461,7 +463,7 @@ impl PracticalMutationAnalyzer {
             Priority::Medium => 2,
             Priority::Low => 3,
         });
-        
+
         recommendations
     }
 }
@@ -480,8 +482,12 @@ impl QualityReport {
             self.tes_score.mutation_score * 100.0,
             self.metrics.assertion_density,
             self.weak_spots.len(),
-            self.weak_spots.iter().filter(|w| w.severity == Severity::Critical).count(),
-            self.recommendations.first()
+            self.weak_spots
+                .iter()
+                .filter(|w| w.severity == Severity::Critical)
+                .count(),
+            self.recommendations
+                .first()
                 .map(|r| r.description.as_str())
                 .unwrap_or("No recommendations")
         )

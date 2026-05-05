@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #![warn(missing_docs)]
 
 //! Defines the Profile model, representing a multi-tenant namespace.
@@ -242,7 +241,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Profile name cannot be empty if provided");
+        assert_eq!(
+            result.unwrap_err(),
+            "Profile name cannot be empty if provided"
+        );
     }
 
     #[test]
@@ -252,7 +254,10 @@ mod tests {
 
         let result = profile.validate();
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Profile name cannot exceed 255 characters");
+        assert_eq!(
+            result.unwrap_err(),
+            "Profile name cannot exceed 255 characters"
+        );
     }
 
     #[test]
@@ -271,7 +276,11 @@ mod tests {
 
         for status in &["active", "suspended", "deleted"] {
             profile.status = status.to_string();
-            assert!(profile.validate().is_ok(), "Status '{}' should be valid", status);
+            assert!(
+                profile.validate().is_ok(),
+                "Status '{}' should be valid",
+                status
+            );
         }
     }
 
@@ -280,7 +289,8 @@ mod tests {
         let profile = create_test_profile();
 
         let serialized = serde_json::to_string(&profile).expect("Failed to serialize profile");
-        let deserialized: Profile = serde_json::from_str(&serialized).expect("Failed to deserialize profile");
+        let deserialized: Profile =
+            serde_json::from_str(&serialized).expect("Failed to deserialize profile");
 
         assert_eq!(profile, deserialized);
     }
@@ -450,7 +460,8 @@ mod tests {
         assert_eq!(profile.status, "active"); // Default value
 
         // Test with null name
-        let null_name_json = r#"{"id":"550e8400-e29b-41d4-a716-446655440000","name":null,"kind":"user"}"#;
+        let null_name_json =
+            r#"{"id":"550e8400-e29b-41d4-a716-446655440000","name":null,"kind":"user"}"#;
         let profile: Profile = serde_json::from_str(null_name_json).unwrap();
         assert!(profile.name.is_none());
     }
@@ -537,7 +548,11 @@ mod tests {
         }
 
         let final_profile = profile.lock().unwrap();
-        assert!(final_profile.name.as_ref().unwrap().starts_with("Updated Name"));
+        assert!(final_profile
+            .name
+            .as_ref()
+            .unwrap()
+            .starts_with("Updated Name"));
         assert_eq!(final_profile.status, "suspended");
     }
 

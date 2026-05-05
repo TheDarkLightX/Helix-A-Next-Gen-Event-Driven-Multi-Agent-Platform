@@ -12,5 +12,10 @@ async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 rmp-serde = "1.1" # For MessagePack serialization
+linkme = "0.3" # For distributed agent factory registration
 
 # Add SDK-specific dependencies (macros, wasm tooling) later
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid = { workspace = true }

@@ -1,0 +1,846 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "autopilot_guard"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic autopilot guard: off/assist/auto with bounded on-chain and policy simulation guardrails."
+observables:
+  state_vars: ["mode", "evaluations", "denied", "decision_kind", "denial_reason"]
+  effects: []
+types: []
+state_vars:
+  - id: "mode"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Off", "Assist", "Auto"]
+  - id: "allow_onchain"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "require_onchain_confirmation"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "require_onchain_dry_run"
+    role: "control"
+    type: { kind: "bool" }
+  - id: "max_policy_commands"
+    role: "data"
+    type: { kind: "int", min: 1, max: 4 }
+  - id: "evaluations"
+    role: "data"
+    type: { kind: "int", min: 0, max: 15 }
+  - id: "denied"
+    role: "data"
+    type: { kind: "int", min: 0, max: 15 }
+  - id: "decision_kind"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["ConfigUpdated", "Allow", "Deny"]
+  - id: "requires_confirmation"
+    role: "data"
+    type: { kind: "bool" }
+  - id: "denial_reason"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols:
+        [
+          "None",
+          "ModeOff",
+          "AssistRequiresConfirmation",
+          "PolicyCommandLimit",
+          "OnchainDisabled",
+          "OnchainRequiresConfirmation",
+          "DryRunRequired",
+        ]
+invariants:
+  - id: "DeniedNeverExceedsEvaluations"
+    kind: "safety"
+    expr:
+      op: "<="
+      args: [{ var: "denied" }, { var: "evaluations" }]
+  - id: "RequiresConfirmationOnlyForAllow"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "decision_kind" }, { enum: "Allow" }]
+        - op: "="
+          args: [{ var: "requires_confirmation" }, { bool: false }]
+  - id: "AllowHasNoReason"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision_kind" }, { enum: "Allow" }]
+        - op: "and"
+          args:
+            - op: "="
+              args: [{ var: "denial_reason" }, { enum: "None" }]
+            - op: "="
+              args:
+                [
+                  { var: "requires_confirmation" },
+                  {
+                    op: "=",
+                    args: [{ var: "mode" }, { enum: "Assist" }],
+                  },
+                ]
+  - id: "DenyHasReason"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision_kind" }, { enum: "Deny" }]
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "denial_reason" }, { enum: "None" }]
+  - id: "ConfigUpdateHasNoReason"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "decision_kind" }, { enum: "ConfigUpdated" }]
+        - op: "="
+          args: [{ var: "denial_reason" }, { enum: "None" }]
+init:
+  - var: "mode"
+    expr: { enum: "Assist" }
+  - var: "allow_onchain"
+    expr: { bool: false }
+  - var: "require_onchain_confirmation"
+    expr: { bool: true }
+  - var: "require_onchain_dry_run"
+    expr: { bool: true }
+  - var: "max_policy_commands"
+    expr: { const: 4 }
+  - var: "evaluations"
+    expr: { const: 0 }
+  - var: "denied"
+    expr: { const: 0 }
+  - var: "decision_kind"
+    expr: { enum: "ConfigUpdated" }
+  - var: "requires_confirmation"
+    expr: { bool: false }
+  - var: "denial_reason"
+    expr: { enum: "None" }
+actions:
+  - id: "set_config"
+    params:
+      - id: "mode"
+        type:
+          kind: "enum"
+          symbols: ["Off", "Assist", "Auto"]
+      - id: "allow_onchain"
+        type: { kind: "bool" }
+      - id: "require_onchain_confirmation"
+        type: { kind: "bool" }
+      - id: "require_onchain_dry_run"
+        type: { kind: "bool" }
+      - id: "max_policy_commands"
+        type: { kind: "int", min: 1, max: 4 }
+    guard:
+      op: "="
+      args: [{ const: 1 }, { const: 1 }]
+    updates:
+      - var: "mode"
+        expr: { param: "mode" }
+      - var: "allow_onchain"
+        expr: { param: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { param: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { param: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { param: "max_policy_commands" }
+      - var: "evaluations"
+        expr: { var: "evaluations" }
+      - var: "denied"
+        expr: { var: "denied" }
+      - var: "decision_kind"
+        expr: { enum: "ConfigUpdated" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "None" }
+    effects: {}
+
+  - id: "eval_policy_deny_mode_off"
+    params:
+      - id: "command_count"
+        type: { kind: "int", min: 0, max: 4 }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "="
+      args: [{ var: "mode" }, { enum: "Off" }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "ModeOff" }
+    effects: {}
+
+  - id: "eval_policy_deny_assist_no_confirm"
+    params:
+      - id: "command_count"
+        type: { kind: "int", min: 0, max: 4 }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "mode" }, { enum: "Assist" }]
+        - op: "="
+          args: [{ param: "confirmed" }, { bool: false }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "AssistRequiresConfirmation" }
+    effects: {}
+
+  - id: "eval_policy_deny_command_zero"
+    params:
+      - id: "command_count"
+        type: { kind: "int", min: 0, max: 4 }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "="
+          args: [{ param: "command_count" }, { const: 0 }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "PolicyCommandLimit" }
+    effects: {}
+
+  - id: "eval_policy_deny_command_over"
+    params:
+      - id: "command_count"
+        type: { kind: "int", min: 0, max: 4 }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: ">"
+          args: [{ param: "command_count" }, { var: "max_policy_commands" }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "PolicyCommandLimit" }
+    effects: {}
+
+  - id: "eval_policy_allow"
+    params:
+      - id: "command_count"
+        type: { kind: "int", min: 0, max: 4 }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: ">="
+          args: [{ param: "command_count" }, { const: 1 }]
+        - op: "<="
+          args: [{ param: "command_count" }, { var: "max_policy_commands" }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr: { var: "denied" }
+      - var: "decision_kind"
+        expr: { enum: "Allow" }
+      - var: "requires_confirmation"
+        expr:
+          op: "="
+          args: [{ var: "mode" }, { enum: "Assist" }]
+      - var: "denial_reason"
+        expr: { enum: "None" }
+    effects: {}
+
+  - id: "eval_onchain_deny_mode_off"
+    params:
+      - id: "dry_run"
+        type: { kind: "bool" }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "="
+      args: [{ var: "mode" }, { enum: "Off" }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "ModeOff" }
+    effects: {}
+
+  - id: "eval_onchain_deny_assist_no_confirm"
+    params:
+      - id: "dry_run"
+        type: { kind: "bool" }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "mode" }, { enum: "Assist" }]
+        - op: "="
+          args: [{ param: "confirmed" }, { bool: false }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "AssistRequiresConfirmation" }
+    effects: {}
+
+  - id: "eval_onchain_deny_onchain_disabled"
+    params:
+      - id: "dry_run"
+        type: { kind: "bool" }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "allow_onchain" }, { bool: false }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "OnchainDisabled" }
+    effects: {}
+
+  - id: "eval_onchain_deny_requires_confirmation"
+    params:
+      - id: "dry_run"
+        type: { kind: "bool" }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "allow_onchain" }, { bool: true }]
+        - op: "="
+          args: [{ var: "require_onchain_confirmation" }, { bool: true }]
+        - op: "="
+          args: [{ param: "confirmed" }, { bool: false }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "OnchainRequiresConfirmation" }
+    effects: {}
+
+  - id: "eval_onchain_deny_dry_run_required"
+    params:
+      - id: "dry_run"
+        type: { kind: "bool" }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "allow_onchain" }, { bool: true }]
+        - op: "or"
+          args:
+            - op: "="
+              args: [{ var: "require_onchain_confirmation" }, { bool: false }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "require_onchain_dry_run" }, { bool: true }]
+        - op: "="
+          args: [{ param: "dry_run" }, { bool: false }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "denied" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "denied" }, { const: 1 }]
+      - var: "decision_kind"
+        expr: { enum: "Deny" }
+      - var: "requires_confirmation"
+        expr: { bool: false }
+      - var: "denial_reason"
+        expr: { enum: "DryRunRequired" }
+    effects: {}
+
+  - id: "eval_onchain_allow"
+    params:
+      - id: "dry_run"
+        type: { kind: "bool" }
+      - id: "confirmed"
+        type: { kind: "bool" }
+    guard:
+      op: "and"
+      args:
+        - op: "not"
+          args:
+            - op: "="
+              args: [{ var: "mode" }, { enum: "Off" }]
+        - op: "or"
+          args:
+            - op: "not"
+              args:
+                - op: "="
+                  args: [{ var: "mode" }, { enum: "Assist" }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "="
+          args: [{ var: "allow_onchain" }, { bool: true }]
+        - op: "or"
+          args:
+            - op: "="
+              args: [{ var: "require_onchain_confirmation" }, { bool: false }]
+            - op: "="
+              args: [{ param: "confirmed" }, { bool: true }]
+        - op: "or"
+          args:
+            - op: "="
+              args: [{ var: "require_onchain_dry_run" }, { bool: false }]
+            - op: "="
+              args: [{ param: "dry_run" }, { bool: true }]
+    updates:
+      - var: "mode"
+        expr: { var: "mode" }
+      - var: "allow_onchain"
+        expr: { var: "allow_onchain" }
+      - var: "require_onchain_confirmation"
+        expr: { var: "require_onchain_confirmation" }
+      - var: "require_onchain_dry_run"
+        expr: { var: "require_onchain_dry_run" }
+      - var: "max_policy_commands"
+        expr: { var: "max_policy_commands" }
+      - var: "evaluations"
+        expr:
+          op: "ite"
+          cond:
+            op: "="
+            args: [{ var: "evaluations" }, { const: 15 }]
+          then: { const: 15 }
+          else:
+            op: "+"
+            args: [{ var: "evaluations" }, { const: 1 }]
+      - var: "denied"
+        expr: { var: "denied" }
+      - var: "decision_kind"
+        expr: { enum: "Allow" }
+      - var: "requires_confirmation"
+        expr:
+          op: "="
+          args: [{ var: "mode" }, { enum: "Assist" }]
+      - var: "denial_reason"
+        expr: { enum: "None" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "mode"
+      expr: { var: "mode" }
+    - var: "allow_onchain"
+      expr: { var: "allow_onchain" }
+    - var: "require_onchain_confirmation"
+      expr: { var: "require_onchain_confirmation" }
+    - var: "require_onchain_dry_run"
+      expr: { var: "require_onchain_dry_run" }
+    - var: "max_policy_commands"
+      expr: { var: "max_policy_commands" }
+    - var: "evaluations"
+      expr: { var: "evaluations" }
+    - var: "denied"
+      expr: { var: "denied" }
+    - var: "decision_kind"
+      expr: { var: "decision_kind" }
+    - var: "requires_confirmation"
+      expr: { var: "requires_confirmation" }
+    - var: "denial_reason"
+      expr: { var: "denial_reason" }

@@ -1,0 +1,130 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: Package ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix ui
+          npm run --prefix ui build
+
+      - name: Build API binary
+        shell: bash
+        run: cargo build --release -p helix-api
+
+      - name: Package archive
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${RUNNER_OS}" in
+            Linux) os="linux" ;;
+            macOS) os="darwin" ;;
+            Windows) os="windows" ;;
+            *) echo "unsupported runner OS: ${RUNNER_OS}" >&2; exit 1 ;;
+          esac
+
+          case "${RUNNER_ARCH}" in
+            X64) arch="x64" ;;
+            ARM64) arch="arm64" ;;
+            *) echo "unsupported runner arch: ${RUNNER_ARCH}" >&2; exit 1 ;;
+          esac
+
+          exe=""
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            exe=".exe"
+          fi
+
+          suffix="${os}-${arch}"
+          archive="helix-api-${suffix}.tar.gz"
+          staging="target/release-package/helix-api-${suffix}"
+          rm -rf "$staging"
+          mkdir -p "$staging/bin" "$staging/ui"
+
+          cp "target/release/helix-api${exe}" "$staging/bin/"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            cat > "$staging/bin/helix.cmd" <<'EOF'
+@echo off
+if "%HELIX_UI_DIST%"=="" set "HELIX_UI_DIST=%~dp0..\ui\dist"
+"%~dp0helix-api.exe" %*
+EOF
+          else
+            cat > "$staging/bin/helix" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${HELIX_UI_DIST:-}" ]]; then
+  export HELIX_UI_DIST="$(cd "$SCRIPT_DIR/../ui/dist" && pwd)"
+fi
+exec "$SCRIPT_DIR/helix-api" "$@"
+EOF
+            chmod 0755 "$staging/bin/helix"
+          fi
+          cp -R ui/dist "$staging/ui/dist"
+          cp README.md LICENSE "$staging/"
+          if [[ -f COMPLETION_SCOPE.md ]]; then
+            cp COMPLETION_SCOPE.md "$staging/"
+          fi
+
+          tar -czf "$archive" -C "target/release-package" "helix-api-${suffix}"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.archive }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    needs: package
+
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz

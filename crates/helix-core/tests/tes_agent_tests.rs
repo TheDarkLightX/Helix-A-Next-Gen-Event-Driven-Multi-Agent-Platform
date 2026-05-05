@@ -11,18 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! TES-driven tests for the agent system
 //! Focusing on quality over coverage with high assertion density and behavior testing
 
+use async_trait::async_trait;
 use helix_core::agent::*;
 use helix_core::credential::{Credential, CredentialProvider};
 use helix_core::event::Event;
-use helix_core::types::{AgentId, CredentialId, ProfileId};
-use helix_core::HelixError;
+use helix_core::state::{InMemoryStateStore, StateStore};
 use helix_core::test_utils::*;
-use helix_core::state::InMemoryStateStore;
-use async_trait::async_trait;
+use helix_core::types::{AgentId, CredentialId};
+use helix_core::HelixError;
+use helix_core::{tes_assert_eq, tes_behavior};
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -39,7 +39,7 @@ impl Agent for TestAgent {
     fn id(&self) -> AgentId {
         self.config.id
     }
-    
+
     fn config(&self) -> &AgentConfig {
         &self.config
     }
@@ -49,40 +49,57 @@ impl Agent for TestAgent {
 impl SourceAgent for TestAgent {
     async fn run(&mut self, ctx: SourceContext) -> Result<(), HelixError> {
         self.execution_count += 1;
-        ctx.emit(json!({"count": self.execution_count}), Some("test.event".to_string())).await
+        ctx.emit(
+            json!({"count": self.execution_count}),
+            Some("test.event".to_string()),
+        )
+        .await
     }
 }
 
 #[tokio::test]
 async fn test_source_agent_comprehensive() {
     let mut tracker = TesTracker::new("test_source_agent_comprehensive");
-    
+
     // Setup
     let agent_id = Uuid::new_v4();
     let profile_id = Uuid::new_v4();
     let (tx, mut rx) = mpsc::channel(10);
-    
+
     let config = AgentConfig {
         id: agent_id,
         profile_id,
         name: Some("TestAgent".to_string()),
         agent_kind: "test_source".to_string(),
+        agent_runtime: AgentRuntime::Native,
+        wasm_module_path: None,
         config_data: json!({"interval": 1000}),
         credential_ids: vec![],
         enabled: true,
+        dependencies: vec![],
     };
-    
+
     let mut agent = TestAgent {
         config: config.clone(),
         execution_count: 0,
     };
-    
+
     // Test 1: Agent configuration
     tes_assert_eq!(tracker, agent.id(), agent_id, "Agent ID matches");
     tes_assert_eq!(tracker, agent.config().enabled, true, "Agent is enabled");
-    tes_assert_eq!(tracker, agent.config().agent_kind, "test_source", "Agent kind is correct");
-    tes_assert_eq!(tracker, agent.execution_count, 0, "Initial execution count is zero");
-    
+    tes_assert_eq!(
+        tracker,
+        agent.config().agent_kind.as_str(),
+        "test_source",
+        "Agent kind is correct"
+    );
+    tes_assert_eq!(
+        tracker,
+        agent.execution_count,
+        0,
+        "Initial execution count is zero"
+    );
+
     // Test 2: Happy path behavior
     tes_behavior!(tracker, "happy_path",
         given: "A properly configured source agent",
@@ -96,11 +113,11 @@ async fn test_source_agent_comprehensive() {
                 state_store: Arc::new(InMemoryStateStore::default()),
                 event_tx: tx.clone(),
             };
-            
+
             agent.run(ctx).await.is_ok()
         }
     );
-    
+
     // Test 3: Event emission verification
     tes_behavior!(tracker, "event_emission",
         given: "An agent that has run",
@@ -119,7 +136,7 @@ async fn test_source_agent_comprehensive() {
             }
         }
     );
-    
+
     // Test 4: Multiple executions
     tes_behavior!(tracker, "multiple_executions",
         given: "An agent that has run once",
@@ -133,7 +150,7 @@ async fn test_source_agent_comprehensive() {
                 state_store: Arc::new(InMemoryStateStore::default()),
                 event_tx: tx.clone(),
             };
-            
+
             let mut success = true;
             for i in 2..=5 {
                 success &= agent.run(ctx.clone()).await.is_ok();
@@ -142,7 +159,7 @@ async fn test_source_agent_comprehensive() {
             success
         }
     );
-    
+
     // Test 5: Edge case - disabled agent
     tes_behavior!(tracker, "edge_case_disabled",
         given: "An agent that is disabled",
@@ -159,25 +176,30 @@ async fn test_source_agent_comprehensive() {
             true
         }
     );
-    
+
     // Simulate mutation testing results
     tracker.record_mutations(17, 20); // 85% mutation score
-    
+
     println!("{}", tracker.report());
 }
 
 #[tokio::test]
 async fn test_agent_config_validation() {
     let mut tracker = TesTracker::new("test_agent_config_validation");
-    
+
     // Test various configuration scenarios
+    let long_name = "A".repeat(100);
     let test_cases = vec![
-        ("empty_name", None, ""),
-        ("short_name", Some("A".to_string()), "A"),
-        ("normal_name", Some("TestAgent".to_string()), "TestAgent"),
-        ("long_name", Some("A".repeat(100)), &"A".repeat(100)),
+        ("empty_name", None, "".to_string()),
+        ("short_name", Some("A".to_string()), "A".to_string()),
+        (
+            "normal_name",
+            Some("TestAgent".to_string()),
+            "TestAgent".to_string(),
+        ),
+        ("long_name", Some(long_name.clone()), long_name.clone()),
     ];
-    
+
     for (scenario, name, expected) in test_cases {
         tes_behavior!(tracker, scenario,
             given: &format!("Agent name: {:?}", name),
@@ -189,18 +211,26 @@ async fn test_agent_config_validation() {
                     profile_id: Uuid::new_v4(),
                     name: name.clone(),
                     agent_kind: "test".to_string(),
+                    agent_runtime: AgentRuntime::Native,
+                    wasm_module_path: None,
                     config_data: json!({}),
                     credential_ids: vec![],
                     enabled: true,
+                    dependencies: vec![],
                 };
-                
+
                 let actual_name = config.name.as_deref().unwrap_or("");
-                tes_assert_eq!(tracker, actual_name, expected, &format!("{} name check", scenario));
+                tes_assert_eq!(
+                    tracker,
+                    actual_name,
+                    expected.as_str(),
+                    &format!("{} name check", scenario)
+                );
                 true
             }
         );
     }
-    
+
     // Test JSON configuration
     tes_behavior!(tracker, "json_config",
         given: "Complex JSON configuration",
@@ -215,24 +245,42 @@ async fn test_agent_config_validation() {
                 "number": 42,
                 "boolean": true
             });
-            
+
             let config = AgentConfig {
                 id: Uuid::new_v4(),
                 profile_id: Uuid::new_v4(),
                 name: Some("JsonTest".to_string()),
                 agent_kind: "test".to_string(),
+                agent_runtime: AgentRuntime::Native,
+                wasm_module_path: None,
                 config_data: complex_json.clone(),
                 credential_ids: vec![],
                 enabled: true,
+                dependencies: vec![],
             };
-            
-            tes_assert_eq!(tracker, config.config_data, complex_json, "JSON data preserved");
-            tes_assert_eq!(tracker, config.config_data["number"], 42, "Number field accessible");
-            tes_assert_eq!(tracker, config.config_data["boolean"], true, "Boolean field accessible");
+
+            tes_assert_eq!(
+                tracker,
+                &config.config_data,
+                &complex_json,
+                "JSON data preserved"
+            );
+            tes_assert_eq!(
+                tracker,
+                config.config_data["number"].clone(),
+                json!(42),
+                "Number field accessible"
+            );
+            tes_assert_eq!(
+                tracker,
+                config.config_data["boolean"].clone(),
+                json!(true),
+                "Boolean field accessible"
+            );
             true
         }
     );
-    
+
     tracker.record_mutations(15, 18);
     println!("{}", tracker.report());
 }
@@ -240,7 +288,7 @@ async fn test_agent_config_validation() {
 #[tokio::test]
 async fn test_context_error_handling() {
     let mut tracker = TesTracker::new("test_context_error_handling");
-    
+
     // Test channel errors
     tes_behavior!(tracker, "channel_closed_error",
         given: "A closed event channel",
@@ -249,7 +297,7 @@ async fn test_context_error_handling() {
         {
             let (tx, rx) = mpsc::channel::<Event>(1);
             drop(rx); // Close the receiver
-            
+
             let ctx = SourceContext {
                 agent_id: Uuid::new_v4(),
                 profile_id: Uuid::new_v4(),
@@ -257,14 +305,14 @@ async fn test_context_error_handling() {
                 state_store: Arc::new(InMemoryStateStore::default()),
                 event_tx: tx,
             };
-            
+
             let result = ctx.emit(json!({"test": "data"}), None).await;
             tes_assert_eq!(tracker, result.is_err(), true, "Emit returns error");
-            
+
             if let Err(e) = result {
-                tes_assert_eq!(tracker, 
-                    matches!(e, HelixError::MpscSendError(_)), 
-                    true, 
+                tes_assert_eq!(tracker,
+                    matches!(e, HelixError::MpscSendError(_)),
+                    true,
                     "Error is MpscSendError"
                 );
                 true
@@ -273,7 +321,7 @@ async fn test_context_error_handling() {
             }
         }
     );
-    
+
     // Test credential provider errors
     tes_behavior!(tracker, "credential_not_found",
         given: "A missing credential",
@@ -287,7 +335,7 @@ async fn test_context_error_handling() {
             true
         }
     );
-    
+
     // Test state store operations
     tes_behavior!(tracker, "state_store_operations",
         given: "An empty state store",
@@ -295,20 +343,33 @@ async fn test_context_error_handling() {
         then: "Operations complete successfully",
         {
             let store = InMemoryStateStore::default();
-            
-            // Test get on non-existent key
-            let get_result = store.get_state("missing_key").await;
+            let profile_id = Uuid::new_v4();
+            let agent_id = Uuid::new_v4();
+
+            // Test get on non-existent state
+            let get_result = store.get_state(&profile_id, &agent_id).await;
             tes_assert_eq!(tracker, get_result.is_ok(), true, "Get state succeeds");
             tes_assert_eq!(tracker, get_result.unwrap(), None, "Missing key returns None");
-            
+
             // Test set operation
-            let set_result = store.set_state("test_key", b"test_value").await;
+            let set_result = store
+                .set_state(&profile_id, &agent_id, json!({"test_key": "test_value"}))
+                .await;
             tes_assert_eq!(tracker, set_result.is_ok(), true, "Set state succeeds");
-            
+
+            let get_result = store.get_state(&profile_id, &agent_id).await;
+            tes_assert_eq!(tracker, get_result.is_ok(), true, "Get state after set succeeds");
+            tes_assert_eq!(
+                tracker,
+                get_result.unwrap(),
+                Some(json!({"test_key": "test_value"})),
+                "State roundtrips"
+            );
+
             true
         }
     );
-    
+
     tracker.record_mutations(14, 16);
     println!("{}", tracker.report());
 }
@@ -318,10 +379,7 @@ struct MockCredentialProvider;
 
 #[async_trait]
 impl CredentialProvider for MockCredentialProvider {
-    async fn get_credential(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<Credential>, HelixError> {
+    async fn get_credential(&self, _id: &CredentialId) -> Result<Option<Credential>, HelixError> {
         Ok(None)
     }
 }

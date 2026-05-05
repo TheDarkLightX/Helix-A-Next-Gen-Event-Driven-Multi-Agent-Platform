@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-helix}
+      POSTGRES_USER: ${POSTGRES_USER:-helix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-helix_dev_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "${HELIX_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - helix_postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HELIX_API_ADDR: 0.0.0.0:3000
+      HELIX_UI_DIST: /opt/helix/ui/dist
+      HELIX_AUTH_REQUIRED: ${HELIX_AUTH_REQUIRED:-false}
+      HELIX_API_TOKEN: ${HELIX_API_TOKEN:-}
+      DATABASE_URL: postgres://${POSTGRES_USER:-helix}:${POSTGRES_PASSWORD:-helix_dev_password}@postgres:5432/${POSTGRES_DB:-helix}
+      HELIX_AUTO_MIGRATE: ${HELIX_AUTO_MIGRATE:-true}
+      HELIX_AUTOPILOT_MODE: ${HELIX_AUTOPILOT_MODE:-assist}
+      HELIX_AUTOPILOT_ALLOW_ONCHAIN: ${HELIX_AUTOPILOT_ALLOW_ONCHAIN:-false}
+      HELIX_AUTOPILOT_REQUIRE_ONCHAIN_CONFIRMATION: ${HELIX_AUTOPILOT_REQUIRE_ONCHAIN_CONFIRMATION:-true}
+      HELIX_AUTOPILOT_REQUIRE_DRY_RUN: ${HELIX_AUTOPILOT_REQUIRE_DRY_RUN:-true}
+      HELIX_AUTOPILOT_MAX_POLICY_COMMANDS: ${HELIX_AUTOPILOT_MAX_POLICY_COMMANDS:-128}
+      HELIX_AUTOPILOT_LLM_MODEL: ${HELIX_AUTOPILOT_LLM_MODEL:-gpt-4o-mini}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+    ports:
+      - "${HELIX_API_PORT:-3000}:3000"
+
+volumes:
+  helix_postgres_data:

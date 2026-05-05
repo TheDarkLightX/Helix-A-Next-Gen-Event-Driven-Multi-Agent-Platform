@@ -35,8 +35,7 @@ impl AppState {
 
     /// Return all currently stored events as a vector.
     fn all_events(&self) -> Vec<Event> {
-        self
-            .events
+        self.events
             .lock()
             .expect("poisoned")
             .iter()
@@ -62,7 +61,9 @@ impl Default for AppState {
 /// ```
 #[must_use]
 pub fn app(state: AppState) -> Router {
-    Router::new().route("/events", get(list_events)).with_state(state)
+    Router::new()
+        .route("/events", get(list_events))
+        .with_state(state)
 }
 
 async fn list_events(State(state): State<AppState>) -> Json<Vec<Event>> {
@@ -72,7 +73,10 @@ async fn list_events(State(state): State<AppState>) -> Json<Vec<Event>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::{Body, to_bytes}, http::Request};
+    use axum::{
+        body::{to_bytes, Body},
+        http::Request,
+    };
     use proptest::prelude::*;
     use serde_json::json;
     use tower::util::ServiceExt;
@@ -87,7 +91,12 @@ mod tests {
         ));
         let router = app(state);
         let response = router
-            .oneshot(Request::builder().uri("/events").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/events")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), 200);

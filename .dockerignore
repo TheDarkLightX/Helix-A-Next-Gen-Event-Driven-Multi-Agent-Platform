@@ -1,0 +1,12 @@
+.git
+.github
+target
+ui/dist
+ui/node_modules
+helix-ts-sdk/build
+helix-ts-sdk/node_modules
+runs
+external/ESSO/.git
+**/*.log
+Dockerfile
+docker-compose.yml

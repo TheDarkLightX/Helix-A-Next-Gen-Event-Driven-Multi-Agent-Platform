@@ -20,7 +20,7 @@ use crate::deterministic_agents::{
     DedupInput, DedupMachine, DlqBudgetMachine, DlqDecision, DlqInput, FeeBiddingMachine,
     FeeDecision, FeeInput, FinalityDecision, FinalityGuardMachine, FinalityInput, NonceDecision,
     NonceInput, NonceManagerMachine, RateLimitDecision, RateLimitInput, RateLimiterMachine,
-    RetryBudgetMachine, RetryDecision, RetryInput, SlaDecision, SlaDeadlineMachine, SlaInput,
+    RetryBudgetMachine, RetryDecision, RetryInput, SlaDeadlineMachine, SlaDecision, SlaInput,
 };
 use serde::{Deserialize, Serialize};
 
@@ -381,8 +381,10 @@ impl DeterministicPolicyEngine {
                     PolicyDecision::RequestDenied {
                         reason: "duplicate".to_string(),
                     }
-                } else if matches!(self.breaker.step(BreakerInput::Request), BreakerDecision::DenyOpen)
-                {
+                } else if matches!(
+                    self.breaker.step(BreakerInput::Request),
+                    BreakerDecision::DenyOpen
+                ) {
                     PolicyDecision::RequestDenied {
                         reason: "circuit_open".to_string(),
                     }
@@ -409,7 +411,10 @@ impl DeterministicPolicyEngine {
                 }
             }
             PolicyCommand::Retry => {
-                let allowed = matches!(self.retry.step(RetryInput::ConsumeRetry), RetryDecision::Retry);
+                let allowed = matches!(
+                    self.retry.step(RetryInput::ConsumeRetry),
+                    RetryDecision::Retry
+                );
                 PolicyDecision::Retry { allowed }
             }
             PolicyCommand::ResetRetry => {

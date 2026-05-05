@@ -11,20 +11,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Deterministic rule matching for Helix.
 
-//! Implements the rule matching logic (Rete + Cedar) for Helix.
-
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+pub mod event_listener;
+pub mod rules;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::rules::{evaluate_rule, Condition, FieldCondition, Operator, Rule};
+    use helix_core::event::Event;
+    use serde_json::json;
+    use std::collections::HashMap;
+    use uuid::Uuid;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn crate_exports_deterministic_rule_matching() {
+        let event = Event::new(
+            "test".to_string(),
+            "intel.case.opened".to_string(),
+            Some(json!({ "severity": "critical" })),
+        );
+        let rule = Rule {
+            id: Uuid::new_v4(),
+            name: "Critical case".to_string(),
+            description: None,
+            version: "1.0.0".to_string(),
+            author: None,
+            enabled: true,
+            tags: Vec::new(),
+            metadata: HashMap::new(),
+            condition: Condition::Field(Box::new(FieldCondition {
+                field: "event.data.severity".to_string(),
+                operator: Operator::Equals,
+                value: Some(json!("critical")),
+                value_from_event: None,
+                case_sensitive: true,
+            })),
+            actions: Vec::new(),
+            created_at: None,
+            updated_at: None,
+        };
+
+        assert!(evaluate_rule(&event, &rule));
     }
 }

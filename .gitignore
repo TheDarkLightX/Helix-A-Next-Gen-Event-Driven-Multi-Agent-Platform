@@ -49,7 +49,9 @@ COMPREHENSIVE_*_PLAN.md
 
 # Local verification artifacts
 /runs/
+/formal/lean/.lake/
 
 # Frontend dependencies/build artifacts
 /ui/node_modules/
 /ui/dist/
+/helix-ts-sdk/node_modules/

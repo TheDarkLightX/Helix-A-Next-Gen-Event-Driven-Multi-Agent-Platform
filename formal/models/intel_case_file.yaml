@@ -1,0 +1,254 @@
+ir_version: "esso-ir/v1"
+meta:
+  model_id: "intel_case_file"
+  created_by: "helix"
+  seed: 0
+  notes: "Deterministic case lifecycle for the Helix intelligence desk. Cases open from a signal, may move into monitoring or briefing, escalate on stronger signals, and can be closed/reopened."
+observables:
+  state_vars: ["status", "has_signal"]
+  effects: []
+types: []
+state_vars:
+  - id: "status"
+    role: "control"
+    type:
+      kind: "enum"
+      symbols: ["Idle", "Open", "Monitoring", "BriefReady", "Escalated", "Closed"]
+  - id: "has_signal"
+    role: "data"
+    type: { kind: "bool" }
+invariants:
+  - id: "IdleHasNoSignal"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Idle" }]
+        - op: "="
+          args: [{ var: "has_signal" }, { bool: false }]
+  - id: "BriefReadyRequiresSignal"
+    kind: "safety"
+    expr:
+      op: "=>"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "BriefReady" }]
+        - op: "="
+          args: [{ var: "has_signal" }, { bool: true }]
+init:
+  - var: "status"
+    expr: { enum: "Idle" }
+  - var: "has_signal"
+    expr: { bool: false }
+actions:
+  - id: "open_from_signal_open"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Idle" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Open" }
+      - var: "has_signal"
+        expr: { bool: true }
+    effects: {}
+  - id: "append_signal_stay_open"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Open" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "Monitoring" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "BriefReady" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "Escalated" }]
+    updates:
+      - var: "status"
+        expr: { var: "status" }
+      - var: "has_signal"
+        expr: { bool: true }
+    effects: {}
+  - id: "append_signal_escalate"
+    params: []
+    guard:
+      op: "or"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Open" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "Monitoring" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "BriefReady" }]
+        - op: "="
+          args: [{ var: "status" }, { enum: "Escalated" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Escalated" }
+      - var: "has_signal"
+        expr: { bool: true }
+    effects: {}
+  - id: "mark_monitoring_from_open"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Open" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Monitoring" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "mark_monitoring_from_brief"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "BriefReady" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Monitoring" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "attach_brief_from_open"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Open" }]
+        - op: "="
+          args: [{ var: "has_signal" }, { bool: true }]
+    updates:
+      - var: "status"
+        expr: { enum: "BriefReady" }
+      - var: "has_signal"
+        expr: { bool: true }
+    effects: {}
+  - id: "attach_brief_from_monitoring"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Monitoring" }]
+        - op: "="
+          args: [{ var: "has_signal" }, { bool: true }]
+    updates:
+      - var: "status"
+        expr: { enum: "BriefReady" }
+      - var: "has_signal"
+        expr: { bool: true }
+    effects: {}
+  - id: "attach_brief_from_escalated"
+    params: []
+    guard:
+      op: "and"
+      args:
+        - op: "="
+          args: [{ var: "status" }, { enum: "Escalated" }]
+        - op: "="
+          args: [{ var: "has_signal" }, { bool: true }]
+    updates:
+      - var: "status"
+        expr: { enum: "BriefReady" }
+      - var: "has_signal"
+        expr: { bool: true }
+    effects: {}
+  - id: "escalate_from_open"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Open" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Escalated" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "escalate_from_monitoring"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Monitoring" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Escalated" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "escalate_from_brief"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "BriefReady" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Escalated" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "close_from_open"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Open" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Closed" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "close_from_monitoring"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Monitoring" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Closed" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "close_from_brief"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "BriefReady" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Closed" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "close_from_escalated"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Escalated" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Closed" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+  - id: "reopen"
+    params: []
+    guard:
+      op: "="
+      args: [{ var: "status" }, { enum: "Closed" }]
+    updates:
+      - var: "status"
+        expr: { enum: "Open" }
+      - var: "has_signal"
+        expr: { var: "has_signal" }
+    effects: {}
+refinement:
+  state_abstraction:
+    - var: "status"
+      expr: { var: "status" }
+    - var: "has_signal"
+      expr: { var: "has_signal" }

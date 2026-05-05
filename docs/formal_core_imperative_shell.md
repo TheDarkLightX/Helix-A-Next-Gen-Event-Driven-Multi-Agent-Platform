@@ -1,3 +1,9 @@
+---
+title: formal_core_imperative_shell
+type: note
+permalink: helix-platform-review/docs/formal-core-imperative-shell
+---
+
 # Helix: Formal Core + Imperative Shell
 
 This repository now includes a correctness-first execution kernel flow:

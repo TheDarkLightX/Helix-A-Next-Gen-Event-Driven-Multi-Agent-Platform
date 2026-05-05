@@ -1,82 +1,247 @@
-import { Link, Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import {
+  Link,
+  Outlet,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  useNavigate,
+} from "@tanstack/react-router";
 import { AgentCatalogPage } from "./screens/AgentCatalogPage";
+import { AuditPage } from "./screens/AuditPage";
 import { AutopilotPage } from "./screens/AutopilotPage";
 import { CasesPage } from "./screens/CasesPage";
+import { CredentialsPage } from "./screens/CredentialsPage";
 import { DashboardPage } from "./screens/DashboardPage";
 import { EvidencePage } from "./screens/EvidencePage";
 import { MarketIntelPage } from "./screens/MarketIntelPage";
 import { OnchainPage } from "./screens/OnchainPage";
 import { PolicyWorkbenchPage } from "./screens/PolicyWorkbenchPage";
+import { RulesPage } from "./screens/RulesPage";
 import { SourcesPage } from "./screens/SourcesPage";
 import { WatchlistsPage } from "./screens/WatchlistsPage";
+import { clearApiToken, loadApiToken, saveApiToken } from "./lib/apiAuth";
+import {
+  OperatorLandingRoute,
+  loadOperatorPreferences,
+  saveOperatorPreferences,
+} from "./lib/operatorPreferences";
 
-const NAV_ITEMS = [
-  { to: "/" as const, label: "Dashboard", hint: "System posture and intelligence desk metrics" },
-  { to: "/market-intel" as const, label: "Market Intel", hint: "Competitors, pricing, and launches" },
-  { to: "/sources" as const, label: "Sources", hint: "Collection registry and trust posture" },
-  { to: "/watchlists" as const, label: "Watchlists", hint: "Deterministic detection rules" },
-  { to: "/evidence" as const, label: "Evidence", hint: "Ingest signals and inspect claims" },
-  { to: "/cases" as const, label: "Cases", hint: "OSINT dossiers and lifecycle control" },
-  { to: "/policies" as const, label: "Policies", hint: "Deterministic controls and replay" },
-  { to: "/agents" as const, label: "Agents", hint: "ROI kernels and deployment templates" },
-  { to: "/onchain" as const, label: "Onchain", hint: "EVM intent execution shell" },
-  { to: "/autopilot" as const, label: "Autopilot", hint: "LLM-operated guarded actions" },
+const NAV_GROUPS = [
+  {
+    name: "Command & Control",
+    items: [
+      { to: "/" as const, label: "SYS.DASHBOARD", icon: "❖" },
+      { to: "/market-intel" as const, label: "MARKET.INTEL", icon: "◒" },
+      { to: "/autopilot" as const, label: "AUTOPILOT.AI", icon: "⌾" },
+    ],
+  },
+  {
+    name: "Data Substrate",
+    items: [
+      { to: "/sources" as const, label: "NET.SOURCES", icon: "⏚" },
+      { to: "/evidence" as const, label: "RAW.EVIDENCE", icon: "▤" },
+      { to: "/watchlists" as const, label: "WATCH.RULES", icon: "⎈" },
+    ],
+  },
+  {
+    name: "Execution & Logic",
+    items: [
+      { to: "/cases" as const, label: "ACTIVE.CASES", icon: "⊡" },
+      { to: "/agents" as const, label: "AGENT.NODES", icon: "⎍" },
+      { to: "/policies" as const, label: "POLICY.GATE", icon: "⍜" },
+      { to: "/credentials" as const, label: "KEYS.VAULT", icon: "K" },
+      { to: "/rules" as const, label: "AUTO.RULES", icon: "⟲" },
+      { to: "/audit" as const, label: "AUDIT.LOG", icon: "⌁" },
+      { to: "/onchain" as const, label: "EVM.SHELL", icon: "⟡" },
+    ],
+  },
 ];
 
 function RootLayout() {
+  const navigate = useNavigate();
+  const [preferences, setPreferences] = useState(() => loadOperatorPreferences());
+  const [apiTokenInput, setApiTokenInput] = useState(() => loadApiToken());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const hasApiToken = apiTokenInput.trim().length > 0;
+
+  useEffect(() => {
+    saveOperatorPreferences(preferences);
+  }, [preferences]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.pathname !== "/") return;
+    if (preferences.defaultLandingRoute === "/") return;
+    void navigate({ to: preferences.defaultLandingRoute, replace: true });
+  }, [navigate, preferences.defaultLandingRoute]);
+
+  function toggleSidebarCollapsed() {
+    setPreferences((current) => ({
+      ...current,
+      sidebarCollapsed: !current.sidebarCollapsed,
+    }));
+  }
+
+  function updateDefaultLandingRoute(route: OperatorLandingRoute) {
+    setPreferences((current) => ({
+      ...current,
+      defaultLandingRoute: route,
+    }));
+  }
+
+  function updateApiToken(value: string) {
+    setApiTokenInput(value);
+    saveApiToken(value);
+  }
+
+  function resetApiToken() {
+    setApiTokenInput("");
+    clearApiToken();
+  }
+
   return (
-    <div className="app-root">
-      <div className="background-layer" />
-      <div className="shell-layout">
-        <aside className="side-rail">
-          <div className="brand-block">
-            <span className="brand-dot" />
-            <div>
-              <p className="brand-kicker">Helix</p>
-              <h1 className="brand-title">Personal Intelligence Agency Console</h1>
-            </div>
+    <div className="tac-root">
+      <div className="tac-scanlines"></div>
+      <div className="tac-glow-orbs"></div>
+
+      <div className="tac-layout">
+        <header className="tac-topbar">
+          <div className="topbar-brand">
+            <button
+              type="button"
+              className="topbar-menu"
+              aria-label={sidebarOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={sidebarOpen}
+              aria-controls="helix-sidebar"
+              onClick={() => setSidebarOpen((open) => !open)}
+            >
+              NAV
+            </button>
+            <span className="brand-icon">⎈</span>
+            <span className="brand-name">HELIX</span>
+            <span className="brand-version">v2.0.4 - TACTICAL OSINT</span>
+            <button
+              type="button"
+              className="topbar-collapse"
+              aria-label={preferences.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-pressed={preferences.sidebarCollapsed}
+              onClick={toggleSidebarCollapsed}
+            >
+              {preferences.sidebarCollapsed ? "EXPAND" : "COLLAPSE"}
+            </button>
           </div>
-          <p className="rail-note">
-            Self-hosted intelligence desk for OSINT and market intelligence with deterministic
-            kernels, provenance-first evidence, and guarded autonomy.
-          </p>
-
-          <nav className="route-nav">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                activeProps={{ className: "route-link route-link-active" }}
-                inactiveProps={{ className: "route-link" }}
-              >
-                <span>{item.label}</span>
-                <small>{item.hint}</small>
-              </Link>
-            ))}
-          </nav>
-
-          <div className="side-section">
-            <p className="mono-label">Build Discipline</p>
-            <ul className="rail-list">
-              <li>Collection and claims stay provenance-linked and replayable</li>
-              <li>Formal kernels gate case lifecycle and high-risk automation</li>
-              <li>LLMs can propose; deterministic guards decide</li>
-            </ul>
-          </div>
-
-          <div className="nav-chip">OSINT Desk / Fail Closed</div>
-        </aside>
-
-        <div className="workspace">
-          <header className="workspace-topbar">
-            <p className="topbar-title">Helix 2.0 Intelligence Desk</p>
-            <div className="topbar-chips">
-              <span className="topbar-chip">API 127.0.0.1:3000</span>
-              <span className="topbar-chip">UI 127.0.0.1:5173</span>
+          <div className="topbar-telemetry">
+            <div className="telemetry-block">
+              <span className="t-label">NET</span>
+              <span className="t-val ok">SECURE</span>
             </div>
-          </header>
-          <main className="content-shell">
-            <Outlet />
+            <div className="telemetry-block">
+              <span className="t-label">RPC</span>
+              <span className="t-val">127.0.0.1:3000</span>
+            </div>
+            <div className="telemetry-block">
+              <span className="t-label">UI_SYNC</span>
+              <span className="t-val ok">SYNCED</span>
+            </div>
+            <label className="telemetry-auth">
+              <span className="t-label">API_AUTH</span>
+              <input
+                aria-label="API bearer token"
+                className="topbar-token"
+                type="password"
+                autoComplete="off"
+                placeholder="token"
+                value={apiTokenInput}
+                onChange={(event) => updateApiToken(event.target.value)}
+              />
+              {hasApiToken ? (
+                <button type="button" className="topbar-token-clear" onClick={resetApiToken}>
+                  CLEAR
+                </button>
+              ) : (
+                <span className="t-val">LOCAL</span>
+              )}
+            </label>
+          </div>
+        </header>
+
+        <div
+          className={`tac-main-grid${preferences.sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+        >
+          <aside
+            id="helix-sidebar"
+            className={`tac-sidebar${sidebarOpen ? " is-open" : ""}${
+              preferences.sidebarCollapsed ? " is-collapsed" : ""
+            }`}
+          >
+            <nav className="tac-nav">
+              {NAV_GROUPS.map((group) => (
+                <div key={group.name} className="nav-group">
+                  <span className="group-label">[{group.name}]</span>
+                  <div className="group-items">
+                    {group.items.map((item) => (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        activeProps={{ className: "tac-nav-link active" }}
+                        inactiveProps={{ className: "tac-nav-link" }}
+                        title={item.label}
+                        onClick={() => setSidebarOpen(false)}
+                      >
+                        <span className="nav-icon">{item.icon}</span>
+                        <span className="nav-text">{item.label}</span>
+                        <span className="nav-caret">⟩</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+            <div className="sidebar-footer">
+              <label className="sidebar-pref">
+                <span className="group-label">[Default Landing]</span>
+                <select
+                  value={preferences.defaultLandingRoute}
+                  onChange={(event) =>
+                    updateDefaultLandingRoute(event.target.value as OperatorLandingRoute)
+                  }
+                >
+                  <option value="/">SYS.DASHBOARD</option>
+                  <option value="/market-intel">MARKET.INTEL</option>
+                  <option value="/autopilot">AUTOPILOT.AI</option>
+                  <option value="/sources">NET.SOURCES</option>
+                  <option value="/evidence">RAW.EVIDENCE</option>
+                  <option value="/watchlists">WATCH.RULES</option>
+                  <option value="/cases">ACTIVE.CASES</option>
+                  <option value="/agents">AGENT.NODES</option>
+                  <option value="/policies">POLICY.GATE</option>
+                  <option value="/credentials">KEYS.VAULT</option>
+                  <option value="/rules">AUTO.RULES</option>
+                  <option value="/audit">AUDIT.LOG</option>
+                  <option value="/onchain">EVM.SHELL</option>
+                </select>
+              </label>
+              <div className="status-indicator">
+                <span className="pulse-dot ok"></span>
+                <span>SYS_NOMINAL</span>
+              </div>
+            </div>
+          </aside>
+
+          {sidebarOpen ? (
+            <button
+              type="button"
+              className="sidebar-scrim"
+              aria-label="Close navigation"
+              onClick={() => setSidebarOpen(false)}
+            />
+          ) : null}
+
+          <main className="tac-workspace">
+            <div className="workspace-frame">
+              <Outlet />
+            </div>
           </main>
         </div>
       </div>
@@ -136,10 +301,28 @@ const agentsRoute = createRoute({
   component: AgentCatalogPage,
 });
 
+const credentialsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/credentials",
+  component: CredentialsPage,
+});
+
 const onchainRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/onchain",
   component: OnchainPage,
+});
+
+const auditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/audit",
+  component: AuditPage,
+});
+
+const rulesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rules",
+  component: RulesPage,
 });
 
 const autopilotRoute = createRoute({
@@ -157,6 +340,9 @@ const routeTree = rootRoute.addChildren([
   casesRoute,
   policiesRoute,
   agentsRoute,
+  credentialsRoute,
+  rulesRoute,
+  auditRoute,
   onchainRoute,
   autopilotRoute,
 ]);

@@ -166,7 +166,8 @@ pub enum ReasoningEvaluationRequest {
         features: BTreeMap<String, f64>,
         /// Deterministic linear model.
         model: LinearModel,
-        /// Minimum neural probability required when symbolic gate passes.
+        /// Optional extra lower bound for `Allow`; this can only tighten
+        /// `model.allow_threshold`, never weaken it.
         min_probability: Option<f64>,
         /// Contradiction scope used for fail-closed consistency checks.
         consistency_scope: Option<ReasoningConsistencyScope>,
@@ -522,8 +523,7 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
 ) -> Result<ReasoningDecision, HelixError> {
     let query = normalize_non_empty(&query, "reasoning.query", "query")?;
     let max_rounds = resolve_max_rounds(max_rounds)?;
-    let min_probability =
-        validate_probability(min_probability.unwrap_or(0.8), "reasoning.min_probability")?;
+    let thresholds = resolve_neuro_symbolic_thresholds(&model, min_probability)?;
     let consistency_scope = consistency_scope.unwrap_or_default();
     let neuro = evaluate_neuro(features, model)?;
     let relevant = evaluate_compiled_symbolic(
@@ -597,17 +597,23 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
             "symbolic gate failed; denying regardless of neural score".to_string(),
             1.0,
         )
-    } else if neuro.probability >= min_probability {
+    } else if neuro.probability >= thresholds.allow_threshold {
         (
             ReasoningVerdict::Allow,
-            "symbolic gate passed and neural confidence exceeded threshold".to_string(),
+            "symbolic gate passed and neural confidence met allow threshold".to_string(),
             score_neuro_probability(neuro.probability, ReasoningVerdict::Allow),
+        )
+    } else if neuro.probability >= thresholds.review_threshold {
+        (
+            ReasoningVerdict::Review,
+            "symbolic gate passed but neural confidence stayed below allow threshold".to_string(),
+            score_neuro_probability(neuro.probability, ReasoningVerdict::Review),
         )
     } else {
         (
-            ReasoningVerdict::Review,
-            "symbolic gate passed but neural confidence below allow threshold".to_string(),
-            score_neuro_probability(neuro.probability, ReasoningVerdict::Review),
+            ReasoningVerdict::Deny,
+            "symbolic gate passed but neural confidence fell below review threshold".to_string(),
+            score_neuro_probability(neuro.probability, ReasoningVerdict::Deny),
         )
     };
 
@@ -620,6 +626,38 @@ pub fn evaluate_compiled_neuro_symbolic_reasoning(
         confidence,
         rationale,
     ))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct NeuroSymbolicThresholds {
+    allow_threshold: f64,
+    review_threshold: f64,
+}
+
+fn resolve_neuro_symbolic_thresholds(
+    model: &LinearModel,
+    min_probability: Option<f64>,
+) -> Result<NeuroSymbolicThresholds, HelixError> {
+    let model_allow_threshold =
+        validate_probability(model.allow_threshold, "reasoning.model.allow_threshold")?;
+    let review_threshold =
+        validate_probability(model.review_threshold, "reasoning.model.review_threshold")?;
+    if review_threshold > model_allow_threshold {
+        return Err(HelixError::validation_error(
+            "reasoning.model",
+            "review_threshold must be <= allow_threshold",
+        ));
+    }
+
+    let requested_allow_threshold = match min_probability {
+        Some(value) => validate_probability(value, "reasoning.min_probability")?,
+        None => model_allow_threshold,
+    };
+
+    Ok(NeuroSymbolicThresholds {
+        allow_threshold: model_allow_threshold.max(requested_allow_threshold),
+        review_threshold,
+    })
 }
 
 fn build_symbolic_decision(
@@ -1308,6 +1346,79 @@ mod tests {
         assert_eq!(decision.verdict, ReasoningVerdict::Allow);
         assert_eq!(decision.trace.contradictions.len(), 1);
         assert!(decision.trace.blocking_contradictions.is_empty());
+    }
+
+    #[test]
+    fn neuro_symbolic_defaults_to_model_allow_threshold() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.7,
+                review_threshold: 0.5,
+            },
+            min_probability: None,
+            consistency_scope: None,
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Allow);
+        assert!(decision.trace.neural_probability.unwrap() > 0.7);
+    }
+
+    #[test]
+    fn neuro_symbolic_min_probability_cannot_weaken_model_allow_threshold() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), 1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.6),
+            consistency_scope: None,
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Review);
+        assert!(decision.rationale.contains("stayed below allow threshold"));
+    }
+
+    #[test]
+    fn neuro_symbolic_denies_below_review_threshold() {
+        let decision = evaluate_reasoning(ReasoningEvaluationRequest::NeuroSymbolic {
+            query: "allow(tx)".to_string(),
+            facts: vec!["allow(tx)".to_string()],
+            rules: vec![],
+            triples: vec![],
+            features: BTreeMap::from([("f1".to_string(), -1.0)]),
+            model: LinearModel {
+                bias: 0.0,
+                weights: BTreeMap::from([("f1".to_string(), 1.0)]),
+                allow_threshold: 0.8,
+                review_threshold: 0.5,
+            },
+            min_probability: Some(0.8),
+            consistency_scope: None,
+            max_rounds: Some(4),
+        })
+        .unwrap();
+
+        assert_eq!(decision.verdict, ReasoningVerdict::Deny);
+        assert!(decision.trace.neural_probability.unwrap() < 0.5);
+        assert!(decision.rationale.contains("below review threshold"));
     }
 
     #[test]

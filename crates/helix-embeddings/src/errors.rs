@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Error types for embedding operations
 
 use thiserror::Error;
@@ -33,7 +32,12 @@ pub enum EmbeddingError {
 
     /// Invalid dimensions
     #[error("Invalid dimensions: expected {expected}, got {actual}")]
-    InvalidDimensions { expected: usize, actual: usize },
+    InvalidDimensions {
+        /// Expected vector width.
+        expected: usize,
+        /// Actual vector width.
+        actual: usize,
+    },
 
     /// Model not found
     #[error("Model not found: {0}")]

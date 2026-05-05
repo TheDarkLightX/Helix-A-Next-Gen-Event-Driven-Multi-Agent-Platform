@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import {
   GenerateMarketIntelBriefResponse,
   MarketIntelCaseBrief,
+  MarketIntelBriefExportPacketResponse,
   MarketIntelCompanyCard,
   MarketIntelOverviewResponse,
   MarketIntelPlaybook,
   MarketIntelThemeCard,
+  PriorityBreakdown,
+  fetchMarketIntelBriefExportPacket,
   fetchMarketIntelOverview,
   generateMarketIntelBrief,
 } from "../lib/api";
@@ -20,6 +23,10 @@ function briefStatusClass(status: MarketIntelCaseBrief["status"], attachedToCase
   if (status === "escalated") return "danger";
   if (attachedToCase || status === "brief_ready") return "ok";
   return "warn";
+}
+
+function priorityLabel(priority: PriorityBreakdown) {
+  return `score ${priority.total} | a${priority.attention_tier} s${priority.severity_tier} c${priority.corroboration_tier} cred=${priority.credibility_bps}`;
 }
 
 function renderPlaybook(playbook: MarketIntelPlaybook) {
@@ -52,6 +59,7 @@ function renderTheme(theme: MarketIntelThemeCard) {
       </div>
       <p>{theme.summary}</p>
       <div className="pill-row">
+        <span className="info-pill">{priorityLabel(theme.priority)}</span>
         <span className="info-pill">watchlists: {theme.watchlist_count}</span>
         <span className="info-pill">evidence: {theme.evidence_count}</span>
         <span className="info-pill">escalated: {theme.escalated_case_count}</span>
@@ -84,6 +92,7 @@ function renderCompany(card: MarketIntelCompanyCard) {
       <code>claims: {card.claim_count}</code>
       <code>latest_signal_at: {card.latest_signal_at ?? "none"}</code>
       <div className="pill-row">
+        <span className="info-pill">{priorityLabel(card.priority)}</span>
         {card.themes.map((theme) => (
           <span key={theme} className="tag-chip">
             {theme}
@@ -96,7 +105,8 @@ function renderCompany(card: MarketIntelCompanyCard) {
 
 function renderCaseBrief(
   briefing: MarketIntelCaseBrief,
-  onAttach: (caseId: string) => void
+  onAttach: (caseId: string) => void,
+  onExport: (caseId: string) => void
 ) {
   return (
     <div key={briefing.case_id} className="agent-card">
@@ -108,6 +118,7 @@ function renderCaseBrief(
       </div>
       <p>{briefing.summary}</p>
       <div className="pill-row">
+        <span className="info-pill">{priorityLabel(briefing.priority)}</span>
         <span className="info-pill">theme: {briefing.theme_name}</span>
         <span className="info-pill">company: {briefing.company ?? "unassigned"}</span>
         <span className="info-pill">evidence: {briefing.evidence_count}</span>
@@ -152,6 +163,13 @@ function renderCaseBrief(
         >
           {briefing.attached_to_case ? "Attached" : "Attach Brief"}
         </button>
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => onExport(briefing.case_id)}
+        >
+          Export Packet
+        </button>
       </div>
     </div>
   );
@@ -161,6 +179,8 @@ export function MarketIntelPage() {
   const [overview, setOverview] = useState<MarketIntelOverviewResponse | null>(null);
   const [status, setStatus] = useState<string>("Loading market intelligence desk...");
   const [lastBrief, setLastBrief] = useState<GenerateMarketIntelBriefResponse | null>(null);
+  const [lastExportPacket, setLastExportPacket] =
+    useState<MarketIntelBriefExportPacketResponse | null>(null);
 
   async function loadOverview(message?: string) {
     try {
@@ -187,6 +207,17 @@ export function MarketIntelPage() {
       await loadOverview(`Attached market brief to ${caseId}.`);
     } catch (error) {
       setStatus(`Failed to attach market brief: ${(error as Error).message}`);
+    }
+  }
+
+  async function exportBrief(caseId: string) {
+    setStatus(`Exporting deterministic brief packet for ${caseId}...`);
+    try {
+      const packet = await fetchMarketIntelBriefExportPacket(caseId);
+      setLastExportPacket(packet);
+      setStatus(`Exported market brief packet ${packet.packet_id}.`);
+    } catch (error) {
+      setStatus(`Failed to export market brief: ${(error as Error).message}`);
     }
   }
 
@@ -245,7 +276,9 @@ export function MarketIntelPage() {
         <p className="mono-label">Active Case Briefs</p>
         <div className="agent-grid">
           {overview?.case_briefs.length ? (
-            overview.case_briefs.map((briefing) => renderCaseBrief(briefing, attachBrief))
+            overview.case_briefs.map((briefing) =>
+              renderCaseBrief(briefing, attachBrief, exportBrief)
+            )
           ) : (
             <p>No market-intelligence cases are active yet.</p>
           )}
@@ -263,6 +296,15 @@ export function MarketIntelPage() {
           <pre className="json-output">{JSON.stringify(lastBrief, null, 2)}</pre>
         ) : (
           <p>No brief has been attached in this session.</p>
+        )}
+      </article>
+
+      <article className="panel panel-span-12">
+        <p className="mono-label">Latest Export Packet</p>
+        {lastExportPacket ? (
+          <pre className="json-output">{JSON.stringify(lastExportPacket, null, 2)}</pre>
+        ) : (
+          <p>No market brief export packet has been generated in this session.</p>
         )}
       </article>
     </section>

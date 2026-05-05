@@ -11,41 +11,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! # Quality Assessment and TES Calculation
-//! 
+//!
 //! This module provides comprehensive quality metrics and Test Effectiveness Score (TES) calculation
 //! to measure the overall quality of the codebase and guide continuous improvement.
-//! 
+//!
 //! ## Purpose
-//! 
+//!
 //! The quality assessment system serves as the foundation for mutation testing by providing:
-//! 
+//!
 //! - **Baseline Metrics**: Establishes current quality levels
 //! - **Progress Tracking**: Monitors improvement over time
 //! - **Target Setting**: Defines quality goals and thresholds
 //! - **Decision Making**: Guides resource allocation for testing efforts
-//! 
+//!
 //! ## TES (Test Effectiveness Score) Methodology
-//! 
+//!
 //! The TES score is calculated using a weighted combination of multiple quality dimensions:
-//! 
+//!
 //! ```text
-//! TES = (Coverage × 0.25) + (Mutation × 0.30) + (Complexity × 0.15) + 
+//! TES = (Coverage × 0.25) + (Mutation × 0.30) + (Complexity × 0.15) +
 //!       (Documentation × 0.10) + (Security × 0.15) + (Performance × 0.05)
 //! ```
-//! 
+//!
 //! ### Component Weights Rationale
-//! 
+//!
 //! - **Test Coverage (25%)**: Foundation of quality assurance
 //! - **Mutation Score (30%)**: Most critical indicator of test effectiveness
 //! - **Complexity (15%)**: Code maintainability and bug likelihood
 //! - **Documentation (10%)**: Knowledge transfer and maintenance
 //! - **Security (15%)**: Critical for production systems
 //! - **Performance (5%)**: Important but often domain-specific
-//! 
+//!
 //! ## Grading Scale
-//! 
+//!
 //! | Grade | Score Range | Quality Level | Action Required |
 //! |-------|-------------|---------------|-----------------|
 //! | A     | 90-100%     | Excellent     | Maintain standards |
@@ -53,58 +52,58 @@
 //! | C     | 70-79%      | Acceptable    | Focused improvements |
 //! | D     | 60-69%      | Poor          | Major improvements needed |
 //! | F     | 0-59%       | Failing       | Comprehensive overhaul |
-//! 
+//!
 //! ## Usage Examples
-//! 
+//!
 //! ### Basic Assessment
-//! 
+//!
 //! ```rust
 //! use helix_core::mutation_testing::quality_assessment::analyze_helix_core_quality;
-//! 
+//!
 //! let metrics = analyze_helix_core_quality();
 //! let tes = metrics.calculate_tes();
-//! 
+//!
 //! println!("TES Score: {:.1}% (Grade: {})", tes.score, tes.grade);
 //! ```
-//! 
+//!
 //! ### Custom Metrics
-//! 
+//!
 //! ```rust
 //! use helix_core::mutation_testing::quality_assessment::QualityMetrics;
-//! 
+//!
 //! let mut metrics = QualityMetrics::new();
 //! metrics.test_coverage = 85.0;
 //! metrics.mutation_score = 78.0;
 //! // ... set other metrics
-//! 
+//!
 //! let tes = metrics.calculate_tes();
 //! ```
-//! 
+//!
 //! ## Limitations and Considerations
-//! 
+//!
 //! ### What It Measures Well
-//! 
+//!
 //! - **Quantitative Metrics**: Test counts, coverage percentages
 //! - **Structural Quality**: Code complexity, documentation presence
 //! - **Test Effectiveness**: Mutation killing capability
-//! 
+//!
 //! ### What It Cannot Measure
-//! 
+//!
 //! - **Test Quality**: Logic correctness of individual tests
 //! - **Business Logic**: Domain-specific correctness
 //! - **User Experience**: Functional usability aspects
 //! - **Runtime Behavior**: Dynamic performance characteristics
-//! 
+//!
 //! ### Best Practices
-//! 
+//!
 //! 1. **Use as Guidance**: TES scores guide improvement efforts, not absolute judgments
 //! 2. **Context Matters**: Consider project phase, team size, domain requirements
 //! 3. **Trend Analysis**: Focus on improvement trends rather than absolute scores
 //! 4. **Balanced Approach**: Don't optimize for TES score at expense of other factors
 //! 5. **Regular Assessment**: Run assessments frequently to track progress
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Comprehensive quality metrics for the codebase
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,26 +236,26 @@ pub fn analyze_helix_core_quality() -> QualityMetrics {
 
     // Module analysis based on our improvements
     let module_test_counts = get_module_test_counts();
-    
+
     metrics.total_tests = module_test_counts.values().sum();
     metrics.modules_with_tests = module_test_counts.len();
     metrics.total_modules = 8; // errors, credential, state, recipe, policy, profile, types, agent
 
     // Calculate test coverage based on comprehensive testing
     metrics.test_coverage = calculate_test_coverage(&module_test_counts);
-    
+
     // Estimate mutation score based on test quality
     metrics.mutation_score = estimate_mutation_score(&module_test_counts);
-    
+
     // Complexity score (estimated based on module complexity)
     metrics.complexity_score = estimate_complexity_score();
-    
+
     // Documentation coverage (estimated)
     metrics.documentation_coverage = estimate_documentation_coverage();
-    
+
     // Security coverage (based on security-focused tests)
     metrics.security_coverage = estimate_security_coverage(&module_test_counts);
-    
+
     // Performance coverage (based on performance tests)
     metrics.performance_coverage = estimate_performance_coverage(&module_test_counts);
 
@@ -265,37 +264,35 @@ pub fn analyze_helix_core_quality() -> QualityMetrics {
 
 fn get_module_test_counts() -> HashMap<String, usize> {
     let mut counts = HashMap::new();
-    
+
     // Based on our comprehensive test additions
-    counts.insert("errors".to_string(), 20);      // Enhanced from 0 to 20
-    counts.insert("credential".to_string(), 28);  // Enhanced from 1 to 28
-    counts.insert("state".to_string(), 40);       // Enhanced from 20 to 40
-    counts.insert("recipe".to_string(), 23);      // Enhanced with comprehensive tests
-    counts.insert("policy".to_string(), 20);      // Already comprehensive
-    counts.insert("profile".to_string(), 35);     // Enhanced from 17 to 35
-    counts.insert("types".to_string(), 25);       // Already comprehensive
-    counts.insert("agent".to_string(), 22);       // Enhanced from 2 to 22
-    counts.insert("event".to_string(), 18);       // Enhanced from 2 to 18
+    counts.insert("errors".to_string(), 20); // Enhanced from 0 to 20
+    counts.insert("credential".to_string(), 28); // Enhanced from 1 to 28
+    counts.insert("state".to_string(), 40); // Enhanced from 20 to 40
+    counts.insert("recipe".to_string(), 23); // Enhanced with comprehensive tests
+    counts.insert("policy".to_string(), 20); // Already comprehensive
+    counts.insert("profile".to_string(), 35); // Enhanced from 17 to 35
+    counts.insert("types".to_string(), 25); // Already comprehensive
+    counts.insert("agent".to_string(), 22); // Enhanced from 2 to 22
+    counts.insert("event".to_string(), 18); // Enhanced from 2 to 18
     counts.insert("mutation_testing".to_string(), 27); // Framework tests
-    
+
     counts
 }
 
 fn calculate_test_coverage(module_counts: &HashMap<String, usize>) -> f64 {
     // Estimate coverage based on test density and comprehensiveness
     let total_tests = module_counts.values().sum::<usize>() as f64;
-    let modules_with_good_coverage = module_counts
-        .values()
-        .filter(|&&count| count >= 15)
-        .count() as f64;
+    let modules_with_good_coverage =
+        module_counts.values().filter(|&&count| count >= 15).count() as f64;
     let total_modules = module_counts.len() as f64;
-    
+
     // Base coverage from test density
     let density_coverage = (total_tests / 200.0 * 100.0).min(100.0);
-    
+
     // Bonus for comprehensive module coverage
     let module_coverage_bonus = (modules_with_good_coverage / total_modules) * 20.0;
-    
+
     (density_coverage + module_coverage_bonus).min(100.0)
 }
 
@@ -306,13 +303,13 @@ fn estimate_mutation_score(module_counts: &HashMap<String, usize>) -> f64 {
         .filter(|(_, &count)| count >= 20)
         .count() as f64;
     let total_modules = module_counts.len() as f64;
-    
+
     // Base score from comprehensive testing
     let base_score = (comprehensive_modules / total_modules) * 70.0;
-    
+
     // Bonus for edge case testing and validation
     let edge_case_bonus = 15.0; // Based on our comprehensive edge case tests
-    
+
     (base_score + edge_case_bonus).min(100.0)
 }
 
@@ -334,10 +331,10 @@ fn estimate_security_coverage(module_counts: &HashMap<String, usize>) -> f64 {
         .iter()
         .map(|module| module_counts.get(*module).unwrap_or(&0))
         .sum();
-    
+
     // Base security coverage
     let base_coverage = (security_test_count as f64 / 80.0 * 100.0).min(100.0);
-    
+
     base_coverage
 }
 
@@ -379,7 +376,10 @@ mod tests {
         assert!(metrics.test_coverage > 70.0);
 
         let tes = metrics.calculate_tes();
-        println!("Current TES Score: {:.1}% (Grade: {})", tes.score, tes.grade);
+        println!(
+            "Current TES Score: {:.1}% (Grade: {})",
+            tes.score, tes.grade
+        );
     }
 
     #[test]

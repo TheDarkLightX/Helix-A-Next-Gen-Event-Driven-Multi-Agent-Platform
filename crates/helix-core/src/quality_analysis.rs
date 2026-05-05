@@ -11,19 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Quality Analysis Tool for Helix Platform
-//! 
+//!
 //! This module provides comprehensive quality analysis using mutation testing
 //! to identify weak spots and improve code quality systematically.
 
-use crate::mutation_testing::{
-    practical_analyzer::{PracticalMutationAnalyzer, AnalyzerConfig, QualityReport},
+use crate::mutation_testing::practical_analyzer::{
+    AnalyzerConfig, PracticalMutationAnalyzer, QualityReport,
 };
 use crate::HelixError;
-use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// Comprehensive quality analysis results
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,7 +192,9 @@ impl QualityAnalyzer {
     /// Create a new quality analyzer
     pub fn new(config: QualityAnalysisConfig) -> Result<Self, HelixError> {
         let analyzer_config = AnalyzerConfig {
-            target_dir: config.target_dirs.first()
+            target_dir: config
+                .target_dirs
+                .first()
                 .unwrap_or(&PathBuf::from("."))
                 .clone(),
             test_command: "cargo test".to_string(),
@@ -201,47 +202,48 @@ impl QualityAnalyzer {
             min_assertion_density: 3.0,
             max_test_duration_ms: 5000,
         };
-        
+
         let analyzer = PracticalMutationAnalyzer::new(analyzer_config);
-        
-        Ok(Self {
-            analyzer,
-            config,
-        })
+
+        Ok(Self { analyzer, config })
     }
-    
+
     /// Run comprehensive quality analysis
     pub async fn analyze_quality(&self) -> Result<QualityAnalysisReport, HelixError> {
         let mut module_reports = HashMap::new();
         let mut critical_issues = Vec::new();
-        
+
         // Analyze each target directory
         for target_dir in &self.config.target_dirs {
             let modules = self.discover_modules(target_dir)?;
-            
+
             for module_path in modules {
-                let report = self.analyzer.analyze_module(&module_path).await
+                let report = self
+                    .analyzer
+                    .analyze_module(&module_path)
+                    .await
                     .map_err(|e| HelixError::InternalError(format!("Analysis failed: {}", e)))?;
-                
+
                 // Extract critical issues
                 critical_issues.extend(self.extract_critical_issues(&module_path, &report));
-                
-                let module_name = module_path.file_stem()
+
+                let module_name = module_path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown")
                     .to_string();
-                
+
                 module_reports.insert(module_name, report);
             }
         }
-        
+
         // Calculate overall metrics
         let quality_metrics = self.calculate_overall_metrics(&module_reports);
         let overall_score = self.calculate_overall_score(&quality_metrics);
-        
+
         // Generate improvement plan
         let improvement_plan = self.generate_improvement_plan(&module_reports, &critical_issues);
-        
+
         Ok(QualityAnalysisReport {
             overall_score,
             module_reports,
@@ -250,22 +252,22 @@ impl QualityAnalyzer {
             quality_metrics,
         })
     }
-    
+
     /// Discover Rust modules in a directory
     fn discover_modules(&self, dir: &Path) -> Result<Vec<PathBuf>, HelixError> {
         let mut modules = Vec::new();
-        
+
         if !dir.exists() {
             return Ok(modules);
         }
-        
+
         for entry in std::fs::read_dir(dir)
-            .map_err(|e| HelixError::InternalError(format!("Failed to read directory: {}", e)))? 
+            .map_err(|e| HelixError::InternalError(format!("Failed to read directory: {}", e)))?
         {
             let entry = entry
                 .map_err(|e| HelixError::InternalError(format!("Failed to read entry: {}", e)))?;
             let path = entry.path();
-            
+
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("rs") {
                 // Skip test files and generated files
                 if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
@@ -277,10 +279,10 @@ impl QualityAnalyzer {
                 modules.extend(self.discover_modules(&path)?);
             }
         }
-        
+
         Ok(modules)
     }
-    
+
     /// Check if directory should be excluded
     fn should_exclude_dir(&self, path: &Path) -> bool {
         if let Some(dir_name) = path.file_name().and_then(|s| s.to_str()) {
@@ -291,14 +293,22 @@ impl QualityAnalyzer {
     }
 
     /// Extract critical issues from a quality report
-    fn extract_critical_issues(&self, module_path: &Path, report: &QualityReport) -> Vec<CriticalIssue> {
+    fn extract_critical_issues(
+        &self,
+        module_path: &Path,
+        report: &QualityReport,
+    ) -> Vec<CriticalIssue> {
         let mut issues = Vec::new();
 
         // Check for critical weak spots
         for weak_spot in &report.weak_spots {
-            if matches!(weak_spot.severity, crate::mutation_testing::practical_analyzer::Severity::Critical) {
+            if matches!(
+                weak_spot.severity,
+                crate::mutation_testing::practical_analyzer::Severity::Critical
+            ) {
                 issues.push(CriticalIssue {
-                    module: module_path.file_stem()
+                    module: module_path
+                        .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown")
                         .to_string(),
@@ -320,7 +330,8 @@ impl QualityAnalyzer {
         let tes_score = report.tes_score.calculate();
         if tes_score < 0.5 {
             issues.push(CriticalIssue {
-                module: module_path.file_stem()
+                module: module_path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown")
                     .to_string(),
@@ -340,19 +351,24 @@ impl QualityAnalyzer {
         // Check for high complexity
         if report.metrics.cyclomatic_complexity > self.config.max_complexity {
             issues.push(CriticalIssue {
-                module: module_path.file_stem()
+                module: module_path
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("unknown")
                     .to_string(),
                 severity: IssueSeverity::Medium,
-                description: format!("High cyclomatic complexity: {:.1}", report.metrics.cyclomatic_complexity),
+                description: format!(
+                    "High cyclomatic complexity: {:.1}",
+                    report.metrics.cyclomatic_complexity
+                ),
                 location: CodeLocation {
                     file: module_path.to_path_buf(),
                     line: 1,
                     column: None,
                     function: None,
                 },
-                recommended_fix: "Refactor complex functions into smaller, focused methods".to_string(),
+                recommended_fix: "Refactor complex functions into smaller, focused methods"
+                    .to_string(),
                 effort_estimate: 6,
             });
         }
@@ -361,7 +377,10 @@ impl QualityAnalyzer {
     }
 
     /// Calculate overall quality metrics
-    fn calculate_overall_metrics(&self, reports: &HashMap<String, QualityReport>) -> QualityMetrics {
+    fn calculate_overall_metrics(
+        &self,
+        reports: &HashMap<String, QualityReport>,
+    ) -> QualityMetrics {
         if reports.is_empty() {
             return QualityMetrics {
                 tes_score: 0.0,
@@ -376,36 +395,54 @@ impl QualityAnalyzer {
 
         let count = reports.len() as f64;
 
-        let tes_score = reports.values()
+        let tes_score = reports
+            .values()
             .map(|r| r.tes_score.calculate())
-            .sum::<f64>() / count;
+            .sum::<f64>()
+            / count;
 
-        let mutation_score = reports.values()
+        let mutation_score = reports
+            .values()
             .map(|r| r.tes_score.mutation_score)
-            .sum::<f64>() / count;
+            .sum::<f64>()
+            / count;
 
-        let avg_complexity = reports.values()
+        let avg_complexity = reports
+            .values()
             .map(|r| r.metrics.cyclomatic_complexity)
-            .sum::<f64>() / count;
+            .sum::<f64>()
+            / count;
 
-        let duplication_ratio = reports.values()
+        let duplication_ratio = reports
+            .values()
             .map(|r| r.metrics.duplication_ratio)
-            .sum::<f64>() / count;
+            .sum::<f64>()
+            / count;
 
-        let security_issues = reports.values()
+        let security_issues = reports
+            .values()
             .flat_map(|r| &r.weak_spots)
-            .filter(|w| matches!(w.severity, crate::mutation_testing::practical_analyzer::Severity::Critical))
+            .filter(|w| {
+                matches!(
+                    w.severity,
+                    crate::mutation_testing::practical_analyzer::Severity::Critical
+                )
+            })
             .count() as u32;
 
         // Estimate code coverage from assertion density
-        let code_coverage = reports.values()
+        let code_coverage = reports
+            .values()
             .map(|r| (r.metrics.assertion_density / 5.0).min(1.0))
-            .sum::<f64>() / count;
+            .sum::<f64>()
+            / count;
 
         // Calculate performance score based on speed factor
-        let performance_score = reports.values()
+        let performance_score = reports
+            .values()
             .map(|r| r.tes_score.speed_factor)
-            .sum::<f64>() / count;
+            .sum::<f64>()
+            / count;
 
         QualityMetrics {
             tes_score,
@@ -422,25 +459,30 @@ impl QualityAnalyzer {
     fn calculate_overall_score(&self, metrics: &QualityMetrics) -> f64 {
         // Weighted average of different quality factors
         let weights = [
-            (metrics.tes_score, 0.25),           // Test effectiveness
-            (metrics.mutation_score, 0.20),      // Mutation testing
-            (metrics.code_coverage, 0.15),       // Code coverage
+            (metrics.tes_score, 0.25),      // Test effectiveness
+            (metrics.mutation_score, 0.20), // Mutation testing
+            (metrics.code_coverage, 0.15),  // Code coverage
             (1.0 - (metrics.avg_complexity / 20.0).min(1.0), 0.15), // Complexity (inverted)
             (1.0 - metrics.duplication_ratio, 0.10), // Duplication (inverted)
-            (if metrics.security_issues == 0 { 1.0 } else { 0.5 }, 0.10), // Security
-            (metrics.performance_score, 0.05),   // Performance
+            (
+                if metrics.security_issues == 0 {
+                    1.0
+                } else {
+                    0.5
+                },
+                0.10,
+            ), // Security
+            (metrics.performance_score, 0.05), // Performance
         ];
 
-        weights.iter()
-            .map(|(score, weight)| score * weight)
-            .sum()
+        weights.iter().map(|(score, weight)| score * weight).sum()
     }
 
     /// Generate prioritized improvement plan
     fn generate_improvement_plan(
         &self,
         reports: &HashMap<String, QualityReport>,
-        critical_issues: &[CriticalIssue]
+        critical_issues: &[CriticalIssue],
     ) -> Vec<ImprovementAction> {
         let mut actions = Vec::new();
 
@@ -498,7 +540,11 @@ impl QualityAnalyzer {
         }
 
         // Sort by ROI (highest first)
-        actions.sort_by(|a, b| b.roi.partial_cmp(&a.roi).unwrap_or(std::cmp::Ordering::Equal));
+        actions.sort_by(|a, b| {
+            b.roi
+                .partial_cmp(&a.roi)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         actions
     }
@@ -507,7 +553,9 @@ impl QualityAnalyzer {
     fn categorize_issue(&self, issue: &CriticalIssue) -> ImprovementCategory {
         if issue.description.contains("weak spot") {
             ImprovementCategory::TestCoverage
-        } else if issue.description.contains("TES") || issue.description.contains("Test Effectiveness") {
+        } else if issue.description.contains("TES")
+            || issue.description.contains("Test Effectiveness")
+        {
             ImprovementCategory::TestQuality
         } else if issue.description.contains("complexity") {
             ImprovementCategory::Complexity

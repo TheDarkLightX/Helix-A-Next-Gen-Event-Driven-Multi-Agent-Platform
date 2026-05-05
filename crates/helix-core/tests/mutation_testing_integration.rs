@@ -11,20 +11,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Integration tests for the mutation testing framework
 
 #![cfg(feature = "mutation-testing")]
 
 use helix_core::mutation_testing::{
-    MutationConfig, 
     evolution::EvolutionaryMutationTester,
     mutator::Mutator,
     operators::{ArithmeticOperatorMutator, BooleanLiteralMutator, MutationOperator},
+    MutationConfig,
 };
+use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
-use std::fs;
 
 /// Sample code to test mutations on
 const SAMPLE_CODE: &str = r#"
@@ -75,16 +74,19 @@ mod tests {
 fn test_arithmetic_mutations() {
     let mutator = ArithmeticOperatorMutator;
     let path = PathBuf::from("test.rs");
-    
+
     let mutations = mutator.mutate(SAMPLE_CODE, &path).unwrap();
-    
+
     // Should find + and - operators
     assert!(mutations.iter().any(|m| m.original == "+"));
     assert!(mutations.iter().any(|m| m.original == "-"));
-    
+
     // Check mutation types
     for mutation in &mutations {
-        assert_eq!(mutation.mutation_type, helix_core::mutation_testing::MutationType::ArithmeticOperator);
+        assert_eq!(
+            mutation.mutation_type,
+            helix_core::mutation_testing::MutationType::ArithmeticOperator
+        );
     }
 }
 
@@ -92,9 +94,9 @@ fn test_arithmetic_mutations() {
 fn test_boolean_mutations() {
     let mutator = BooleanLiteralMutator;
     let path = PathBuf::from("test.rs");
-    
+
     let mutations = mutator.mutate(SAMPLE_CODE, &path).unwrap();
-    
+
     // Should find true and false literals
     assert!(mutations.iter().any(|m| m.original == "true"));
     assert!(mutations.iter().any(|m| m.original == "false"));
@@ -104,10 +106,10 @@ fn test_boolean_mutations() {
 fn test_mutator_apply() {
     let mutator = Mutator::new();
     let simple_code = "let x = 5 + 3;";
-    
+
     let mutations = mutator.generate_mutations(simple_code).unwrap();
     assert!(!mutations.is_empty());
-    
+
     // Apply first mutation
     if let Some(mutation) = mutations.first() {
         let mutated = mutator.apply_mutation(simple_code, mutation).unwrap();
@@ -119,10 +121,10 @@ fn test_mutator_apply() {
 async fn test_evolutionary_mutation_basic() {
     let temp_dir = TempDir::new().unwrap();
     let test_file = temp_dir.path().join("sample.rs");
-    
+
     // Write sample code to file
     fs::write(&test_file, SAMPLE_CODE).unwrap();
-    
+
     // Configure mutation testing
     let config = MutationConfig {
         target_files: vec![test_file.clone()],
@@ -132,9 +134,9 @@ async fn test_evolutionary_mutation_basic() {
         crossover_rate: 0.6,
         test_timeout: 10,
     };
-    
+
     let mut tester = EvolutionaryMutationTester::new(config, temp_dir.path().to_path_buf());
-    
+
     // Note: This would fail in real execution without proper test setup
     // This is just to verify the structure compiles correctly
     match tester.run().await {
@@ -158,13 +160,13 @@ fn test_mutation_config_serialization() {
         crossover_rate: 0.75,
         test_timeout: 20,
     };
-    
+
     // Serialize to JSON
     let json = serde_json::to_string_pretty(&config).unwrap();
-    
+
     // Deserialize back
     let deserialized: MutationConfig = serde_json::from_str(&json).unwrap();
-    
+
     assert_eq!(config.max_generations, deserialized.max_generations);
     assert_eq!(config.population_size, deserialized.population_size);
     assert!((config.mutation_rate - deserialized.mutation_rate).abs() < f64::EPSILON);
@@ -172,12 +174,12 @@ fn test_mutation_config_serialization() {
 
 #[test]
 fn test_mutation_result_fitness() {
-    use helix_core::mutation_testing::{MutationResult, TestResult, Mutation, MutationType};
     use helix_core::mutation_testing::evaluator::DefaultFitnessEvaluator;
     use helix_core::mutation_testing::FitnessEvaluator;
-    
+    use helix_core::mutation_testing::{Mutation, MutationResult, MutationType, TestResult};
+
     let evaluator = DefaultFitnessEvaluator;
-    
+
     // Create a killed mutation result
     let result = MutationResult {
         mutation: Mutation {
@@ -190,20 +192,18 @@ fn test_mutation_result_fitness() {
             mutated: "-".to_string(),
         },
         killed: true,
-        test_results: vec![
-            TestResult {
-                name: "test_calculate".to_string(),
-                passed: false,
-                error: Some("assertion failed".to_string()),
-                duration: 50,
-            }
-        ],
+        test_results: vec![TestResult {
+            name: "test_calculate".to_string(),
+            passed: false,
+            error: Some("assertion failed".to_string()),
+            duration: 50,
+        }],
         fitness: 0.0,
         execution_time: 100,
     };
-    
+
     let fitness = evaluator.calculate_fitness(&result);
-    
+
     // Killed mutations should have high fitness
     assert!(fitness > 0.5);
     assert!(fitness <= 1.0);

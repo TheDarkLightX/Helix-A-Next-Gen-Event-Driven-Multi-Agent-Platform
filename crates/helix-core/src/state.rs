@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // crates/helix-core/src/state.rs
 
 //! Defines structures related to agent state persistence.
@@ -314,11 +313,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_update_data() {
-        let mut state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"counter": 1}),
-        );
+        let mut state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"counter": 1}));
 
         let original_updated = state.updated_at;
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -332,11 +327,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_age_and_older_than() {
-        let mut state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({}),
-        );
+        let mut state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({}));
 
         // Manually set updated_at to 10 seconds ago
         state.updated_at = Utc::now() - chrono::Duration::seconds(10);
@@ -348,11 +339,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_size_bytes() {
-        let state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"key": "value"}),
-        );
+        let state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"key": "value"}));
 
         assert!(state.size_bytes() > 0);
         assert!(state.size_bytes() < 100); // Should be small for this simple object
@@ -360,16 +347,15 @@ mod tests {
 
     #[test]
     fn test_stored_state_is_empty() {
-        let empty_states = vec![
-            json!(null),
-            json!({}),
-            json!([]),
-            json!(""),
-        ];
+        let empty_states = vec![json!(null), json!({}), json!([]), json!("")];
 
         for data in empty_states {
             let state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), data);
-            assert!(state.is_empty(), "Expected empty state for data: {:?}", state.data);
+            assert!(
+                state.is_empty(),
+                "Expected empty state for data: {:?}",
+                state.data
+            );
         }
 
         let non_empty_states = vec![
@@ -382,24 +368,20 @@ mod tests {
 
         for data in non_empty_states {
             let state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), data);
-            assert!(!state.is_empty(), "Expected non-empty state for data: {:?}", state.data);
+            assert!(
+                !state.is_empty(),
+                "Expected non-empty state for data: {:?}",
+                state.data
+            );
         }
     }
 
     #[test]
     fn test_stored_state_validate() {
-        let valid_state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"valid": true}),
-        );
+        let valid_state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"valid": true}));
         assert!(valid_state.validate().is_ok());
 
-        let null_state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!(null),
-        );
+        let null_state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!(null));
         let result = null_state.validate();
         assert!(result.is_err());
         if let Err(HelixError::ValidationError { context, message }) = result {
@@ -407,12 +389,10 @@ mod tests {
             assert!(message.contains("cannot be null"));
         }
 
-        let mut invalid_timestamp_state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({}),
-        );
-        invalid_timestamp_state.updated_at = invalid_timestamp_state.created_at - chrono::Duration::seconds(1);
+        let mut invalid_timestamp_state =
+            StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({}));
+        invalid_timestamp_state.updated_at =
+            invalid_timestamp_state.created_at - chrono::Duration::seconds(1);
 
         let result = invalid_timestamp_state.validate();
         assert!(result.is_err());
@@ -424,11 +404,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_merge_data() {
-        let mut state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"a": 1, "b": 2}),
-        );
+        let mut state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"a": 1, "b": 2}));
 
         let merge_data = json!({"b": 3, "c": 4});
         let result = state.merge_data(merge_data);
@@ -438,11 +414,7 @@ mod tests {
         assert_eq!(state.data, expected);
 
         // Test merging non-object data should fail
-        let mut string_state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!("string"),
-        );
+        let mut string_state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!("string"));
 
         let result = string_state.merge_data(json!({"key": "value"}));
         assert!(result.is_err());
@@ -454,14 +426,11 @@ mod tests {
 
     #[test]
     fn test_stored_state_serialization() {
-        let state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"test": "data"}),
-        );
+        let state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"test": "data"}));
 
         let serialized = serde_json::to_string(&state).expect("Failed to serialize");
-        let deserialized: StoredState = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: StoredState =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
 
         assert_eq!(state.profile_id, deserialized.profile_id);
         assert_eq!(state.agent_id, deserialized.agent_id);
@@ -529,7 +498,10 @@ mod tests {
         assert!(!deleted);
 
         // Set state and then delete
-        store.set_state(&profile_id, &agent_id, state_data).await.unwrap();
+        store
+            .set_state(&profile_id, &agent_id, state_data)
+            .await
+            .unwrap();
         let deleted = store.delete_state(&profile_id, &agent_id).await.unwrap();
         assert!(deleted);
 
@@ -556,9 +528,18 @@ mod tests {
         assert!(agents.is_empty());
 
         // Add states for different profiles
-        store.set_state(&profile1, &agent1, json!({"p1a1": true})).await.unwrap();
-        store.set_state(&profile1, &agent2, json!({"p1a2": true})).await.unwrap();
-        store.set_state(&profile2, &agent3, json!({"p2a3": true})).await.unwrap();
+        store
+            .set_state(&profile1, &agent1, json!({"p1a1": true}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile1, &agent2, json!({"p1a2": true}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile2, &agent3, json!({"p2a3": true}))
+            .await
+            .unwrap();
 
         // Check profile1 agents
         let mut agents1 = store.list_agent_ids(&profile1).await.unwrap();
@@ -585,12 +566,21 @@ mod tests {
         let state_data = json!({"metadata": "test"});
 
         // Test get non-existent stored state
-        let stored_state = store.get_stored_state(&profile_id, &agent_id).await.unwrap();
+        let stored_state = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap();
         assert!(stored_state.is_none());
 
         // Set state and get stored state
-        store.set_state(&profile_id, &agent_id, state_data.clone()).await.unwrap();
-        let stored_state = store.get_stored_state(&profile_id, &agent_id).await.unwrap();
+        store
+            .set_state(&profile_id, &agent_id, state_data.clone())
+            .await
+            .unwrap();
+        let stored_state = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap();
 
         assert!(stored_state.is_some());
         let state = stored_state.unwrap();
@@ -608,14 +598,20 @@ mod tests {
 
         // Test merge into non-existent state (should create new)
         let initial_data = json!({"a": 1, "b": 2});
-        store.merge_state(&profile_id, &agent_id, initial_data.clone()).await.unwrap();
+        store
+            .merge_state(&profile_id, &agent_id, initial_data.clone())
+            .await
+            .unwrap();
 
         let state = store.get_state(&profile_id, &agent_id).await.unwrap();
         assert_eq!(state, Some(initial_data));
 
         // Test merge into existing state
         let merge_data = json!({"b": 3, "c": 4});
-        store.merge_state(&profile_id, &agent_id, merge_data).await.unwrap();
+        store
+            .merge_state(&profile_id, &agent_id, merge_data)
+            .await
+            .unwrap();
 
         let merged_state = store.get_state(&profile_id, &agent_id).await.unwrap();
         let expected = json!({"a": 1, "b": 3, "c": 4});
@@ -636,9 +632,18 @@ mod tests {
         assert_eq!(cleared, 0);
 
         // Add states for multiple profiles
-        store.set_state(&profile1, &agent1, json!({"p1a1": true})).await.unwrap();
-        store.set_state(&profile1, &agent2, json!({"p1a2": true})).await.unwrap();
-        store.set_state(&profile2, &agent3, json!({"p2a3": true})).await.unwrap();
+        store
+            .set_state(&profile1, &agent1, json!({"p1a1": true}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile1, &agent2, json!({"p1a2": true}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile2, &agent3, json!({"p2a3": true}))
+            .await
+            .unwrap();
 
         // Clear profile1
         let cleared = store.clear_profile_state(&profile1).await.unwrap();
@@ -668,8 +673,14 @@ mod tests {
         let data2 = json!({"profile": 2});
 
         // Set same agent ID in different profiles
-        store.set_state(&profile1, &agent_id, data1.clone()).await.unwrap();
-        store.set_state(&profile2, &agent_id, data2.clone()).await.unwrap();
+        store
+            .set_state(&profile1, &agent_id, data1.clone())
+            .await
+            .unwrap();
+        store
+            .set_state(&profile2, &agent_id, data2.clone())
+            .await
+            .unwrap();
 
         // Verify isolation
         let state1 = store.get_state(&profile1, &agent_id).await.unwrap();
@@ -689,7 +700,10 @@ mod tests {
         let large_array: Vec<i32> = (0..1000).collect();
         let large_data = json!({"large_array": large_array, "metadata": "test"});
 
-        store.set_state(&profile_id, &agent_id, large_data.clone()).await.unwrap();
+        store
+            .set_state(&profile_id, &agent_id, large_data.clone())
+            .await
+            .unwrap();
         let retrieved = store.get_state(&profile_id, &agent_id).await.unwrap();
 
         assert_eq!(retrieved, Some(large_data));
@@ -708,7 +722,10 @@ mod tests {
             "mixed": "Hello 世界 🌍"
         });
 
-        store.set_state(&profile_id, &agent_id, unicode_data.clone()).await.unwrap();
+        store
+            .set_state(&profile_id, &agent_id, unicode_data.clone())
+            .await
+            .unwrap();
         let retrieved = store.get_state(&profile_id, &agent_id).await.unwrap();
 
         assert_eq!(retrieved, Some(unicode_data));
@@ -732,7 +749,10 @@ mod tests {
             "number": std::f64::consts::PI
         });
 
-        store.set_state(&profile_id, &agent_id, complex_data.clone()).await.unwrap();
+        store
+            .set_state(&profile_id, &agent_id, complex_data.clone())
+            .await
+            .unwrap();
         let retrieved = store.get_state(&profile_id, &agent_id).await.unwrap();
 
         assert_eq!(retrieved, Some(complex_data));
@@ -740,11 +760,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_debug_format() {
-        let state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"debug": "test"}),
-        );
+        let state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"debug": "test"}));
 
         let debug_str = format!("{:?}", state);
         assert!(debug_str.contains("StoredState"));
@@ -754,11 +770,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_clone() {
-        let original = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"clone": "test"}),
-        );
+        let original = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"clone": "test"}));
 
         let cloned = original.clone();
         assert_eq!(original.profile_id, cloned.profile_id);
@@ -826,7 +838,7 @@ mod tests {
         // Set timestamp to 10 seconds ago
         state.updated_at = Utc::now() - chrono::Duration::seconds(10);
 
-        assert!(state.is_older_than(5));  // Should be older than 5 seconds
+        assert!(state.is_older_than(5)); // Should be older than 5 seconds
         assert!(!state.is_older_than(15)); // Should not be older than 15 seconds
     }
 
@@ -934,7 +946,10 @@ mod tests {
             let agent_id = Uuid::new_v4();
             let handle = task::spawn(async move {
                 let data = json!({"task": i, "data": "test"});
-                store_clone.set_state(&profile_id, &agent_id, data.clone()).await.unwrap();
+                store_clone
+                    .set_state(&profile_id, &agent_id, data.clone())
+                    .await
+                    .unwrap();
 
                 let retrieved = store_clone.get_state(&profile_id, &agent_id).await.unwrap();
                 assert_eq!(retrieved, Some(data));
@@ -960,7 +975,10 @@ mod tests {
 
         // Test with invalid JSON that can't be merged
         let initial_data = json!("not_an_object");
-        store.set_state(&profile_id, &agent_id, initial_data).await.unwrap();
+        store
+            .set_state(&profile_id, &agent_id, initial_data)
+            .await
+            .unwrap();
 
         let merge_data = json!({"key": "value"});
         let result = store.merge_state(&profile_id, &agent_id, merge_data).await;
@@ -971,11 +989,7 @@ mod tests {
 
     #[test]
     fn test_stored_state_memory_efficiency() {
-        let state = StoredState::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            json!({"test": "data"}),
-        );
+        let state = StoredState::new(Uuid::new_v4(), Uuid::new_v4(), json!({"test": "data"}));
 
         let size = std::mem::size_of_val(&state);
         // StoredState should be reasonably sized

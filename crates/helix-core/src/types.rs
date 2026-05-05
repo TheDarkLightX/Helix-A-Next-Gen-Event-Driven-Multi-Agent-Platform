@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Common type definitions used throughout Helix.
 
 use serde::{Deserialize, Serialize};
@@ -212,7 +211,8 @@ mod tests {
         let kind = EventKind::new("serialize.test");
 
         let serialized = serde_json::to_string(&kind).expect("Failed to serialize");
-        let deserialized: EventKind = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: EventKind =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
 
         assert_eq!(kind, deserialized);
     }
@@ -230,7 +230,8 @@ mod tests {
         let uuid = Uuid::new_v4();
         let id = ResourceId::new(uuid);
         let serialized = serde_json::to_string(&id).expect("Failed to serialize");
-        let deserialized: ResourceId = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: ResourceId =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
         assert_eq!(id, deserialized);
     }
 

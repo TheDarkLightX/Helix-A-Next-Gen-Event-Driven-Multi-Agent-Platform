@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Defines common error types for the Helix Core library.
 
 use crate::event::Event;
@@ -240,7 +239,10 @@ mod tests {
     fn test_config_error_creation() {
         let error = HelixError::config_error("Invalid configuration");
         assert!(matches!(error, HelixError::ConfigError(_)));
-        assert_eq!(error.to_string(), "Configuration Error: Invalid configuration");
+        assert_eq!(
+            error.to_string(),
+            "Configuration Error: Invalid configuration"
+        );
         assert_eq!(error.category(), "configuration");
         assert_eq!(error.severity(), ErrorSeverity::Critical);
         assert!(!error.is_recoverable());
@@ -250,7 +252,10 @@ mod tests {
     fn test_emit_error_creation() {
         let error = HelixError::emit_error("Failed to emit event");
         assert!(matches!(error, HelixError::EmitError(_)));
-        assert_eq!(error.to_string(), "Event Emission Failed: Failed to emit event");
+        assert_eq!(
+            error.to_string(),
+            "Event Emission Failed: Failed to emit event"
+        );
         assert_eq!(error.category(), "event");
         assert_eq!(error.severity(), ErrorSeverity::Low);
         assert!(error.is_recoverable());
@@ -260,7 +265,10 @@ mod tests {
     fn test_agent_error_creation() {
         let error = HelixError::agent_error("Agent execution failed");
         assert!(matches!(error, HelixError::AgentError(_)));
-        assert_eq!(error.to_string(), "Agent Execution Failed: Agent execution failed");
+        assert_eq!(
+            error.to_string(),
+            "Agent Execution Failed: Agent execution failed"
+        );
         assert_eq!(error.category(), "agent");
         assert_eq!(error.severity(), ErrorSeverity::Medium);
         assert!(error.is_recoverable());
@@ -290,7 +298,10 @@ mod tests {
     fn test_validation_error_creation() {
         let error = HelixError::validation_error("email", "Invalid email format");
         assert!(matches!(error, HelixError::ValidationError { .. }));
-        assert_eq!(error.to_string(), "Validation Error (email): Invalid email format");
+        assert_eq!(
+            error.to_string(),
+            "Validation Error (email): Invalid email format"
+        );
         assert_eq!(error.category(), "validation");
         assert_eq!(error.severity(), ErrorSeverity::Medium);
         assert!(!error.is_recoverable());
@@ -300,7 +311,10 @@ mod tests {
     fn test_external_service_error_creation() {
         let error = HelixError::external_service_error("payment_api", "Connection timeout");
         assert!(matches!(error, HelixError::ExternalServiceError { .. }));
-        assert_eq!(error.to_string(), "External Service Error (payment_api): Connection timeout");
+        assert_eq!(
+            error.to_string(),
+            "External Service Error (payment_api): Connection timeout"
+        );
         assert_eq!(error.category(), "external");
         assert_eq!(error.severity(), ErrorSeverity::Medium);
         assert!(error.is_recoverable());
@@ -310,7 +324,10 @@ mod tests {
     fn test_wasm_error_creation() {
         let error = HelixError::wasm_error("Module compilation failed");
         assert!(matches!(error, HelixError::WasmError(_)));
-        assert_eq!(error.to_string(), "WASM Runtime Error: Module compilation failed");
+        assert_eq!(
+            error.to_string(),
+            "WASM Runtime Error: Module compilation failed"
+        );
         assert_eq!(error.category(), "wasm");
         assert_eq!(error.severity(), ErrorSeverity::High);
         assert!(error.is_recoverable());
@@ -413,8 +430,17 @@ mod tests {
         ];
 
         let expected_categories = [
-            "configuration", "event", "agent", "policy", "resource",
-            "validation", "external", "wasm", "internal", "encryption", "channel"
+            "configuration",
+            "event",
+            "agent",
+            "policy",
+            "resource",
+            "validation",
+            "external",
+            "wasm",
+            "internal",
+            "encryption",
+            "channel",
         ];
 
         for (error, expected_category) in errors.iter().zip(expected_categories.iter()) {
@@ -434,7 +460,11 @@ mod tests {
         ];
 
         for error in recoverable_errors {
-            assert!(error.is_recoverable(), "Error should be recoverable: {:?}", error);
+            assert!(
+                error.is_recoverable(),
+                "Error should be recoverable: {:?}",
+                error
+            );
         }
     }
 
@@ -450,7 +480,11 @@ mod tests {
         ];
 
         for error in non_recoverable_errors {
-            assert!(!error.is_recoverable(), "Error should not be recoverable: {:?}", error);
+            assert!(
+                !error.is_recoverable(),
+                "Error should not be recoverable: {:?}",
+                error
+            );
         }
     }
 

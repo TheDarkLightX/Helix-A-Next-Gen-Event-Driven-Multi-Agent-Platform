@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #![warn(missing_docs)]
 
 //! Defines the core Policy structures, evaluation context, and related traits for Helix.
@@ -101,7 +100,8 @@ pub trait PolicyEvaluator {
     /// * `Ok(true)` if permission is granted.
     /// * `Ok(false)` if permission is denied.
     /// * `Err(HelixError)` if an error occurs during evaluation (e.g., policy store unavailable).
-    async fn check_permission(&self, context: &PolicyEvaluationContext) -> Result<bool, HelixError>;
+    async fn check_permission(&self, context: &PolicyEvaluationContext)
+        -> Result<bool, HelixError>;
 }
 
 /// Trait for managing the storage and retrieval of policies.
@@ -213,7 +213,8 @@ mod tests {
         };
 
         let serialized = serde_json::to_string_pretty(&policy).expect("Failed to serialize Policy");
-        let deserialized: Policy = serde_json::from_str(&serialized).expect("Failed to deserialize Policy");
+        let deserialized: Policy =
+            serde_json::from_str(&serialized).expect("Failed to deserialize Policy");
 
         assert_eq!(policy, deserialized);
     }
@@ -239,14 +240,15 @@ mod tests {
         };
 
         let serialized = serde_json::to_string_pretty(&policy).expect("Failed to serialize Policy");
-        let deserialized: Policy = serde_json::from_str(&serialized).expect("Failed to deserialize Policy");
+        let deserialized: Policy =
+            serde_json::from_str(&serialized).expect("Failed to deserialize Policy");
 
         assert_eq!(policy.policy_id, deserialized.policy_id);
         assert_eq!(policy.effect, deserialized.effect);
         assert_eq!(policy.actions, deserialized.actions);
         assert_eq!(policy.resources, deserialized.resources);
         assert_eq!(policy.principals, deserialized.principals);
-        
+
         // Compare Option<Value> by converting to string for robust comparison
         assert_eq!(
             policy.conditions.map(|v| v.to_string()),
@@ -287,7 +289,8 @@ mod tests {
             attributes: Some(json!({"request_id": "12345", "location": "US"})),
         };
 
-        let serialized = serde_json::to_string_pretty(&context).expect("Failed to serialize PolicyEvaluationContext");
+        let serialized = serde_json::to_string_pretty(&context)
+            .expect("Failed to serialize PolicyEvaluationContext");
         let deserialized: PolicyEvaluationContext = serde_json::from_str(&serialized)
             .expect("Failed to deserialize PolicyEvaluationContext");
 
@@ -303,12 +306,13 @@ mod tests {
             attributes: None,
         };
 
-        let serialized = serde_json::to_string_pretty(&context).expect("Failed to serialize PolicyEvaluationContext");
+        let serialized = serde_json::to_string_pretty(&context)
+            .expect("Failed to serialize PolicyEvaluationContext");
         let deserialized: PolicyEvaluationContext = serde_json::from_str(&serialized)
             .expect("Failed to deserialize PolicyEvaluationContext");
 
         assert_eq!(context, deserialized);
-        
+
         // Check that attributes field is absent in JSON when None
         let reserialized_json: Value = serde_json::from_str(&serialized).unwrap();
         assert!(reserialized_json.get("attributes").is_none());

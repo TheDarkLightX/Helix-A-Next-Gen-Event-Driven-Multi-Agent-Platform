@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Error types for WASM operations
 
 use thiserror::Error;
@@ -94,7 +93,7 @@ pub enum WasmError {
     /// Plugin is not instantiated
     #[error("Plugin not instantiated: {0}")]
     PluginNotInstantiated(String),
-    
+
     /// Trap during WASM execution
     #[error("WASM Trap: {0}")]
     Trap(#[from] wasmtime::Trap),

@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #![warn(missing_docs)]
 
 //! WASM runtime and plugin system for Helix.
@@ -23,16 +22,16 @@
 //! - Resource management and limits
 //! - Plugin lifecycle management
 
-pub mod runtime;
-pub mod plugins;
-pub mod host_functions;
-pub mod sandbox;
 pub mod errors;
+pub mod host_functions;
+pub mod plugins;
+pub mod runtime;
+pub mod sandbox;
 pub mod utils; // Declare the utils module
 
 pub use errors::WasmError;
-pub use runtime::{WasmRuntime, WasmModule, ExecutionResult};
-pub use plugins::{Plugin, PluginManager, PluginConfig};
+pub use plugins::{Plugin, PluginConfig, PluginManager};
+pub use runtime::{ExecutionResult, WasmModule, WasmRuntime};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -112,11 +111,12 @@ pub trait WasmAgent: helix_core::agent::Agent {
 impl Default for WasmRuntimeConfig {
     fn default() -> Self {
         Self {
-            max_memory: 64 * 1024 * 1024, // 64MB
-            max_execution_time_ms: 5000,   // 5 seconds
+            max_memory: 64 * 1024 * 1024,    // 64MB
+            max_execution_time_ms: 5000,     // 5 seconds
             max_instructions: 1_000_000_000, // 1 Billion instructions (fuel)
             enable_wasi: true,
-            allowed_host_functions: vec![ // Examples, actual enforcement is via linker
+            allowed_host_functions: vec![
+                // Examples, actual enforcement is via linker
                 "helix_log_message".to_string(),
                 "helix_emit_event".to_string(),
                 "helix_get_config_value".to_string(),

@@ -60,7 +60,7 @@ export function OnchainPage() {
 
   return (
     <section className="dashboard-grid">
-      <article className="panel panel-hero">
+      <article className="panel panel-hero panel-span-12">
         <p className="mono-label">Onchain Shell</p>
         <h2>EVM Raw Transaction Submit + Receipt Polling</h2>
         <p>
@@ -69,7 +69,7 @@ export function OnchainPage() {
         </p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-6">
         <p className="mono-label">Broadcast Transaction</p>
         <form className="form-grid" onSubmit={onSubmit}>
           <label className="field field-full">
@@ -128,7 +128,7 @@ export function OnchainPage() {
         <p className="status-line">{status}</p>
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-3">
         <p className="mono-label">Result</p>
         {result ? (
           <div className="command-stack">
@@ -149,7 +149,7 @@ export function OnchainPage() {
         )}
       </article>
 
-      <article className="panel">
+      <article className="panel panel-span-3">
         <p className="mono-label">Manual Receipt Lookup</p>
         <form onSubmit={onLookupReceipt} className="form-grid">
           <label className="field field-full">

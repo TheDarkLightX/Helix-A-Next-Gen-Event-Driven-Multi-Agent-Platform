@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // crates/helix-core/src/state/in_memory_store.rs
 
 use crate::errors::HelixError;
@@ -68,8 +67,12 @@ impl StateStore for InMemoryStateStore {
 
         match store.get(&key) {
             Some(bytes) => {
-                let stored_state: StoredState = serde_json::from_slice(bytes)
-                    .map_err(|e| HelixError::validation_error("state.deserialization", &format!("Deserialization failed for get_state: {}", e)))?;
+                let stored_state: StoredState = serde_json::from_slice(bytes).map_err(|e| {
+                    HelixError::validation_error(
+                        "state.deserialization",
+                        &format!("Deserialization failed for get_state: {}", e),
+                    )
+                })?;
                 Ok(Some(stored_state.data))
             }
             None => Ok(None),
@@ -87,13 +90,15 @@ impl StateStore for InMemoryStateStore {
             HelixError::InternalError(format!("Failed to acquire lock for set_state: {}", e))
         })?;
 
-        let current_stored_state_opt: Option<StoredState> =
-            store.get(&key).and_then(|bytes| serde_json::from_slice(bytes).ok());
+        let current_stored_state_opt: Option<StoredState> = store
+            .get(&key)
+            .and_then(|bytes| serde_json::from_slice(bytes).ok());
 
         let stored_state_to_save = match current_stored_state_opt {
             Some(mut existing_state) => {
                 // Ensure consistency if somehow key pointed to a different agent/profile
-                if &existing_state.profile_id != profile_id || &existing_state.agent_id != agent_id {
+                if &existing_state.profile_id != profile_id || &existing_state.agent_id != agent_id
+                {
                     return Err(HelixError::InternalError(
                         "Key mismatch during state update".to_string(),
                     ));
@@ -105,8 +110,12 @@ impl StateStore for InMemoryStateStore {
             None => StoredState::new(*profile_id, *agent_id, state_data),
         };
 
-        let bytes = serde_json::to_vec(&stored_state_to_save)
-            .map_err(|e| HelixError::validation_error("state.serialization", &format!("Serialization failed for set_state: {}", e)))?;
+        let bytes = serde_json::to_vec(&stored_state_to_save).map_err(|e| {
+            HelixError::validation_error(
+                "state.serialization",
+                &format!("Serialization failed for set_state: {}", e),
+            )
+        })?;
         store.insert(key, bytes);
         Ok(())
     }
@@ -159,13 +168,19 @@ impl StateStore for InMemoryStateStore {
     ) -> Result<Option<StoredState>, HelixError> {
         let key = create_key(profile_id, agent_id);
         let store = self.states.lock().map_err(|e| {
-            HelixError::InternalError(format!("Failed to acquire lock for get_stored_state: {}", e))
+            HelixError::InternalError(format!(
+                "Failed to acquire lock for get_stored_state: {}",
+                e
+            ))
         })?;
 
         match store.get(&key) {
             Some(bytes) => {
                 let stored_state: StoredState = serde_json::from_slice(bytes).map_err(|e| {
-                    HelixError::validation_error("state.deserialization", &format!("Deserialization failed for get_stored_state: {}", e))
+                    HelixError::validation_error(
+                        "state.deserialization",
+                        &format!("Deserialization failed for get_stored_state: {}", e),
+                    )
                 })?;
                 // Verify consistency, though create_key should ensure this.
                 if &stored_state.profile_id == profile_id && &stored_state.agent_id == agent_id {
@@ -192,10 +207,15 @@ impl StateStore for InMemoryStateStore {
         })?;
 
         match store.get_mut(&key) {
-            Some(bytes_val) => { // bytes_val is &mut Vec<u8>
-                let mut stored_state: StoredState = serde_json::from_slice(bytes_val).map_err(|e| {
-                    HelixError::validation_error("state.deserialization", &format!("Deserialization failed for merge_state (existing): {}", e))
-                })?;
+            Some(bytes_val) => {
+                // bytes_val is &mut Vec<u8>
+                let mut stored_state: StoredState =
+                    serde_json::from_slice(bytes_val).map_err(|e| {
+                        HelixError::validation_error(
+                            "state.deserialization",
+                            &format!("Deserialization failed for merge_state (existing): {}", e),
+                        )
+                    })?;
 
                 if &stored_state.profile_id != profile_id || &stored_state.agent_id != agent_id {
                     return Err(HelixError::InternalError(
@@ -206,7 +226,10 @@ impl StateStore for InMemoryStateStore {
                 stored_state.merge_data(data_to_merge)?; // This updates stored_state.updated_at
 
                 let updated_bytes = serde_json::to_vec(&stored_state).map_err(|e| {
-                    HelixError::validation_error("state.serialization", &format!("Serialization failed for merge_state (update): {}", e))
+                    HelixError::validation_error(
+                        "state.serialization",
+                        &format!("Serialization failed for merge_state (update): {}", e),
+                    )
                 })?;
                 *bytes_val = updated_bytes;
             }
@@ -214,7 +237,10 @@ impl StateStore for InMemoryStateStore {
                 // Key doesn't exist, create new state
                 let new_state = StoredState::new(*profile_id, *agent_id, data_to_merge);
                 let bytes = serde_json::to_vec(&new_state).map_err(|e| {
-                    HelixError::validation_error("state.serialization", &format!("Serialization failed for merge_state (new): {}", e))
+                    HelixError::validation_error(
+                        "state.serialization",
+                        &format!("Serialization failed for merge_state (new): {}", e),
+                    )
                 })?;
                 store.insert(key, bytes);
             }
@@ -224,7 +250,10 @@ impl StateStore for InMemoryStateStore {
 
     async fn clear_profile_state(&self, profile_id: &ProfileId) -> Result<u64, HelixError> {
         let mut store = self.states.lock().map_err(|e| {
-            HelixError::InternalError(format!("Failed to acquire lock for clear_profile_state: {}", e))
+            HelixError::InternalError(format!(
+                "Failed to acquire lock for clear_profile_state: {}",
+                e
+            ))
         })?;
         let prefix_to_match = format!("{}:", profile_id);
         let mut keys_to_remove = Vec::new();
@@ -266,7 +295,11 @@ mod tests {
         let store = InMemoryStateStore::new();
         let profile_id = new_profile_id();
         let agent_id = new_agent_id();
-        assert!(store.get_state(&profile_id, &agent_id).await.unwrap().is_none());
+        assert!(store
+            .get_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .is_none());
         assert!(store.list_agent_ids(&profile_id).await.unwrap().is_empty());
     }
 
@@ -291,7 +324,11 @@ mod tests {
         let store = InMemoryStateStore::new();
         let profile_id = new_profile_id();
         let agent_id = new_agent_id();
-        assert!(store.get_state(&profile_id, &agent_id).await.unwrap().is_none());
+        assert!(store
+            .get_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -306,24 +343,38 @@ mod tests {
             .set_state(&profile_id, &agent_id, initial_data.clone())
             .await
             .unwrap();
-        let first_stored = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
-        
+        let first_stored = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
+
         sleep(Duration::from_millis(10)).await; // Ensure time passes for updated_at
 
         store
             .set_state(&profile_id, &agent_id, updated_data.clone())
             .await
             .unwrap();
-        
+
         let retrieved_data = store.get_state(&profile_id, &agent_id).await.unwrap();
         assert_eq!(retrieved_data, Some(updated_data.clone()));
 
-        let second_stored = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        let second_stored = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(second_stored.data, updated_data);
         assert_eq!(second_stored.profile_id, profile_id);
         assert_eq!(second_stored.agent_id, agent_id);
-        assert_eq!(second_stored.created_at, first_stored.created_at, "created_at should be preserved on update");
-        assert!(second_stored.updated_at > first_stored.updated_at, "updated_at should be newer");
+        assert_eq!(
+            second_stored.created_at, first_stored.created_at,
+            "created_at should be preserved on update"
+        );
+        assert!(
+            second_stored.updated_at > first_stored.updated_at,
+            "updated_at should be newer"
+        );
     }
 
     #[tokio::test]
@@ -337,11 +388,19 @@ mod tests {
             .set_state(&profile_id, &agent_id, state_data.clone())
             .await
             .unwrap();
-        assert!(store.get_state(&profile_id, &agent_id).await.unwrap().is_some());
+        assert!(store
+            .get_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .is_some());
 
         let deleted = store.delete_state(&profile_id, &agent_id).await.unwrap();
         assert!(deleted);
-        assert!(store.get_state(&profile_id, &agent_id).await.unwrap().is_none());
+        assert!(store
+            .get_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -362,9 +421,18 @@ mod tests {
         let agent2_p1 = new_agent_id();
         let agent1_p2 = new_agent_id();
 
-        store.set_state(&profile1, &agent1_p1, json!({})).await.unwrap();
-        store.set_state(&profile1, &agent2_p1, json!({})).await.unwrap();
-        store.set_state(&profile2, &agent1_p2, json!({})).await.unwrap();
+        store
+            .set_state(&profile1, &agent1_p1, json!({}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile1, &agent2_p1, json!({}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile2, &agent1_p2, json!({}))
+            .await
+            .unwrap();
 
         let p1_agents = store.list_agent_ids(&profile1).await.unwrap();
         assert_eq!(p1_agents.len(), 2);
@@ -378,7 +446,7 @@ mod tests {
         let empty_profile_agents = store.list_agent_ids(&new_profile_id()).await.unwrap();
         assert!(empty_profile_agents.is_empty());
     }
-    
+
     #[tokio::test]
     async fn test_get_stored_state() {
         let store = InMemoryStateStore::new();
@@ -389,12 +457,18 @@ mod tests {
         let initial_time = Utc::now();
         sleep(Duration::from_millis(10)).await;
 
-        store.set_state(&profile_id, &agent_id, state_data.clone()).await.unwrap();
-        
+        store
+            .set_state(&profile_id, &agent_id, state_data.clone())
+            .await
+            .unwrap();
+
         sleep(Duration::from_millis(10)).await;
         let time_after_set = Utc::now();
 
-        let stored_state_opt = store.get_stored_state(&profile_id, &agent_id).await.unwrap();
+        let stored_state_opt = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap();
         assert!(stored_state_opt.is_some());
         let stored_state = stored_state_opt.unwrap();
 
@@ -412,12 +486,23 @@ mod tests {
         let agent_id = new_agent_id();
         let initial_data = json!({"a": 1});
 
-        store.merge_state(&profile_id, &agent_id, initial_data.clone()).await.unwrap();
-        
-        let state = store.get_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        store
+            .merge_state(&profile_id, &agent_id, initial_data.clone())
+            .await
+            .unwrap();
+
+        let state = store
+            .get_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(state, initial_data);
 
-        let stored = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        let stored = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(stored.data, initial_data);
     }
 
@@ -429,18 +514,36 @@ mod tests {
         let initial_data = json!({"a": 1, "b": {"x": 10}});
         let merge_data = json!({"b": {"y": 20}, "c": 3}); // "b" will be overwritten
 
-        store.set_state(&profile_id, &agent_id, initial_data.clone()).await.unwrap();
-        let first_stored = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
-        
+        store
+            .set_state(&profile_id, &agent_id, initial_data.clone())
+            .await
+            .unwrap();
+        let first_stored = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
+
         sleep(Duration::from_millis(10)).await;
 
-        store.merge_state(&profile_id, &agent_id, merge_data.clone()).await.unwrap();
-        
+        store
+            .merge_state(&profile_id, &agent_id, merge_data.clone())
+            .await
+            .unwrap();
+
         let expected_data = json!({"a": 1, "b": {"y": 20}, "c": 3});
-        let state = store.get_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        let state = store
+            .get_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(state, expected_data);
 
-        let second_stored = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        let second_stored = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(second_stored.data, expected_data);
         assert_eq!(second_stored.created_at, first_stored.created_at);
         assert!(second_stored.updated_at > first_stored.updated_at);
@@ -452,12 +555,15 @@ mod tests {
         let profile_id = new_profile_id();
         let agent_id = new_agent_id();
         let initial_data = json!("not an object"); // StoredState.merge_data expects object
-        
-        store.set_state(&profile_id, &agent_id, initial_data.clone()).await.unwrap();
-        
+
+        store
+            .set_state(&profile_id, &agent_id, initial_data.clone())
+            .await
+            .unwrap();
+
         let merge_data = json!({"a": 1});
         let result = store.merge_state(&profile_id, &agent_id, merge_data).await;
-        
+
         assert!(result.is_err());
         match result.err().unwrap() {
             HelixError::ValidationError { context, message } => {
@@ -477,19 +583,40 @@ mod tests {
         let agent2_p1 = new_agent_id();
         let agent1_p2 = new_agent_id();
 
-        store.set_state(&profile1, &agent1_p1, json!({})).await.unwrap();
-        store.set_state(&profile1, &agent2_p1, json!({})).await.unwrap();
-        store.set_state(&profile2, &agent1_p2, json!({})).await.unwrap();
+        store
+            .set_state(&profile1, &agent1_p1, json!({}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile1, &agent2_p1, json!({}))
+            .await
+            .unwrap();
+        store
+            .set_state(&profile2, &agent1_p2, json!({}))
+            .await
+            .unwrap();
 
         let cleared_count = store.clear_profile_state(&profile1).await.unwrap();
         assert_eq!(cleared_count, 2);
 
-        assert!(store.get_state(&profile1, &agent1_p1).await.unwrap().is_none());
-        assert!(store.get_state(&profile1, &agent2_p1).await.unwrap().is_none());
+        assert!(store
+            .get_state(&profile1, &agent1_p1)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(store
+            .get_state(&profile1, &agent2_p1)
+            .await
+            .unwrap()
+            .is_none());
         assert!(store.list_agent_ids(&profile1).await.unwrap().is_empty());
-        
+
         // Profile2 should be unaffected
-        assert!(store.get_state(&profile2, &agent1_p2).await.unwrap().is_some());
+        assert!(store
+            .get_state(&profile2, &agent1_p2)
+            .await
+            .unwrap()
+            .is_some());
         assert_eq!(store.list_agent_ids(&profile2).await.unwrap().len(), 1);
 
         // Clear already empty profile
@@ -509,26 +636,56 @@ mod tests {
         let agent_id = new_agent_id();
 
         // Initial set
-        store.set_state(&profile_id, &agent_id, json!({"v": 1})).await.unwrap();
-        let s1 = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        store
+            .set_state(&profile_id, &agent_id, json!({"v": 1}))
+            .await
+            .unwrap();
+        let s1 = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(s1.created_at, s1.updated_at);
 
         sleep(Duration::from_millis(20)).await;
 
         // Second set (update)
-        store.set_state(&profile_id, &agent_id, json!({"v": 2})).await.unwrap();
-        let s2 = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
+        store
+            .set_state(&profile_id, &agent_id, json!({"v": 2}))
+            .await
+            .unwrap();
+        let s2 = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(s2.created_at, s1.created_at, "created_at should persist");
-        assert!(s2.updated_at > s1.updated_at, "updated_at should advance on set");
+        assert!(
+            s2.updated_at > s1.updated_at,
+            "updated_at should advance on set"
+        );
         assert!(s2.updated_at > s2.created_at);
-        
+
         sleep(Duration::from_millis(20)).await;
 
         // Merge
-        store.merge_state(&profile_id, &agent_id, json!({"v": 3, "new": true})).await.unwrap();
-        let s3 = store.get_stored_state(&profile_id, &agent_id).await.unwrap().unwrap();
-        assert_eq!(s3.created_at, s2.created_at, "created_at should persist on merge");
-        assert!(s3.updated_at > s2.updated_at, "updated_at should advance on merge");
+        store
+            .merge_state(&profile_id, &agent_id, json!({"v": 3, "new": true}))
+            .await
+            .unwrap();
+        let s3 = store
+            .get_stored_state(&profile_id, &agent_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            s3.created_at, s2.created_at,
+            "created_at should persist on merge"
+        );
+        assert!(
+            s3.updated_at > s2.updated_at,
+            "updated_at should advance on merge"
+        );
         assert_eq!(s3.data, json!({"v": 3, "new": true}));
     }
 }

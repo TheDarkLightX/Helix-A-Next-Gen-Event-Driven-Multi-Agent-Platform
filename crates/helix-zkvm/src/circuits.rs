@@ -11,12 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Circuit definitions and utilities for zkVM
 
+use crate::errors::ZkVmError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::errors::ZkVmError;
 
 /// A circuit definition for zkVM execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,15 +155,21 @@ impl Circuit {
     /// Validate the circuit definition
     pub fn validate(&self) -> Result<(), ZkVmError> {
         if self.id.is_empty() {
-            return Err(ZkVmError::InvalidProgram("Circuit ID cannot be empty".to_string()));
+            return Err(ZkVmError::InvalidProgram(
+                "Circuit ID cannot be empty".to_string(),
+            ));
         }
 
         if self.inputs.is_empty() {
-            return Err(ZkVmError::InvalidProgram("Circuit must have at least one input".to_string()));
+            return Err(ZkVmError::InvalidProgram(
+                "Circuit must have at least one input".to_string(),
+            ));
         }
 
         if self.outputs.is_empty() {
-            return Err(ZkVmError::InvalidProgram("Circuit must have at least one output".to_string()));
+            return Err(ZkVmError::InvalidProgram(
+                "Circuit must have at least one output".to_string(),
+            ));
         }
 
         // Validate that all constraint variables reference valid inputs/outputs
@@ -179,9 +184,10 @@ impl Circuit {
         for constraint in &self.constraints {
             for var in &constraint.variables {
                 if !all_variables.contains(var) {
-                    return Err(ZkVmError::InvalidProgram(
-                        format!("Constraint references unknown variable: {}", var)
-                    ));
+                    return Err(ZkVmError::InvalidProgram(format!(
+                        "Constraint references unknown variable: {}",
+                        var
+                    )));
                 }
             }
         }
@@ -201,7 +207,10 @@ impl Circuit {
 
     /// Get private inputs
     pub fn private_inputs(&self) -> Vec<&CircuitInput> {
-        self.inputs.iter().filter(|input| !input.is_public).collect()
+        self.inputs
+            .iter()
+            .filter(|input| !input.is_public)
+            .collect()
     }
 }
 
@@ -219,7 +228,12 @@ impl CircuitBuilder {
     }
 
     /// Add a public input
-    pub fn public_input(mut self, name: String, input_type: InputType, description: String) -> Self {
+    pub fn public_input(
+        mut self,
+        name: String,
+        input_type: InputType,
+        description: String,
+    ) -> Self {
         self.circuit.add_input(CircuitInput {
             name,
             input_type,
@@ -230,7 +244,12 @@ impl CircuitBuilder {
     }
 
     /// Add a private input
-    pub fn private_input(mut self, name: String, input_type: InputType, description: String) -> Self {
+    pub fn private_input(
+        mut self,
+        name: String,
+        input_type: InputType,
+        description: String,
+    ) -> Self {
         self.circuit.add_input(CircuitInput {
             name,
             input_type,
@@ -298,9 +317,21 @@ impl CircuitTemplates {
             "Hash Verification".to_string(),
             "Verifies that a hash matches the expected value".to_string(),
         )
-        .private_input("preimage".to_string(), InputType::Bytes, "The preimage to hash".to_string())
-        .public_input("expected_hash".to_string(), InputType::Bytes, "Expected hash value".to_string())
-        .output("is_valid".to_string(), OutputType::Boolean, "Whether the hash is valid".to_string())
+        .private_input(
+            "preimage".to_string(),
+            InputType::Bytes,
+            "The preimage to hash".to_string(),
+        )
+        .public_input(
+            "expected_hash".to_string(),
+            InputType::Bytes,
+            "Expected hash value".to_string(),
+        )
+        .output(
+            "is_valid".to_string(),
+            OutputType::Boolean,
+            "Whether the hash is valid".to_string(),
+        )
         .build()
     }
 
@@ -311,10 +342,26 @@ impl CircuitTemplates {
             "Arithmetic Circuit".to_string(),
             "Performs basic arithmetic operations".to_string(),
         )
-        .private_input("a".to_string(), InputType::Integer, "First operand".to_string())
-        .private_input("b".to_string(), InputType::Integer, "Second operand".to_string())
-        .public_input("operation".to_string(), InputType::Integer, "Operation type (0=add, 1=mul)".to_string())
-        .output("result".to_string(), OutputType::Integer, "Operation result".to_string())
+        .private_input(
+            "a".to_string(),
+            InputType::Integer,
+            "First operand".to_string(),
+        )
+        .private_input(
+            "b".to_string(),
+            InputType::Integer,
+            "Second operand".to_string(),
+        )
+        .public_input(
+            "operation".to_string(),
+            InputType::Integer,
+            "Operation type (0=add, 1=mul)".to_string(),
+        )
+        .output(
+            "result".to_string(),
+            OutputType::Integer,
+            "Operation result".to_string(),
+        )
         .build()
     }
 
@@ -325,8 +372,16 @@ impl CircuitTemplates {
             "Range Proof".to_string(),
             format!("Proves that a value is in range [{}, {}]", min, max),
         )
-        .private_input("value".to_string(), InputType::Integer, "Value to prove".to_string())
-        .output("is_in_range".to_string(), OutputType::Boolean, "Whether value is in range".to_string())
+        .private_input(
+            "value".to_string(),
+            InputType::Integer,
+            "Value to prove".to_string(),
+        )
+        .output(
+            "is_in_range".to_string(),
+            OutputType::Boolean,
+            "Whether value is in range".to_string(),
+        )
         .build()?;
 
         // Add range constraint
@@ -369,8 +424,16 @@ mod tests {
             "Builder Test".to_string(),
             "Testing the builder".to_string(),
         )
-        .public_input("x".to_string(), InputType::Integer, "Public input".to_string())
-        .private_input("y".to_string(), InputType::Integer, "Private input".to_string())
+        .public_input(
+            "x".to_string(),
+            InputType::Integer,
+            "Public input".to_string(),
+        )
+        .private_input(
+            "y".to_string(),
+            InputType::Integer,
+            "Private input".to_string(),
+        )
         .output("z".to_string(), OutputType::Integer, "Output".to_string())
         .addition("x".to_string(), "y".to_string(), "z".to_string())
         .build()

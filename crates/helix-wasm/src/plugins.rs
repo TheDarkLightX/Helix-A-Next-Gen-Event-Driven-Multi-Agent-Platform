@@ -11,19 +11,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Plugin management for WASM modules
 
 use crate::{
     errors::WasmError,
     runtime::{ExecutionResult, InstanceId, WasmModule, WasmRuntime}, // Added InstanceId
 };
-use helix_core::{agent::AgentConfig, credential::CredentialProvider, state::StateStore};
 use helix_agent_sdk::EventPublisher;
+use helix_core::{agent::AgentConfig, credential::CredentialProvider, state::StateStore};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    path::PathBuf, // For ModuleSource::File
+    path::PathBuf,      // For ModuleSource::File
     sync::{Arc, Mutex}, // Added Mutex for active_instances in Plugin
 };
 use uuid::Uuid; // For PluginId
@@ -64,7 +63,12 @@ pub struct PluginConfig {
 }
 
 impl PluginConfig {
-    pub fn new(name: String, version: String, description: String, module_source: ModuleSource) -> Self {
+    pub fn new(
+        name: String,
+        version: String,
+        description: String,
+        module_source: ModuleSource,
+    ) -> Self {
         Self {
             id: PluginId::new(),
             name,
@@ -75,7 +79,6 @@ impl PluginConfig {
         }
     }
 }
-
 
 /// Source of a WASM module
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +110,6 @@ impl Plugin {
     }
 }
 
-
 /// Plugin manager
 pub struct PluginManager {
     runtime: Arc<WasmRuntime>,
@@ -125,32 +127,50 @@ impl PluginManager {
     /// Loads a plugin's configuration and compiles its WASM module.
     /// Does not automatically instantiate the plugin.
     pub async fn register_plugin(&mut self, config: PluginConfig) -> Result<PluginId, WasmError> {
-        if self.plugins.values().any(|p| p.config.name == config.name && p.config.version == config.version) {
-            return Err(WasmError::PluginAlreadyExists(format!("{}-{}", config.name, config.version)));
+        if self
+            .plugins
+            .values()
+            .any(|p| p.config.name == config.name && p.config.version == config.version)
+        {
+            return Err(WasmError::PluginAlreadyExists(format!(
+                "{}-{}",
+                config.name, config.version
+            )));
         }
 
         let wasm_module = match &config.module_source {
-            ModuleSource::File(path) => {
-                self.runtime.load_module_from_path(path).await?
-            }
-            ModuleSource::Bytes(bytes) => {
-                self.runtime.load_module_from_bytes(bytes).await?
-            }
+            ModuleSource::File(path) => self.runtime.load_module_from_path(path).await?,
+            ModuleSource::Bytes(bytes) => self.runtime.load_module_from_bytes(bytes).await?,
             ModuleSource::Url(url_str) => {
                 // Fetch and then load bytes
                 tracing::info!("Fetching WASM module from URL: {}", url_str);
-                let response = reqwest::get(url_str).await
-                    .map_err(|e| WasmError::LoadingError(format!("Failed to fetch module from URL {}: {}", url_str, e)))?;
+                let response = reqwest::get(url_str).await.map_err(|e| {
+                    WasmError::LoadingError(format!(
+                        "Failed to fetch module from URL {}: {}",
+                        url_str, e
+                    ))
+                })?;
                 if !response.status().is_success() {
-                    return Err(WasmError::LoadingError(format!("Failed to download module from {}: HTTP {}", url_str, response.status())));
+                    return Err(WasmError::LoadingError(format!(
+                        "Failed to download module from {}: HTTP {}",
+                        url_str,
+                        response.status()
+                    )));
                 }
-                let bytes = response.bytes().await
-                    .map_err(|e| WasmError::LoadingError(format!("Failed to read bytes from URL {}: {}", url_str, e)))?
+                let bytes = response
+                    .bytes()
+                    .await
+                    .map_err(|e| {
+                        WasmError::LoadingError(format!(
+                            "Failed to read bytes from URL {}: {}",
+                            url_str, e
+                        ))
+                    })?
                     .to_vec();
                 self.runtime.load_module_from_bytes(&bytes).await?
             }
         };
-        
+
         let plugin_id = config.id;
         let plugin_arc = Arc::new(Plugin {
             config: Arc::new(config),
@@ -170,35 +190,49 @@ impl PluginManager {
         plugin_id: PluginId,
         // HostState components:
         agent_config: Arc<AgentConfig>, // This AgentConfig is for THIS instance of the plugin
-        event_publisher: Arc<dyn EventPublisher + Send + Sync>,
-        credential_provider: Arc<dyn CredentialProvider + Send + Sync>,
-        state_store: Arc<dyn StateStore + Send + Sync>,
+        event_publisher: Arc<dyn EventPublisher>,
+        credential_provider: Arc<dyn CredentialProvider>,
+        state_store: Arc<dyn StateStore>,
     ) -> Result<InstanceId, WasmError> {
-        let plugin_arc = self.plugins.get(&plugin_id)
+        let plugin_arc = self
+            .plugins
+            .get(&plugin_id)
             .ok_or_else(|| WasmError::PluginNotFound(plugin_id.to_string()))?
             .clone(); // Clone Arc to work with
 
         // Terminate existing instance if any
         if let Some(old_instance_id) = plugin_arc.active_instance_id() {
-            tracing::info!("Terminating old instance {} for plugin {}", old_instance_id, plugin_id);
-            self.runtime.terminate_instance(old_instance_id).await.map_err(|e|
-                WasmError::InternalError(format!("Failed to terminate old instance {}: {}", old_instance_id, e))
-            )?;
+            tracing::info!(
+                "Terminating old instance {} for plugin {}",
+                old_instance_id,
+                plugin_id
+            );
+            self.runtime
+                .terminate_instance(old_instance_id)
+                .await
+                .map_err(|e| {
+                    WasmError::InternalError(format!(
+                        "Failed to terminate old instance {}: {}",
+                        old_instance_id, e
+                    ))
+                })?;
             *plugin_arc.active_instance_id.lock().unwrap() = None;
         }
 
-        let instance_id = self.runtime.instantiate_module(
-            &plugin_arc.module, // Pass the compiled WasmModule
-            agent_config,
-            event_publisher,
-            credential_provider,
-            state_store,
-        ).await?;
+        let instance_id = self
+            .runtime
+            .instantiate_module(
+                &plugin_arc.module, // Pass the compiled WasmModule
+                agent_config,
+                event_publisher,
+                credential_provider,
+                state_store,
+            )
+            .await?;
 
         *plugin_arc.active_instance_id.lock().unwrap() = Some(instance_id);
         Ok(instance_id)
     }
-
 
     /// Executes a function on an active instance of a plugin.
     pub async fn call_plugin_function(
@@ -207,27 +241,34 @@ impl PluginManager {
         function_name: &str,
         args: &[Val],
     ) -> Result<ExecutionResult, WasmError> {
-        let plugin = self.plugins.get(&plugin_id)
+        let plugin = self
+            .plugins
+            .get(&plugin_id)
             .ok_or_else(|| WasmError::PluginNotFound(plugin_id.to_string()))?;
-        
-        let instance_id = plugin.active_instance_id()
+
+        let instance_id = plugin
+            .active_instance_id()
             .ok_or_else(|| WasmError::PluginNotInstantiated(plugin_id.to_string()))?;
 
-        self.runtime.call_function_on_instance(instance_id, function_name, args).await
+        self.runtime
+            .call_function_on_instance(instance_id, function_name, args)
+            .await
     }
 
     /// Terminates the active instance of a plugin, if any.
     pub async fn terminate_plugin_instance(&self, plugin_id: PluginId) -> Result<(), WasmError> {
-        let plugin = self.plugins.get(&plugin_id)
+        let plugin = self
+            .plugins
+            .get(&plugin_id)
             .ok_or_else(|| WasmError::PluginNotFound(plugin_id.to_string()))?;
-        
+
         if let Some(instance_id) = plugin.active_instance_id.lock().unwrap().take() {
             self.runtime.terminate_instance(instance_id).await
         } else {
             Ok(()) // No active instance to terminate
         }
     }
-    
+
     /// Unregisters a plugin and terminates its active instance if any.
     /// This removes the plugin configuration and compiled module from the manager.
     pub async fn unregister_plugin(&mut self, plugin_id: PluginId) -> Result<(), WasmError> {
@@ -246,6 +287,9 @@ impl PluginManager {
     }
 
     pub fn list_plugins(&self) -> Vec<Arc<PluginConfig>> {
-        self.plugins.values().map(|p| Arc::clone(&p.config)).collect()
+        self.plugins
+            .values()
+            .map(|p| Arc::clone(&p.config))
+            .collect()
     }
 }

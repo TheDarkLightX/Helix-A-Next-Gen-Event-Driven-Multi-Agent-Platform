@@ -143,7 +143,10 @@ pub struct OnchainStepResult {
 }
 
 /// Deterministic step function for on-chain intent lifecycle.
-pub fn step(state: OnchainState, input: OnchainInput) -> Result<OnchainStepResult, OnchainKernelError> {
+pub fn step(
+    state: OnchainState,
+    input: OnchainInput,
+) -> Result<OnchainStepResult, OnchainKernelError> {
     let result = match input.clone() {
         OnchainInput::StartBroadcast {
             raw_tx_hex,
@@ -251,10 +254,14 @@ pub fn step(state: OnchainState, input: OnchainInput) -> Result<OnchainStepResul
                     effects: vec![],
                 }
             } else {
-                let tx_hash = state.tx_hash.clone().ok_or(OnchainKernelError::InvalidTransition {
-                    phase: state.phase,
-                    input: OnchainInput::ReceiptPending,
-                })?;
+                let tx_hash =
+                    state
+                        .tx_hash
+                        .clone()
+                        .ok_or(OnchainKernelError::InvalidTransition {
+                            phase: state.phase,
+                            input: OnchainInput::ReceiptPending,
+                        })?;
                 OnchainStepResult {
                     state: OnchainState {
                         poll_rounds: next_round,

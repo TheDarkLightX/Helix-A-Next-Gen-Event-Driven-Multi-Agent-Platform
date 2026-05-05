@@ -144,9 +144,9 @@ impl WasmRuntime {
         wasm_module: &WasmModule,
         // HostState components:
         agent_config: Arc<AgentConfig>,
-        event_publisher: Arc<dyn EventPublisher + Send + Sync>,
-        credential_provider: Arc<dyn CredentialProvider + Send + Sync>,
-        state_store: Arc<dyn StateStore + Send + Sync>,
+        event_publisher: Arc<dyn EventPublisher>,
+        credential_provider: Arc<dyn CredentialProvider>,
+        state_store: Arc<dyn StateStore>,
     ) -> Result<InstanceId, WasmError> {
         let store_limits = StoreLimitsBuilder::new()
             .memory_size(self.config.max_memory as usize)

@@ -39,7 +39,9 @@ pub mod types;
 
 pub mod filter_agent;
 pub mod intel_desk;
+pub mod intel_priority;
 pub mod llm_agent;
+pub mod market_intel;
 pub mod timer_agent;
 
 /// Evolutionary mutation testing framework

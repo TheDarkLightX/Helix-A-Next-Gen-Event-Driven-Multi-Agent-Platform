@@ -198,7 +198,10 @@ pub fn step(state: ExecutionState, input: ExecutionInput) -> Result<StepResult, 
             }
         }
         ExecutionInput::Reset => {
-            if !matches!(state.phase, ExecutionPhase::Succeeded | ExecutionPhase::Failed) {
+            if !matches!(
+                state.phase,
+                ExecutionPhase::Succeeded | ExecutionPhase::Failed
+            ) {
                 return Err(KernelError::InvalidTransition {
                     phase: state.phase,
                     input,
@@ -250,9 +253,12 @@ mod tests {
 
     #[test]
     fn failure_path_sets_failed_latch() {
-        let state0 = step(ExecutionState::default(), ExecutionInput::Start { agent_count: 3 })
-            .unwrap()
-            .state;
+        let state0 = step(
+            ExecutionState::default(),
+            ExecutionInput::Start { agent_count: 3 },
+        )
+        .unwrap()
+        .state;
         let failed = step(state0, ExecutionInput::AgentFailed).unwrap();
         assert_eq!(failed.state.phase, ExecutionPhase::Failed);
         assert!(failed.state.failed);
@@ -262,9 +268,12 @@ mod tests {
 
     #[test]
     fn reset_only_allowed_from_terminal_states() {
-        let running = step(ExecutionState::default(), ExecutionInput::Start { agent_count: 1 })
-            .unwrap()
-            .state;
+        let running = step(
+            ExecutionState::default(),
+            ExecutionInput::Start { agent_count: 1 },
+        )
+        .unwrap()
+        .state;
         assert!(matches!(
             step(running, ExecutionInput::Reset),
             Err(KernelError::InvalidTransition { .. })
@@ -279,7 +288,10 @@ mod tests {
     #[test]
     fn start_rejects_invalid_counts() {
         assert_eq!(
-            step(ExecutionState::default(), ExecutionInput::Start { agent_count: 0 }),
+            step(
+                ExecutionState::default(),
+                ExecutionInput::Start { agent_count: 0 }
+            ),
             Err(KernelError::InvalidStartCount(0))
         );
         assert_eq!(
@@ -306,7 +318,11 @@ mod tests {
 
         for input in sequence {
             let next = step(state, input).unwrap();
-            assert!(next.state.is_valid(), "state invalid after input {:?}", input);
+            assert!(
+                next.state.is_valid(),
+                "state invalid after input {:?}",
+                input
+            );
             state = next.state;
         }
     }

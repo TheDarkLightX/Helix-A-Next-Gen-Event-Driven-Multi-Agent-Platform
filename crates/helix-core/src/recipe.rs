@@ -21,7 +21,7 @@ use crate::HelixError;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
 use sqlx::FromRow;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Defines how a recipe is triggered.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -211,8 +211,29 @@ impl Recipe {
         Ok(())
     }
 
+    /// Returns a deterministic dependency-safe agent execution order.
+    pub fn execution_order(&self) -> Result<Vec<AgentConfig>, HelixError> {
+        self.validate()?;
+        let order = self.topological_agent_order()?;
+        let agents_by_id: HashMap<AgentId, AgentConfig> = self
+            .graph
+            .agents
+            .iter()
+            .cloned()
+            .map(|agent| (agent.id, agent))
+            .collect();
+        Ok(order
+            .into_iter()
+            .filter_map(|agent_id| agents_by_id.get(&agent_id).cloned())
+            .collect())
+    }
+
     /// Validates that the recipe graph is a Directed Acyclic Graph (DAG)
     fn validate_dag(&self) -> Result<(), HelixError> {
+        self.topological_agent_order().map(|_| ())
+    }
+
+    fn topological_agent_order(&self) -> Result<Vec<AgentId>, HelixError> {
         let mut adj: HashMap<AgentId, Vec<AgentId>> = HashMap::new();
         let mut in_degree: HashMap<AgentId, usize> = HashMap::new();
         let agent_ids: HashSet<AgentId> = self.graph.agents.iter().map(|a| a.id).collect();
@@ -234,18 +255,18 @@ impl Recipe {
         }
 
         // Kahn's algorithm for cycle detection
-        let mut queue: VecDeque<AgentId> = VecDeque::new();
-        let mut processed = 0;
+        let mut ready: BTreeSet<AgentId> = BTreeSet::new();
+        let mut ordered = Vec::with_capacity(self.graph.agents.len());
 
         // Start with nodes that have no incoming edges
         for (agent_id, &degree) in &in_degree {
             if degree == 0 {
-                queue.push_back(*agent_id);
+                ready.insert(*agent_id);
             }
         }
 
-        while let Some(current) = queue.pop_front() {
-            processed += 1;
+        while let Some(current) = ready.pop_first() {
+            ordered.push(current);
 
             // Process all neighbors (agents that depend on `current`)
             if let Some(dependents) = adj.get(&current) {
@@ -253,7 +274,7 @@ impl Recipe {
                     if let Some(degree) = in_degree.get_mut(&dependent_id) {
                         *degree -= 1;
                         if *degree == 0 {
-                            queue.push_back(dependent_id);
+                            ready.insert(dependent_id);
                         }
                     }
                 }
@@ -261,8 +282,8 @@ impl Recipe {
         }
 
         // If we processed all nodes, it's a DAG
-        if processed == self.graph.agents.len() {
-            Ok(())
+        if ordered.len() == self.graph.agents.len() {
+            Ok(ordered)
         } else {
             Err(HelixError::ValidationError {
                 context: "Recipe.graph".to_string(),
@@ -670,6 +691,40 @@ mod tests {
 
         assert!(recipe.validate().is_ok());
         assert_eq!(recipe.agent_count(), 4);
+    }
+
+    #[test]
+    fn execution_order_is_dependency_ordered_and_stable() {
+        let profile_id = Uuid::new_v4();
+        let first_id = Uuid::parse_str("10000000-0000-0000-0000-000000000001").unwrap();
+        let second_id = Uuid::parse_str("10000000-0000-0000-0000-000000000002").unwrap();
+        let third_id = Uuid::parse_str("10000000-0000-0000-0000-000000000003").unwrap();
+
+        let mut first = create_test_agent_config(first_id, "First", "source", vec![]);
+        let mut second = create_test_agent_config(second_id, "Second", "transform", vec![first_id]);
+        let mut third = create_test_agent_config(third_id, "Third", "action", vec![first_id]);
+        first.profile_id = profile_id;
+        second.profile_id = profile_id;
+        third.profile_id = profile_id;
+
+        let recipe = Recipe::new(
+            Uuid::new_v4(),
+            profile_id,
+            "Stable Order".to_string(),
+            None,
+            RecipeGraphDefinition {
+                agents: vec![third, second, first],
+            },
+        );
+
+        let ordered_ids: Vec<AgentId> = recipe
+            .execution_order()
+            .unwrap()
+            .into_iter()
+            .map(|agent| agent.id)
+            .collect();
+
+        assert_eq!(ordered_ids, vec![first_id, second_id, third_id]);
     }
 
     #[test]

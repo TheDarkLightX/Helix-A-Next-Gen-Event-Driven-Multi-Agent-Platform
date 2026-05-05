@@ -11,13 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{parse_macro_input, ItemStruct, Ident};
 use proc_macro2::Span;
+use quote::quote;
+use syn::{parse_macro_input, Error, Fields, Ident, ItemStruct};
 
 // Define the distributed slice for agent factories.
 // This will be populated by the agent macros.
@@ -29,6 +28,48 @@ use proc_macro2::Span;
 // Static registry for agent factories would be defined here when runtime integration lands.
 
 fn शांति_रखें_और_कोड_लिखते_रहें() {} // Keep Calm and Code On
+
+fn build_agent_struct_init(
+    struct_name: &Ident,
+    fields: &Fields,
+) -> Result<proc_macro2::TokenStream, Error> {
+    let Fields::Named(named) = fields else {
+        return Err(Error::new_spanned(
+            fields,
+            "Helix agent macros require a struct with named fields",
+        ));
+    };
+
+    let mut has_agent_config = false;
+    let mut field_inits = Vec::new();
+    for field in &named.named {
+        let Some(ident) = &field.ident else {
+            continue;
+        };
+
+        if ident == "agent_config" {
+            has_agent_config = true;
+            field_inits.push(quote! { #ident: std::sync::Arc::new(config) });
+            continue;
+        }
+
+        // Other fields are initialized with Default.
+        field_inits.push(quote! { #ident: Default::default() });
+    }
+
+    if !has_agent_config {
+        return Err(Error::new_spanned(
+            struct_name,
+            "Missing required field `agent_config: Arc<helix_core::agent::AgentConfig>`",
+        ));
+    }
+
+    Ok(quote! {
+        #struct_name {
+            #(#field_inits,)*
+        }
+    })
+}
 
 /// Implements the necessary traits for a Source Agent.
 ///
@@ -46,8 +87,15 @@ pub fn source_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let struct_name = &input_struct.ident;
     let (impl_generics, ty_generics, where_clause) = input_struct.generics.split_for_impl();
 
-    let factory_ident = Ident::new(&format!("__AGENT_FACTORY_{}", struct_name).to_uppercase(), Span::call_site());
+    let factory_ident = Ident::new(
+        &format!("__AGENT_FACTORY_{}", struct_name).to_uppercase(),
+        Span::call_site(),
+    );
     let agent_kind_str = struct_name.to_string();
+    let struct_init = match build_agent_struct_init(struct_name, &input_struct.fields) {
+        Ok(tokens) => tokens,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let expanded = quote! {
         #input_struct // The original struct definition
@@ -56,15 +104,18 @@ pub fn source_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
         mod native_impl {
             use super::*; // To bring #struct_name and other idents into scope
 
-            let _factory_ident = |config: helix_core::agent::AgentConfig| -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> {
-                let agent = #struct_name {
-                    agent_config: std::sync::Arc::new(config),
-                    ..Default::default()
+            #[::helix_agent_sdk::linkme::distributed_slice(::helix_agent_sdk::AGENT_FACTORIES)]
+            #[linkme(crate = ::helix_agent_sdk::linkme)]
+            static #factory_ident: ::helix_agent_sdk::RegisteredAgentFactory =
+                || {
+                    let factory = |config: ::helix_core::agent::AgentConfig| -> Result<Box<dyn ::helix_agent_sdk::SdkAgent>, ::helix_agent_sdk::SdkError> {
+                        let agent = #struct_init;
+                        Ok(Box::new(agent))
+                    };
+                    (#agent_kind_str, Box::new(factory))
                 };
-                Ok(Box::new(agent))
-            };
 
-            #[helix_agent_sdk::async_trait::async_trait]
+            #[helix_agent_sdk::async_trait]
             impl #impl_generics helix_core::agent::Agent for #struct_name #ty_generics #where_clause {
             fn id(&self) -> helix_core::types::AgentId {
                 self.agent_config.id.clone()
@@ -85,8 +136,8 @@ pub fn source_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        #[helix_agent_sdk::async_trait::async_trait]
-        impl #impl_generics helix_agent_sdk::SdkAgent for #struct_name #ty_generics #where_clause {
+            #[helix_agent_sdk::async_trait]
+            impl #impl_generics helix_agent_sdk::SdkAgent for #struct_name #ty_generics #where_clause {
             async fn init(&mut self, _context: &helix_agent_sdk::AgentContext) -> Result<(), helix_agent_sdk::SdkError> {
                 // Default implementation. Users should implement an inherent `init` method
                 // on their struct if custom logic is needed.
@@ -105,8 +156,8 @@ pub fn source_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        #[helix_agent_sdk::async_trait::async_trait]
-        impl #impl_generics helix_agent_sdk::SourceSdkAgent for #struct_name #ty_generics #where_clause {
+            #[helix_agent_sdk::async_trait]
+            impl #impl_generics helix_agent_sdk::SourceSdkAgent for #struct_name #ty_generics #where_clause {
             async fn run(&mut self, context: &helix_agent_sdk::AgentContext) -> Result<(), helix_agent_sdk::SdkError> {
                 // This delegates to the user's inherent `run` method.
                 // The user *must* define `async fn run(&mut self, context: &AgentContext) -> Result<(), SdkError>`
@@ -170,7 +221,7 @@ pub fn source_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             pub extern "C" fn helix_agent_init_config(config_bytes_ptr: *const u8, config_bytes_len: usize) -> i32 {
                 // Safety: Assumes host provides valid ptr/len for the duration of this call.
                 let config_bytes = unsafe { std::slice::from_raw_parts(config_bytes_ptr, config_bytes_len) };
-                
+
                 match rmp_serde::from_slice::<helix_core::agent::AgentConfig>(config_bytes) {
                     Ok(config) => {
                         let agent = #struct_name {
@@ -349,31 +400,35 @@ pub fn action_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let struct_name = &input_struct.ident;
     let (impl_generics, ty_generics, where_clause) = input_struct.generics.split_for_impl();
 
-    let factory_ident = Ident::new(&format!("__AGENT_FACTORY_{}", struct_name).to_uppercase(), Span::call_site());
+    let factory_ident = Ident::new(
+        &format!("__AGENT_FACTORY_{}", struct_name).to_uppercase(),
+        Span::call_site(),
+    );
     let agent_kind_str = struct_name.to_string();
+    let struct_init = match build_agent_struct_init(struct_name, &input_struct.fields) {
+        Ok(tokens) => tokens,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let expanded = quote! {
         #input_struct // The original struct definition
-        
+
         #[cfg(not(target_arch = "wasm32"))]
         mod native_impl {
             use super::*;
 
-            #[linkme::distributed_slice(AGENT_FACTORIES)]
-            #[linkme(crate = linkme)]
-            static #factory_ident: fn() -> (helix_core::agent::AgentKind, Box<dyn Fn(helix_core::agent::AgentConfig) -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> + Send + Sync>) =
+            #[::helix_agent_sdk::linkme::distributed_slice(::helix_agent_sdk::AGENT_FACTORIES)]
+            #[linkme(crate = ::helix_agent_sdk::linkme)]
+            static #factory_ident: ::helix_agent_sdk::RegisteredAgentFactory =
                 || {
-                    let factory = |config: helix_core::agent::AgentConfig| -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> {
-                        let agent = #struct_name {
-                            agent_config: std::sync::Arc::new(config),
-                            ..Default::default()
-                        };
+                    let factory = |config: ::helix_core::agent::AgentConfig| -> Result<Box<dyn ::helix_agent_sdk::SdkAgent>, ::helix_agent_sdk::SdkError> {
+                        let agent = #struct_init;
                         Ok(Box::new(agent))
                     };
-                    (helix_core::agent::AgentKind::new(#agent_kind_str), Box::new(factory))
+                    (#agent_kind_str, Box::new(factory))
                 };
 
-            #[helix_agent_sdk::async_trait::async_trait]
+            #[helix_agent_sdk::async_trait]
             impl #impl_generics helix_core::agent::Agent for #struct_name #ty_generics #where_clause {
             fn id(&self) -> helix_core::types::AgentId {
                 self.agent_config.id.clone()
@@ -392,8 +447,8 @@ pub fn action_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        #[helix_agent_sdk::async_trait::async_trait]
-        impl #impl_generics helix_agent_sdk::SdkAgent for #struct_name #ty_generics #where_clause {
+            #[helix_agent_sdk::async_trait]
+            impl #impl_generics helix_agent_sdk::SdkAgent for #struct_name #ty_generics #where_clause {
             async fn init(&mut self, _context: &helix_agent_sdk::AgentContext) -> Result<(), helix_agent_sdk::SdkError> {
                 Ok(())
             }
@@ -407,8 +462,8 @@ pub fn action_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        #[helix_agent_sdk::async_trait::async_trait]
-        impl #impl_generics helix_agent_sdk::ActionSdkAgent for #struct_name #ty_generics #where_clause {
+            #[helix_agent_sdk::async_trait]
+            impl #impl_generics helix_agent_sdk::ActionSdkAgent for #struct_name #ty_generics #where_clause {
             async fn execute(&mut self, context: &helix_agent_sdk::AgentContext, event: helix_core::event::Event) -> Result<(), helix_agent_sdk::SdkError> {
                 // This delegates to the user's inherent `execute` method.
                 // The user *must* define `async fn execute(&mut self, context: &AgentContext, event: HelixEvent) -> Result<(), SdkError>`
@@ -549,8 +604,15 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let struct_name = &input_struct.ident;
     let (impl_generics, ty_generics, where_clause) = input_struct.generics.split_for_impl();
 
-    let factory_ident = Ident::new(&format!("__AGENT_FACTORY_{}", struct_name).to_uppercase(), Span::call_site());
+    let factory_ident = Ident::new(
+        &format!("__AGENT_FACTORY_{}", struct_name).to_uppercase(),
+        Span::call_site(),
+    );
     let agent_kind_str = struct_name.to_string();
+    let struct_init = match build_agent_struct_init(struct_name, &input_struct.fields) {
+        Ok(tokens) => tokens,
+        Err(err) => return err.to_compile_error().into(),
+    };
 
     let expanded = quote! {
         #input_struct // The original struct definition
@@ -559,21 +621,18 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
         mod native_impl {
             use super::*;
 
-            #[linkme::distributed_slice(AGENT_FACTORIES)]
-            #[linkme(crate = linkme)]
-            static #factory_ident: fn() -> (helix_core::agent::AgentKind, Box<dyn Fn(helix_core::agent::AgentConfig) -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> + Send + Sync>) =
+            #[::helix_agent_sdk::linkme::distributed_slice(::helix_agent_sdk::AGENT_FACTORIES)]
+            #[linkme(crate = ::helix_agent_sdk::linkme)]
+            static #factory_ident: ::helix_agent_sdk::RegisteredAgentFactory =
                 || {
-                    let factory = |config: helix_core::agent::AgentConfig| -> Result<Box<dyn helix_agent_sdk::SdkAgent>, helix_agent_sdk::SdkError> {
-                        let agent = #struct_name {
-                            agent_config: std::sync::Arc::new(config),
-                            ..Default::default()
-                        };
+                    let factory = |config: ::helix_core::agent::AgentConfig| -> Result<Box<dyn ::helix_agent_sdk::SdkAgent>, ::helix_agent_sdk::SdkError> {
+                        let agent = #struct_init;
                         Ok(Box::new(agent))
                     };
-                    (helix_core::agent::AgentKind::new(#agent_kind_str), Box::new(factory))
+                    (#agent_kind_str, Box::new(factory))
                 };
 
-            #[helix_agent_sdk::async_trait::async_trait]
+            #[helix_agent_sdk::async_trait]
             impl #impl_generics helix_core::agent::Agent for #struct_name #ty_generics #where_clause {
             fn id(&self) -> helix_core::types::AgentId {
                 self.agent_config.id.clone()
@@ -592,8 +651,8 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        #[helix_agent_sdk::async_trait::async_trait]
-        impl #impl_generics helix_agent_sdk::SdkAgent for #struct_name #ty_generics #where_clause {
+            #[helix_agent_sdk::async_trait]
+            impl #impl_generics helix_agent_sdk::SdkAgent for #struct_name #ty_generics #where_clause {
             async fn init(&mut self, _context: &helix_agent_sdk::AgentContext) -> Result<(), helix_agent_sdk::SdkError> {
                 Ok(())
             }
@@ -607,8 +666,8 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        #[helix_agent_sdk::async_trait::async_trait]
-        impl #impl_generics helix_agent_sdk::TransformSdkAgent for #struct_name #ty_generics #where_clause {
+            #[helix_agent_sdk::async_trait]
+            impl #impl_generics helix_agent_sdk::TransformSdkAgent for #struct_name #ty_generics #where_clause {
             async fn transform(&mut self, context: &helix_agent_sdk::AgentContext, event: helix_core::event::Event) -> Result<Vec<helix_core::event::Event>, helix_agent_sdk::SdkError> {
                 // This delegates to the user's inherent `transform` method.
                 // The user *must* define `async fn transform(&mut self, context: &AgentContext, event: HelixEvent) -> Result<Vec<HelixEvent>, SdkError>`
@@ -631,7 +690,7 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
             static AGENT_INSTANCE: Lazy<Mutex<Option<#struct_name #ty_generics>>> = Lazy::new(|| Mutex::new(None));
             // log_wasm helper defined here for this module's scope
             fn log_wasm(message: &str) { unsafe { helix_log_message(message.as_ptr(), message.len()); } }
-            
+
             #[no_mangle]
             pub extern "C" fn wasm_alloc(size: usize) -> *mut u8 {
                 let layout = std::alloc::Layout::from_size_align(size, std::mem::align_of::<u8>()).unwrap();
@@ -710,7 +769,7 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
                                     // This is highly simplified. Real transform is async and needs context via host calls.
                                     let log_msg = format!("helix_agent_transform: instance found, received event id: {}", event.id);
                                     log_wasm(&log_msg);
-                                    
+
                                     let dummy_transformed_event = helix_core::event::Event {
                                         id: helix_core::types::EventId::new_v4(),
                                         source_agent_id: agent_instance.agent_config.id.clone(),
@@ -771,84 +830,5 @@ pub fn transform_agent(_attr: TokenStream, item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-// Agent registration boilerplate (Task 1.2.1) is TBD and depends on runtime specifics.
-// The macros may later generate static registration functions as the runtime evolves.
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use quote::quote;
-    use syn;
-
-    // Helper to check if a specific trait is implemented in the generated code.
-    // This is a simplified check; more robust parsing might be needed for complex cases.
-    fn check_trait_impl(tokens: &TokenStream, trait_path_str: &str) -> bool {
-        let code_str = tokens.to_string();
-        // A bit simplistic: just checks if the string "impl SomeTrait for" exists.
-        // A more robust way would be to parse the TokenStream back into syn::File
-        // and inspect the items, but that's more involved for this example.
-        code_str.contains(&format!("impl {}", trait_path_str))
-    }
-
-    #[test]
-    fn test_source_agent_macro_generates_traits() {
-        let item_struct = quote! {
-            pub struct MyTestSourceAgent {
-                pub agent_config: std::sync::Arc<helix_core::agent::AgentConfig>,
-            }
-
-            impl MyTestSourceAgent {
-                // Required inherent method
-                pub async fn run(&mut self, _context: &helix_agent_sdk::AgentContext) -> Result<(), helix_agent_sdk::SdkError> {
-                    Ok(())
-                }
-            }
-        };
-        let tokens = source_agent(TokenStream::new(), item_struct.into());
-        
-        assert!(check_trait_impl(&tokens, "helix_core :: agent :: Agent for MyTestSourceAgent"));
-        assert!(check_trait_impl(&tokens, "helix_agent_sdk :: SdkAgent for MyTestSourceAgent"));
-        assert!(check_trait_impl(&tokens, "helix_agent_sdk :: SourceSdkAgent for MyTestSourceAgent"));
-    }
-
-    #[test]
-    fn test_action_agent_macro_generates_traits() {
-        let item_struct = quote! {
-            pub struct MyTestActionAgent {
-                pub agent_config: std::sync::Arc<helix_core::agent::AgentConfig>,
-            }
-
-            impl MyTestActionAgent {
-                // Required inherent method
-                pub async fn execute(&mut self, _context: &helix_agent_sdk::AgentContext, _event: helix_core::event::Event) -> Result<(), helix_agent_sdk::SdkError> {
-                    Ok(())
-                }
-            }
-        };
-        let tokens = action_agent(TokenStream::new(), item_struct.into());
-
-        assert!(check_trait_impl(&tokens, "helix_core :: agent :: Agent for MyTestActionAgent"));
-        assert!(check_trait_impl(&tokens, "helix_agent_sdk :: SdkAgent for MyTestActionAgent"));
-        assert!(check_trait_impl(&tokens, "helix_agent_sdk :: ActionSdkAgent for MyTestActionAgent"));
-    }
-
-    #[test]
-    fn test_transform_agent_macro_generates_traits() {
-        let item_struct = quote! {
-            pub struct MyTestTransformAgent {
-                pub agent_config: std::sync::Arc<helix_core::agent::AgentConfig>,
-            }
-
-            impl MyTestTransformAgent {
-                // Required inherent method
-                pub async fn transform(&mut self, _context: &helix_agent_sdk::AgentContext, _event: helix_core::event::Event) -> Result<Vec<helix_core::event::Event>, helix_agent_sdk::SdkError> {
-                    Ok(Vec::new())
-                }
-            }
-        };
-        let tokens = transform_agent(TokenStream::new(), item_struct.into());
-
-        assert!(check_trait_impl(&tokens, "helix_core :: agent :: Agent for MyTestTransformAgent"));
-        assert!(check_trait_impl(&tokens, "helix_agent_sdk :: SdkAgent for MyTestTransformAgent"));
-        assert!(check_trait_impl(&tokens, "helix_agent_sdk :: TransformSdkAgent for MyTestTransformAgent"));
-    }
-}
+// Note: proc-macro crates cannot reliably unit-test proc_macro expansion by calling the
+// macro functions directly. This crate uses `trybuild` compile tests under `tests/`.

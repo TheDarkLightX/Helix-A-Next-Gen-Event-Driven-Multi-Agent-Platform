@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Defines the core Event structure used throughout the Helix system.
 
 use chrono::{DateTime, Utc};
@@ -371,11 +370,7 @@ mod tests {
             .unwrap()
             .with_timezone(&Utc);
 
-        let mut event = Event::new(
-            "time/test".to_string(),
-            "test.old.time".to_string(),
-            None,
-        );
+        let mut event = Event::new("time/test".to_string(), "test.old.time".to_string(), None);
         event.time = old_time;
 
         let serialized = serde_json::to_string(&event).unwrap();
@@ -397,11 +392,7 @@ mod tests {
     fn test_event_uuid_edge_cases() {
         // Test with nil UUID
         let nil_uuid = Uuid::nil();
-        let mut event = Event::new(
-            "uuid/test".to_string(),
-            "test.nil.uuid".to_string(),
-            None,
-        );
+        let mut event = Event::new("uuid/test".to_string(), "test.nil.uuid".to_string(), None);
         event.id = nil_uuid;
         event.correlation_id = Some(nil_uuid);
         event.causation_id = Some(nil_uuid);
@@ -441,7 +432,10 @@ mod tests {
             ("string_empty", json!("")),
             ("array_empty", json!([])),
             ("object_empty", json!({})),
-            ("array_mixed", json!([1, "two", true, null, {"nested": "object"}])),
+            (
+                "array_mixed",
+                json!([1, "two", true, null, {"nested": "object"}]),
+            ),
         ];
 
         for (name, data) in test_cases {
@@ -453,7 +447,11 @@ mod tests {
 
             let serialized = serde_json::to_string(&event).unwrap();
             let deserialized: Event = serde_json::from_str(&serialized).unwrap();
-            assert_eq!(event.data, deserialized.data, "Failed for test case: {}", name);
+            assert_eq!(
+                event.data, deserialized.data,
+                "Failed for test case: {}",
+                name
+            );
         }
 
         // Test null case separately since Some(json!(null)) behaves differently

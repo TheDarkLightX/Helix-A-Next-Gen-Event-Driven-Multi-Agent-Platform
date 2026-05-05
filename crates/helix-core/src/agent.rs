@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Defines the core Agent concept and related traits.
 
 use crate::credential::CredentialProvider;
@@ -42,7 +41,8 @@ pub enum AgentRuntime {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::FromRow)] // Added sqlx::FromRow
 pub struct AgentConfig {
     /// Unique ID of this agent instance.
-    #[sqlx(try_from = "Uuid")] // If AgentId is a type alias for Uuid and sqlx needs explicit mapping
+    #[sqlx(try_from = "Uuid")]
+    // If AgentId is a type alias for Uuid and sqlx needs explicit mapping
     pub id: AgentId,
     /// ID of the profile (tenant) this agent belongs to.
     #[sqlx(try_from = "Uuid")] // If ProfileId is a type alias for Uuid
@@ -92,7 +92,7 @@ impl AgentConfig {
             name,
             agent_kind,
             agent_runtime: AgentRuntime::Native, // Default to Native
-            wasm_module_path: None,             // Default to None
+            wasm_module_path: None,              // Default to None
             config_data,
             credential_ids: Vec::new(),
             enabled: true,
@@ -119,7 +119,11 @@ impl AgentConfig {
 
     /// Removes a credential ID from the agent
     pub fn remove_credential(&mut self, credential_id: &CredentialId) -> bool {
-        if let Some(pos) = self.credential_ids.iter().position(|id| id == credential_id) {
+        if let Some(pos) = self
+            .credential_ids
+            .iter()
+            .position(|id| id == credential_id)
+        {
             self.credential_ids.remove(pos);
             true
         } else {
@@ -230,7 +234,7 @@ impl SourceContext {
         let event_type =
             event_type_override.unwrap_or_else(|| format!("agent.{}.emit", self.agent_id));
         let event = Event::new(self.agent_id.to_string(), event_type, Some(event_payload)); // Pass profile_id and event_type
-                                                                                           // Send the event through the channel
+                                                                                            // Send the event through the channel
         self.event_tx
             .send(event)
             .await
@@ -309,7 +313,13 @@ mod tests {
         let agent_kind = "webhook".to_string();
         let config_data = json!({"url": "https://example.com"});
 
-        let config = AgentConfig::new(id, profile_id, name.clone(), agent_kind.clone(), config_data.clone());
+        let config = AgentConfig::new(
+            id,
+            profile_id,
+            name.clone(),
+            agent_kind.clone(),
+            config_data.clone(),
+        );
 
         assert_eq!(config.id, id);
         assert_eq!(config.profile_id, profile_id);
@@ -503,17 +513,19 @@ mod tests {
         config_wasm.agent_runtime = AgentRuntime::Wasm;
         config_wasm.wasm_module_path = Some("path/to/mod.wasm".to_string());
 
-
         let serialized = serde_json::to_string(&config).expect("Failed to serialize native");
-        let deserialized: AgentConfig = serde_json::from_str(&serialized).expect("Failed to deserialize native");
+        let deserialized: AgentConfig =
+            serde_json::from_str(&serialized).expect("Failed to deserialize native");
 
         assert_eq!(config.id, deserialized.id);
         assert_eq!(config.agent_runtime, AgentRuntime::Native); // Default
         assert_eq!(deserialized.agent_runtime, AgentRuntime::Native);
         assert_eq!(deserialized.wasm_module_path, None);
 
-        let serialized_wasm = serde_json::to_string(&config_wasm).expect("Failed to serialize wasm");
-        let deserialized_wasm: AgentConfig = serde_json::from_str(&serialized_wasm).expect("Failed to deserialize wasm");
+        let serialized_wasm =
+            serde_json::to_string(&config_wasm).expect("Failed to serialize wasm");
+        let deserialized_wasm: AgentConfig =
+            serde_json::from_str(&serialized_wasm).expect("Failed to deserialize wasm");
 
         assert_eq!(config_wasm.id, deserialized_wasm.id);
         assert_eq!(config.profile_id, deserialized.profile_id);
@@ -524,7 +536,10 @@ mod tests {
         assert_eq!(config.dependencies, deserialized.dependencies);
 
         assert_eq!(deserialized_wasm.agent_runtime, AgentRuntime::Wasm);
-        assert_eq!(deserialized_wasm.wasm_module_path, Some("path/to/mod.wasm".to_string()));
+        assert_eq!(
+            deserialized_wasm.wasm_module_path,
+            Some("path/to/mod.wasm".to_string())
+        );
     }
 
     #[test]
@@ -864,7 +879,8 @@ mod tests {
         );
 
         let serialized = serde_json::to_string(&config).expect("Failed to serialize");
-        let deserialized: AgentConfig = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: AgentConfig =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
 
         assert_eq!(config, deserialized);
         assert!(config.name.as_ref().unwrap().contains("quotes"));
@@ -942,7 +958,11 @@ mod tests {
         async fn run(&mut self, ctx: SourceContext) -> Result<(), HelixError> {
             self.count += 1;
             let event_payload = json!({ "count": self.count, "message": "Tick" });
-            let event = Event::new(self.agent_id.to_string(), "source.tick".to_string(), Some(event_payload)); // Pass profile_id and event_type
+            let event = Event::new(
+                self.agent_id.to_string(),
+                "source.tick".to_string(),
+                Some(event_payload),
+            ); // Pass profile_id and event_type
             ctx.event_tx.send(event).await?;
             Ok(())
         }

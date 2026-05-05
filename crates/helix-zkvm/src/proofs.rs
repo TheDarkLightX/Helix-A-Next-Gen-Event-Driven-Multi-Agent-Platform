@@ -11,12 +11,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Zero-knowledge proof types and utilities
 
+use crate::errors::ZkVmError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::errors::ZkVmError;
 
 /// A zero-knowledge proof
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,7 +143,7 @@ impl ZkProof {
 
     /// Get a hash of the proof for identification
     pub fn hash(&self) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(&self.proof_data);
         hasher.update(&self.public_inputs);
@@ -153,14 +152,12 @@ impl ZkProof {
 
     /// Serialize the proof to bytes
     pub fn to_bytes(&self) -> Result<Vec<u8>, ZkVmError> {
-        serde_json::to_vec(self)
-            .map_err(|e| ZkVmError::SerializationError(e.to_string()))
+        serde_json::to_vec(self).map_err(|e| ZkVmError::SerializationError(e.to_string()))
     }
 
     /// Deserialize a proof from bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self, ZkVmError> {
-        serde_json::from_slice(data)
-            .map_err(|e| ZkVmError::SerializationError(e.to_string()))
+        serde_json::from_slice(data).map_err(|e| ZkVmError::SerializationError(e.to_string()))
     }
 }
 
@@ -190,7 +187,9 @@ impl ProofRequest {
     /// Validate the request
     pub fn validate(&self) -> Result<(), ZkVmError> {
         if self.program.is_empty() {
-            return Err(ZkVmError::InvalidInput("Program cannot be empty".to_string()));
+            return Err(ZkVmError::InvalidInput(
+                "Program cannot be empty".to_string(),
+            ));
         }
 
         // Additional validation based on proof system
@@ -216,7 +215,7 @@ pub mod utils {
 
     /// Generate a commitment to private inputs
     pub fn commit_private_inputs(inputs: &[u8]) -> Vec<u8> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(inputs);
         hasher.finalize().to_vec()
@@ -308,21 +307,11 @@ mod tests {
 
     #[test]
     fn test_proof_request_validation() {
-        let request = ProofRequest::new(
-            vec![1, 2, 3],
-            vec![4, 5],
-            vec![6, 7],
-            ProofSystem::Stark,
-        );
+        let request = ProofRequest::new(vec![1, 2, 3], vec![4, 5], vec![6, 7], ProofSystem::Stark);
 
         assert!(request.validate().is_ok());
 
-        let empty_request = ProofRequest::new(
-            vec![],
-            vec![4, 5],
-            vec![6, 7],
-            ProofSystem::Stark,
-        );
+        let empty_request = ProofRequest::new(vec![], vec![4, 5], vec![6, 7], ProofSystem::Stark);
 
         assert!(empty_request.validate().is_err());
     }
@@ -331,7 +320,7 @@ mod tests {
     fn test_commitment_verification() {
         let private_inputs = b"secret data";
         let commitment = utils::commit_private_inputs(private_inputs);
-        
+
         assert!(utils::verify_commitment(&[], &commitment, private_inputs));
         assert!(!utils::verify_commitment(&[], &commitment, b"wrong data"));
     }
@@ -340,7 +329,7 @@ mod tests {
     fn test_proof_size_estimation() {
         let stark_size = utils::estimate_proof_size(&ProofSystem::Stark, 1000);
         let snark_size = utils::estimate_proof_size(&ProofSystem::Groth16, 1000);
-        
+
         assert!(stark_size > 0);
         assert!(snark_size > 0);
         // STARK proofs should generally be larger than SNARK proofs for small circuits

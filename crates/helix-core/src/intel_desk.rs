@@ -1,10 +1,14 @@
 use crate::HelixError;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 const MAX_TAGS: usize = 16;
 const MAX_ENTITIES: usize = 16;
 const MAX_KEYWORDS: usize = 16;
 const MAX_TEXT_LEN: usize = 16_384;
+const DEFAULT_PROFILE_ID: &str = "50000000-0000-0000-0000-000000000010";
+const DEFAULT_SOURCE_CREDENTIAL_HEADER_NAME: &str = "Authorization";
+const DEFAULT_SOURCE_CREDENTIAL_HEADER_PREFIX: &str = "Bearer";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -20,9 +24,19 @@ pub enum SourceKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceDefinition {
     pub id: String,
+    #[serde(default = "default_source_profile_id")]
+    pub profile_id: String,
     pub name: String,
     pub description: String,
     pub kind: SourceKind,
+    #[serde(default)]
+    pub endpoint_url: Option<String>,
+    #[serde(default)]
+    pub credential_id: Option<String>,
+    #[serde(default = "default_source_credential_header_name")]
+    pub credential_header_name: String,
+    #[serde(default = "default_source_credential_header_prefix")]
+    pub credential_header_prefix: Option<String>,
     pub cadence_minutes: u16,
     pub trust_score: u8,
     pub enabled: bool,
@@ -204,8 +218,16 @@ pub struct CaseTransition {
 
 pub fn canonicalize_source(source: SourceDefinition) -> Result<SourceDefinition, HelixError> {
     validate_identifier("source.id", &source.id)?;
+    let profile_id = normalize_uuid_string("source.profile_id", &source.profile_id)?;
     validate_non_empty("source.name", &source.name)?;
     let description = clamp_trimmed_text("source.description", &source.description, 512)?;
+    let endpoint_url = normalize_source_endpoint(source.endpoint_url)?;
+    let credential_id =
+        normalize_optional_uuid_string("source.credential_id", source.credential_id)?;
+    let credential_header_name =
+        normalize_source_credential_header_name(source.credential_header_name)?;
+    let credential_header_prefix =
+        normalize_source_credential_header_prefix(source.credential_header_prefix)?;
     let tags = normalize_list(source.tags, MAX_TAGS, true, "source.tags")?;
     if source.cadence_minutes == 0 {
         return Err(HelixError::validation_error(
@@ -222,14 +244,144 @@ pub fn canonicalize_source(source: SourceDefinition) -> Result<SourceDefinition,
 
     Ok(SourceDefinition {
         id: source.id.trim().to_string(),
+        profile_id,
         name: source.name.trim().to_string(),
         description,
         kind: source.kind,
+        endpoint_url,
+        credential_id,
+        credential_header_name,
+        credential_header_prefix,
         cadence_minutes: source.cadence_minutes,
         trust_score: source.trust_score,
         enabled: source.enabled,
         tags,
     })
+}
+
+fn default_source_profile_id() -> String {
+    DEFAULT_PROFILE_ID.to_string()
+}
+
+fn default_source_credential_header_name() -> String {
+    DEFAULT_SOURCE_CREDENTIAL_HEADER_NAME.to_string()
+}
+
+fn default_source_credential_header_prefix() -> Option<String> {
+    Some(DEFAULT_SOURCE_CREDENTIAL_HEADER_PREFIX.to_string())
+}
+
+fn normalize_uuid_string(context: &str, value: &str) -> Result<String, HelixError> {
+    let value = value.trim();
+    let parsed = Uuid::parse_str(value)
+        .map_err(|_| HelixError::validation_error(context, "must be a valid UUID"))?;
+    if parsed.is_nil() {
+        return Err(HelixError::validation_error(context, "must not be nil"));
+    }
+    Ok(parsed.to_string())
+}
+
+fn normalize_optional_uuid_string(
+    context: &str,
+    value: Option<String>,
+) -> Result<Option<String>, HelixError> {
+    match value.map(|value| value.trim().to_string()) {
+        None => Ok(None),
+        Some(value) if value.is_empty() => Ok(None),
+        Some(value) => normalize_uuid_string(context, &value).map(Some),
+    }
+}
+
+fn normalize_source_credential_header_name(value: String) -> Result<String, HelixError> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(DEFAULT_SOURCE_CREDENTIAL_HEADER_NAME.to_string());
+    }
+    if value.len() > 64 {
+        return Err(HelixError::validation_error(
+            "source.credential_header_name",
+            "must be at most 64 characters",
+        ));
+    }
+    if !value.bytes().all(is_http_header_name_byte) {
+        return Err(HelixError::validation_error(
+            "source.credential_header_name",
+            "must be a valid HTTP header name",
+        ));
+    }
+    Ok(value.to_string())
+}
+
+fn normalize_source_credential_header_prefix(
+    value: Option<String>,
+) -> Result<Option<String>, HelixError> {
+    let Some(value) = value else {
+        return Ok(Some(DEFAULT_SOURCE_CREDENTIAL_HEADER_PREFIX.to_string()));
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() > 32 {
+        return Err(HelixError::validation_error(
+            "source.credential_header_prefix",
+            "must be at most 32 characters",
+        ));
+    }
+    if !value.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return Err(HelixError::validation_error(
+            "source.credential_header_prefix",
+            "must contain visible ASCII characters only",
+        ));
+    }
+    Ok(Some(value.to_string()))
+}
+
+fn is_http_header_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || matches!(
+            byte,
+            b'!' | b'#'
+                | b'$'
+                | b'%'
+                | b'&'
+                | b'\''
+                | b'*'
+                | b'+'
+                | b'-'
+                | b'.'
+                | b'^'
+                | b'_'
+                | b'`'
+                | b'|'
+                | b'~'
+        )
+}
+
+fn normalize_source_endpoint(value: Option<String>) -> Result<Option<String>, HelixError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() > 512 {
+        return Err(HelixError::validation_error(
+            "source.endpoint_url",
+            "must be at most 512 characters",
+        ));
+    }
+    let parsed = url::Url::parse(value).map_err(|_| {
+        HelixError::validation_error("source.endpoint_url", "must be a valid absolute URL")
+    })?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(Some(value.to_string())),
+        _ => Err(HelixError::validation_error(
+            "source.endpoint_url",
+            "must use http or https",
+        )),
+    }
 }
 
 pub fn canonicalize_watchlist(watchlist: Watchlist) -> Result<Watchlist, HelixError> {
@@ -341,7 +493,11 @@ pub fn canonicalize_claims(
     }
 
     canonical.sort_by(|left, right| {
-        (&left.subject, &left.predicate, &left.object).cmp(&(&right.subject, &right.predicate, &right.object))
+        (&left.subject, &left.predicate, &left.object).cmp(&(
+            &right.subject,
+            &right.predicate,
+            &right.object,
+        ))
     });
     canonical.dedup_by(|left, right| {
         left.subject == right.subject
@@ -360,7 +516,10 @@ pub fn evaluate_watchlists(
 ) -> Vec<WatchlistHit> {
     let searchable = format!(
         "{}\n{}\n{}\n{}",
-        evidence.title, evidence.summary, evidence.content, evidence.tags.join(" ")
+        evidence.title,
+        evidence.summary,
+        evidence.content,
+        evidence.tags.join(" ")
     )
     .to_lowercase();
 
@@ -461,7 +620,10 @@ pub fn new_case(command: CaseCommand) -> Result<CaseTransition, HelixError> {
     }
 }
 
-pub fn transition_case(case: &CaseFile, command: CaseCommand) -> Result<CaseTransition, HelixError> {
+pub fn transition_case(
+    case: &CaseFile,
+    command: CaseCommand,
+) -> Result<CaseTransition, HelixError> {
     let mut next = case.clone();
     let decision = match command {
         CaseCommand::Open { .. } => {
@@ -553,7 +715,10 @@ pub fn transition_case(case: &CaseFile, command: CaseCommand) -> Result<CaseTran
         }
     };
 
-    Ok(CaseTransition { case: next, decision })
+    Ok(CaseTransition {
+        case: next,
+        decision,
+    })
 }
 
 fn derive_claims_from_entities(evidence: &EvidenceItem) -> Vec<ProposedClaim> {
@@ -572,7 +737,9 @@ fn derive_claims_from_entities(evidence: &EvidenceItem) -> Vec<ProposedClaim> {
 
 fn entity_matches(entity: &str, evidence: &EvidenceItem, claims: &[ClaimRecord]) -> bool {
     evidence.entity_labels.iter().any(|value| value == entity)
-        || claims.iter().any(|claim| claim.subject == entity || claim.object == entity)
+        || claims
+            .iter()
+            .any(|claim| claim.subject == entity || claim.object == entity)
 }
 
 fn normalize_list(
@@ -592,7 +759,13 @@ fn normalize_list(
         .into_iter()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .map(|value| if lowercase { value.to_lowercase() } else { value })
+        .map(|value| {
+            if lowercase {
+                value.to_lowercase()
+            } else {
+                value
+            }
+        })
         .collect();
     normalized.sort();
     normalized.dedup();
@@ -633,10 +806,9 @@ fn validate_identifier(context: &str, value: &str) -> Result<(), HelixError> {
     if trimmed.is_empty() {
         return Err(HelixError::validation_error(context, "must not be empty"));
     }
-    if !trimmed
-        .bytes()
-        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_'))
-    {
+    if !trimmed.bytes().all(|byte| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+    }) {
         return Err(HelixError::validation_error(
             context,
             "must use lowercase ascii, digits, '-' or '_'",
@@ -669,13 +841,22 @@ mod tests {
     fn test_source() -> SourceDefinition {
         SourceDefinition {
             id: "rss_national_security".to_string(),
+            profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
             name: "National Security RSS".to_string(),
             description: "Analyst feed".to_string(),
             kind: SourceKind::RssFeed,
+            endpoint_url: None,
+            credential_id: None,
+            credential_header_name: "Authorization".to_string(),
+            credential_header_prefix: Some("Bearer".to_string()),
             cadence_minutes: 30,
             trust_score: 88,
             enabled: true,
-            tags: vec!["OSINT".to_string(), "Signals".to_string(), "signals".to_string()],
+            tags: vec![
+                "OSINT".to_string(),
+                "Signals".to_string(),
+                "signals".to_string(),
+            ],
         }
     }
 
@@ -695,7 +876,73 @@ mod tests {
     #[test]
     fn canonicalize_source_normalizes_tags() {
         let source = canonicalize_source(test_source()).unwrap();
-        assert_eq!(source.tags, vec!["osint".to_string(), "signals".to_string()]);
+        assert_eq!(
+            source.tags,
+            vec!["osint".to_string(), "signals".to_string()]
+        );
+    }
+
+    #[test]
+    fn canonicalize_source_normalizes_endpoint_url() {
+        let mut source = test_source();
+        source.endpoint_url = Some(" https://example.org/feed.xml ".to_string());
+        let source = canonicalize_source(source).unwrap();
+        assert_eq!(
+            source.endpoint_url.as_deref(),
+            Some("https://example.org/feed.xml")
+        );
+    }
+
+    #[test]
+    fn canonicalize_source_normalizes_credential_reference() {
+        let mut source = test_source();
+        source.profile_id = " 50000000-0000-0000-0000-000000000010 ".to_string();
+        source.credential_id = Some(" 50000000-0000-0000-0000-000000000011 ".to_string());
+        source.credential_header_name = " X-API-Key ".to_string();
+        source.credential_header_prefix = Some("".to_string());
+
+        let source = canonicalize_source(source).unwrap();
+        assert_eq!(source.profile_id, "50000000-0000-0000-0000-000000000010");
+        assert_eq!(
+            source.credential_id.as_deref(),
+            Some("50000000-0000-0000-0000-000000000011")
+        );
+        assert_eq!(source.credential_header_name, "X-API-Key");
+        assert_eq!(source.credential_header_prefix, None);
+    }
+
+    #[test]
+    fn canonicalize_source_rejects_invalid_credential_boundaries() {
+        let mut bad_profile = test_source();
+        bad_profile.profile_id = "not-a-uuid".to_string();
+        assert!(matches!(
+            canonicalize_source(bad_profile),
+            Err(HelixError::ValidationError { .. })
+        ));
+
+        let mut bad_credential = test_source();
+        bad_credential.credential_id = Some("00000000-0000-0000-0000-000000000000".to_string());
+        assert!(matches!(
+            canonicalize_source(bad_credential),
+            Err(HelixError::ValidationError { .. })
+        ));
+
+        let mut bad_header = test_source();
+        bad_header.credential_header_name = "Bad Header".to_string();
+        assert!(matches!(
+            canonicalize_source(bad_header),
+            Err(HelixError::ValidationError { .. })
+        ));
+    }
+
+    #[test]
+    fn canonicalize_source_rejects_invalid_endpoint_url() {
+        let mut source = test_source();
+        source.endpoint_url = Some("file:///tmp/feed.xml".to_string());
+        assert!(matches!(
+            canonicalize_source(source),
+            Err(HelixError::ValidationError { .. })
+        ));
     }
 
     #[test]

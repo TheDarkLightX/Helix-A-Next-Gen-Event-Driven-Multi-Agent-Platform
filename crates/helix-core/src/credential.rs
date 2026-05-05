@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // crates/helix-core/src/credential.rs
 
 use crate::types::{CredentialId, ProfileId};
@@ -142,19 +141,24 @@ impl CredentialProvider for EnvCredentialProvider {
             credential_id.to_string().replace('-', "_").to_uppercase()
         );
         match std::env::var(&env_var_name) {
-            Ok(credential_json) => {
-                serde_json::from_str::<Credential>(&credential_json)
-                    .map(Some)
-                    .map_err(|e| HelixError::validation_error(
+            Ok(credential_json) => serde_json::from_str::<Credential>(&credential_json)
+                .map(Some)
+                .map_err(|e| {
+                    HelixError::validation_error(
                         format!("credential.{}", env_var_name),
-                        format!("Failed to deserialize credential from environment variable {}: {}", env_var_name, e)
-                    ))
-            }
+                        format!(
+                            "Failed to deserialize credential from environment variable {}: {}",
+                            env_var_name, e
+                        ),
+                    )
+                }),
             Err(std::env::VarError::NotPresent) => Ok(None),
-            Err(std::env::VarError::NotUnicode(_os_string)) => Err(HelixError::ConfigError(format!(
-                "Environment variable {} contains non-Unicode data",
-                env_var_name
-            ))),
+            Err(std::env::VarError::NotUnicode(_os_string)) => {
+                Err(HelixError::ConfigError(format!(
+                    "Environment variable {} contains non-Unicode data",
+                    env_var_name
+                )))
+            }
         }
     }
 }
@@ -223,6 +227,7 @@ mod tests {
     }
 
     // Mock implementation for CredentialProvider
+    #[allow(dead_code)]
     #[derive(Default)]
     struct MockCredentialProvider {
         creds: Mutex<HashMap<CredentialId, Credential>>,
@@ -336,7 +341,8 @@ mod tests {
         );
 
         let serialized = serde_json::to_string(&credential).expect("Failed to serialize");
-        let deserialized: Credential = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: Credential =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
 
         assert_eq!(credential, deserialized);
         assert_eq!(credential.id, deserialized.id);
@@ -479,8 +485,14 @@ mod tests {
         store.add_cred(cred1.clone());
         store.add_cred(cred2.clone());
 
-        let fetched1 = store.get_credential_by_id(&profile1, &cred_id).await.unwrap();
-        let fetched2 = store.get_credential_by_id(&profile2, &cred_id).await.unwrap();
+        let fetched1 = store
+            .get_credential_by_id(&profile1, &cred_id)
+            .await
+            .unwrap();
+        let fetched2 = store
+            .get_credential_by_id(&profile2, &cred_id)
+            .await
+            .unwrap();
 
         assert_eq!(fetched1, Some(cred1));
         assert_eq!(fetched2, Some(cred2));
@@ -511,7 +523,10 @@ mod tests {
         store.add_cred(cred1);
         store.add_cred(cred2.clone());
 
-        let fetched = store.get_credential_by_id(&profile_id, &cred_id).await.unwrap();
+        let fetched = store
+            .get_credential_by_id(&profile_id, &cred_id)
+            .await
+            .unwrap();
         assert_eq!(fetched, Some(cred2));
     }
 
@@ -626,7 +641,7 @@ mod tests {
         let option_credential = result.unwrap();
         assert!(option_credential.is_some());
         let actual_credential = option_credential.unwrap();
-        
+
         // Compare fields that are expected to be the same
         assert_eq!(actual_credential.id, expected_credential.id);
         assert_eq!(actual_credential.profile_id, expected_credential.profile_id);
@@ -673,12 +688,15 @@ mod tests {
         assert!(result.is_err());
         if let Err(HelixError::ValidationError { context, message }) = result {
             assert!(context.contains("credential"));
-            assert!(message.contains(&format!("Failed to deserialize credential from environment variable {}", env_var_name)));
+            assert!(message.contains(&format!(
+                "Failed to deserialize credential from environment variable {}",
+                env_var_name
+            )));
         } else {
             panic!("Expected ValidationError, got {:?}", result);
         }
     }
-    
+
     #[tokio::test]
     async fn test_env_credential_provider_non_unicode_value() {
         let provider = EnvCredentialProvider;
@@ -709,7 +727,6 @@ mod tests {
             return;
         }
 
-
         let result = provider.get_credential(&cred_id).await;
         std::env::remove_var(&env_var_name);
 
@@ -717,13 +734,18 @@ mod tests {
         {
             assert!(result.is_err());
             if let Err(HelixError::ConfigError(msg)) = result {
-                assert!(msg.contains(&format!("Environment variable {} contains non-Unicode data", env_var_name)));
+                assert!(msg.contains(&format!(
+                    "Environment variable {} contains non-Unicode data",
+                    env_var_name
+                )));
             } else {
-                panic!("Expected ConfigError for non-Unicode data, got {:?}", result);
+                panic!(
+                    "Expected ConfigError for non-Unicode data, got {:?}",
+                    result
+                );
             }
         }
     }
-
 
     #[tokio::test]
     async fn test_integration_store_and_encryption() {
@@ -747,7 +769,10 @@ mod tests {
         store.add_cred(credential);
 
         // Retrieve and decrypt
-        let fetched_cred = store.get_credential_by_id(&profile_id, &cred_id).await.unwrap();
+        let fetched_cred = store
+            .get_credential_by_id(&profile_id, &cred_id)
+            .await
+            .unwrap();
         assert!(fetched_cred.is_some());
 
         let cred = fetched_cred.unwrap();
@@ -789,7 +814,10 @@ mod tests {
 
         // Verify all credentials can be retrieved and decrypted
         for (i, (name, expected_secret)) in credentials.iter().enumerate() {
-            let fetched = store.get_credential_by_id(&profile_id, &cred_ids[i]).await.unwrap();
+            let fetched = store
+                .get_credential_by_id(&profile_id, &cred_ids[i])
+                .await
+                .unwrap();
             assert!(fetched.is_some());
 
             let cred = fetched.unwrap();
@@ -829,7 +857,8 @@ mod tests {
         );
 
         let serialized = serde_json::to_string(&credential).expect("Failed to serialize");
-        let deserialized: Credential = serde_json::from_str(&serialized).expect("Failed to deserialize");
+        let deserialized: Credential =
+            serde_json::from_str(&serialized).expect("Failed to deserialize");
 
         assert_eq!(credential, deserialized);
         assert!(credential.name.contains("quotes"));

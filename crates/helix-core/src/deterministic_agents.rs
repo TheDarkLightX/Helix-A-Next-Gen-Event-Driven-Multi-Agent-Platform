@@ -135,7 +135,10 @@ impl RateLimiterMachine {
     pub fn step(&mut self, input: RateLimitInput) -> Option<RateLimitDecision> {
         match input {
             RateLimitInput::Tick => {
-                self.tokens = self.tokens.saturating_add(self.refill_per_tick).min(self.max_tokens);
+                self.tokens = self
+                    .tokens
+                    .saturating_add(self.refill_per_tick)
+                    .min(self.max_tokens);
                 None
             }
             RateLimitInput::Request { cost } => {
@@ -804,7 +807,8 @@ impl FeeBiddingMachine {
 
     fn compute_quote(self, urgent: bool) -> (u64, u64) {
         let base = self.base_fee.saturating_add(self.priority_fee);
-        let rejection_bump = u64::from(self.rejection_count).saturating_mul(u64::from(self.bump_bps));
+        let rejection_bump =
+            u64::from(self.rejection_count).saturating_mul(u64::from(self.bump_bps));
         let urgency_bump = if urgent { u64::from(self.bump_bps) } else { 0 };
         let multiplier = 10_000_u64
             .saturating_add(rejection_bump)
@@ -1154,8 +1158,14 @@ mod tests {
     #[test]
     fn nonce_manager_reserves_confirms_and_reconciles() {
         let mut m = NonceManagerMachine::new(10, 4);
-        assert_eq!(m.step(NonceInput::Reserve), NonceDecision::Reserved { nonce: 10 });
-        assert_eq!(m.step(NonceInput::Reserve), NonceDecision::Reserved { nonce: 11 });
+        assert_eq!(
+            m.step(NonceInput::Reserve),
+            NonceDecision::Reserved { nonce: 10 }
+        );
+        assert_eq!(
+            m.step(NonceInput::Reserve),
+            NonceDecision::Reserved { nonce: 11 }
+        );
         assert_eq!(m.next_nonce(), 12);
         assert_eq!(m.in_flight_len(), 2);
 
@@ -1204,7 +1214,10 @@ mod tests {
             FinalityDecision::Finalized
         );
         assert!(m.is_finalized());
-        assert_eq!(m.step(FinalityInput::MarkReorg), FinalityDecision::ReorgDetected);
+        assert_eq!(
+            m.step(FinalityInput::MarkReorg),
+            FinalityDecision::ReorgDetected
+        );
         assert!(m.reorg_detected());
     }
 

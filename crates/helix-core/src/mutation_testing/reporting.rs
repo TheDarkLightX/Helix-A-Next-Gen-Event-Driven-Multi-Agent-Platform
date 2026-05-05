@@ -11,63 +11,62 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! # Comprehensive Quality Reporting
-//! 
+//!
 //! This module provides detailed reporting capabilities for mutation testing and quality assessment.
-//! 
+//!
 //! ## Purpose
-//! 
+//!
 //! The reporting system transforms raw quality metrics into actionable insights through:
-//! 
+//!
 //! - **Visual Reports**: Human-readable quality summaries
 //! - **Trend Analysis**: Historical quality progression
 //! - **Actionable Recommendations**: Specific improvement guidance
 //! - **Stakeholder Communication**: Executive and technical summaries
-//! 
+//!
 //! ## Report Types
-//! 
+//!
 //! ### 1. Executive Summary
 //! - High-level quality overview
 //! - Key performance indicators
 //! - Risk assessment
 //! - Resource recommendations
-//! 
+//!
 //! ### 2. Technical Deep Dive
 //! - Detailed metric breakdowns
 //! - Module-specific analysis
 //! - Test effectiveness insights
 //! - Code complexity analysis
-//! 
+//!
 //! ### 3. Progress Tracking
 //! - Historical trend analysis
 //! - Goal achievement status
 //! - Improvement velocity
 //! - Regression detection
-//! 
+//!
 //! ## Output Formats
-//! 
+//!
 //! - **Console**: Immediate feedback during development
 //! - **JSON**: Machine-readable for CI/CD integration
 //! - **HTML**: Rich visual reports for stakeholders
 //! - **Markdown**: Documentation-friendly format
-//! 
+//!
 //! ## Usage Examples
-//! 
+//!
 //! ### Basic Quality Report
-//! 
+//!
 //! ```rust
 //! use helix_core::mutation_testing::reporting::generate_quality_report;
-//! 
+//!
 //! let report = generate_quality_report();
 //! println!("{}", report);
 //! ```
-//! 
+//!
 //! ### Custom Report Generation
-//! 
+//!
 //! ```rust
 //! use helix_core::mutation_testing::reporting::QualityReporter;
-//! 
+//!
 //! let reporter = QualityReporter::new();
 //! let report = reporter.generate_executive_summary()?;
 //! ```
@@ -243,7 +242,7 @@ Key Metrics:
 
     fn analyze_modules(&self) -> HashMap<String, ModuleQuality> {
         let mut analysis = HashMap::new();
-        
+
         // This would typically analyze each module individually
         // For now, we'll provide a representative analysis
         let modules = vec![
@@ -258,11 +257,17 @@ Key Metrics:
         ];
 
         for (name, test_count, coverage) in modules {
-            let grade = if coverage >= 95.0 { 'A' }
-                       else if coverage >= 90.0 { 'B' }
-                       else if coverage >= 80.0 { 'C' }
-                       else if coverage >= 70.0 { 'D' }
-                       else { 'F' };
+            let grade = if coverage >= 95.0 {
+                'A'
+            } else if coverage >= 90.0 {
+                'B'
+            } else if coverage >= 80.0 {
+                'C'
+            } else if coverage >= 70.0 {
+                'D'
+            } else {
+                'F'
+            };
 
             let issues = if coverage < 90.0 {
                 vec!["Test coverage below 90%".to_string()]
@@ -276,14 +281,17 @@ Key Metrics:
                 vec!["Maintain current test quality".to_string()]
             };
 
-            analysis.insert(name.to_string(), ModuleQuality {
-                name: name.to_string(),
-                test_count,
-                coverage,
-                grade,
-                issues,
-                suggestions,
-            });
+            analysis.insert(
+                name.to_string(),
+                ModuleQuality {
+                    name: name.to_string(),
+                    test_count,
+                    coverage,
+                    grade,
+                    issues,
+                    suggestions,
+                },
+            );
         }
 
         analysis
@@ -352,7 +360,7 @@ Key Metrics:
 pub fn generate_quality_report() -> String {
     let metrics = analyze_helix_core_quality();
     let tes = metrics.calculate_tes();
-    
+
     format!(
         r#"
 🎯 HELIX CORE QUALITY ASSESSMENT REPORT

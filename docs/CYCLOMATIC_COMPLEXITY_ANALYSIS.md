@@ -1,3 +1,9 @@
+---
+title: CYCLOMATIC_COMPLEXITY_ANALYSIS
+type: note
+permalink: helix-platform-review/docs/cyclomatic-complexity-analysis
+---
+
 # Helix Platform - Cyclomatic Complexity Analysis Report
 
 **Analysis Date**: December 2024  

@@ -35,10 +35,7 @@ pub struct NoopCredentialProvider;
 
 #[async_trait]
 impl CredentialProvider for NoopCredentialProvider {
-    async fn get_credential(
-        &self,
-        _id: &CredentialId,
-    ) -> Result<Option<Credential>, HelixError> {
+    async fn get_credential(&self, _id: &CredentialId) -> Result<Option<Credential>, HelixError> {
         Ok(None)
     }
 }

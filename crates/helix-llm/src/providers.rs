@@ -389,7 +389,8 @@ impl LlmProvider for OpenAiProvider {
     async fn stream_complete(
         &self,
         _request: LlmRequest,
-    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError> {
+    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError>
+    {
         // Streaming is not yet implemented for the OpenAI provider
         Err(LlmError::ModelNotSupported("streaming".into()))
     }
@@ -465,7 +466,8 @@ impl LlmProvider for AnthropicProvider {
     async fn stream_complete(
         &self,
         _request: LlmRequest,
-    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError> {
+    ) -> Result<Box<dyn futures::Stream<Item = Result<String, LlmError>> + Unpin + Send>, LlmError>
+    {
         // Anthropic streaming is not implemented
         Err(LlmError::ModelNotSupported("anthropic".into()))
     }

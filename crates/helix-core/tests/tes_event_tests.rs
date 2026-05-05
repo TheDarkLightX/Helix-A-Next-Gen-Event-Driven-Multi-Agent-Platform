@@ -11,20 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! TES-driven tests for the event system
 //! High assertion density and comprehensive behavior coverage
 
+use chrono::{DateTime, Duration, Utc};
 use helix_core::event::Event;
 use helix_core::test_utils::*;
-use chrono::{DateTime, Utc, Duration};
+use helix_core::{tes_assert_eq, tes_behavior};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[test]
 fn test_event_creation_comprehensive() {
     let mut tracker = TesTracker::new("test_event_creation_comprehensive");
-    
+
     // Test 1: Basic event creation
     tes_behavior!(tracker, "happy_path_creation",
         given: "Valid event parameters",
@@ -34,28 +34,33 @@ fn test_event_creation_comprehensive() {
             let source = "test/source".to_string();
             let event_type = "test.created".to_string();
             let data = json!({"key": "value", "number": 42});
-            
+
             let event = Event::new(source.clone(), event_type.clone(), Some(data.clone()));
-            
+
             // Multiple assertions for high density
             tes_assert_eq!(tracker, event.source, source, "Source matches");
             tes_assert_eq!(tracker, event.r#type, event_type, "Type matches");
-            tes_assert_eq!(tracker, event.specversion, "1.0", "CloudEvents version is 1.0");
+            tes_assert_eq!(
+                tracker,
+                event.specversion.as_str(),
+                "1.0",
+                "CloudEvents version is 1.0"
+            );
             tes_assert_eq!(tracker, event.data, Some(data), "Data matches");
             tes_assert_eq!(tracker, event.datacontenttype, Some("application/json".to_string()), "Content type set");
             tes_assert_eq!(tracker, event.subject, None, "Subject is None by default");
             tes_assert_eq!(tracker, event.correlation_id, None, "Correlation ID is None");
             tes_assert_eq!(tracker, event.causation_id, None, "Causation ID is None");
             tes_assert_eq!(tracker, event.id.is_nil(), false, "ID is not nil");
-            
+
             // Time validation
             let time_diff = Utc::now() - event.time;
             tes_assert_eq!(tracker, time_diff < Duration::seconds(1), true, "Time is recent");
-            
+
             true
         }
     );
-    
+
     // Test 2: Event without data
     tes_behavior!(tracker, "event_without_data",
         given: "No data payload",
@@ -63,15 +68,15 @@ fn test_event_creation_comprehensive() {
         then: "Event has no data or content type",
         {
             let event = Event::new("source".to_string(), "type".to_string(), None);
-            
+
             tes_assert_eq!(tracker, event.data, None, "Data is None");
             tes_assert_eq!(tracker, event.datacontenttype, None, "Content type is None");
             tes_assert_eq!(tracker, event.source.is_empty(), false, "Source is not empty");
-            
+
             true
         }
     );
-    
+
     // Test 3: Complex event data
     tes_behavior!(tracker, "complex_event_data",
         given: "Complex nested JSON data",
@@ -94,24 +99,44 @@ fn test_event_creation_comprehensive() {
                 ],
                 "timestamp": 1234567890
             });
-            
+
             let event = Event::new("system".to_string(), "user.action".to_string(), Some(complex_data.clone()));
-            
+
             tes_assert_eq!(tracker, event.data.is_some(), true, "Data exists");
-            
+
             if let Some(data) = &event.data {
-                tes_assert_eq!(tracker, data["user"]["id"], 123, "User ID preserved");
-                tes_assert_eq!(tracker, data["user"]["name"], "Test User", "User name preserved");
+                tes_assert_eq!(
+                    tracker,
+                    data["user"]["id"].clone(),
+                    json!(123),
+                    "User ID preserved"
+                );
+                tes_assert_eq!(
+                    tracker,
+                    data["user"]["name"].clone(),
+                    json!("Test User"),
+                    "User name preserved"
+                );
                 tes_assert_eq!(tracker, data["user"]["roles"].as_array().unwrap().len(), 2, "Roles array length");
-                tes_assert_eq!(tracker, data["user"]["metadata"]["active"], true, "Nested boolean preserved");
+                tes_assert_eq!(
+                    tracker,
+                    data["user"]["metadata"]["active"].clone(),
+                    json!(true),
+                    "Nested boolean preserved"
+                );
                 tes_assert_eq!(tracker, data["actions"].as_array().unwrap().len(), 2, "Actions array length");
-                tes_assert_eq!(tracker, data["timestamp"], 1234567890, "Timestamp preserved");
+                tes_assert_eq!(
+                    tracker,
+                    data["timestamp"].clone(),
+                    json!(1234567890),
+                    "Timestamp preserved"
+                );
             }
-            
+
             true
         }
     );
-    
+
     // Test 4: Event with extensions
     tes_behavior!(tracker, "event_with_extensions",
         given: "Event with correlation and causation IDs",
@@ -120,20 +145,20 @@ fn test_event_creation_comprehensive() {
         {
             let correlation_id = Uuid::new_v4();
             let causation_id = Uuid::new_v4();
-            
+
             let mut event = Event::new("source".to_string(), "type".to_string(), None);
             event.correlation_id = Some(correlation_id);
             event.causation_id = Some(causation_id);
             event.subject = Some("test/subject".to_string());
-            
+
             tes_assert_eq!(tracker, event.correlation_id, Some(correlation_id), "Correlation ID set");
             tes_assert_eq!(tracker, event.causation_id, Some(causation_id), "Causation ID set");
             tes_assert_eq!(tracker, event.subject, Some("test/subject".to_string()), "Subject set");
-            
+
             true
         }
     );
-    
+
     // Test 5: Edge cases
     tes_behavior!(tracker, "edge_case_empty_strings",
         given: "Empty strings for source and type",
@@ -141,15 +166,15 @@ fn test_event_creation_comprehensive() {
         then: "Event is created (validation happens elsewhere)",
         {
             let event = Event::new("".to_string(), "".to_string(), None);
-            
-            tes_assert_eq!(tracker, event.source, "", "Empty source accepted");
-            tes_assert_eq!(tracker, event.r#type, "", "Empty type accepted");
-            tes_assert_eq!(tracker, event.specversion, "1.0", "Version still set");
-            
+
+            tes_assert_eq!(tracker, event.source.as_str(), "", "Empty source accepted");
+            tes_assert_eq!(tracker, event.r#type.as_str(), "", "Empty type accepted");
+            tes_assert_eq!(tracker, event.specversion.as_str(), "1.0", "Version still set");
+
             true
         }
     );
-    
+
     tracker.record_mutations(18, 20);
     println!("{}", tracker.report());
 }
@@ -157,7 +182,7 @@ fn test_event_creation_comprehensive() {
 #[test]
 fn test_event_serialization_comprehensive() {
     let mut tracker = TesTracker::new("test_event_serialization_comprehensive");
-    
+
     // Test 1: Full serialization
     tes_behavior!(tracker, "full_serialization",
         given: "A complete event with all fields",
@@ -176,24 +201,54 @@ fn test_event_serialization_comprehensive() {
                 correlation_id: Some(Uuid::new_v4()),
                 causation_id: Some(Uuid::new_v4()),
             };
-            
+
             let serialized = serde_json::to_string(&event).unwrap();
             let parsed: Value = serde_json::from_str(&serialized).unwrap();
-            
-            tes_assert_eq!(tracker, parsed["source"], "/test/source", "Source serialized");
-            tes_assert_eq!(tracker, parsed["type"], "test.complete", "Type serialized");
-            tes_assert_eq!(tracker, parsed["specversion"], "1.0", "Version serialized");
-            tes_assert_eq!(tracker, parsed["datacontenttype"], "application/json", "Content type serialized");
-            tes_assert_eq!(tracker, parsed["subject"], "/test/subject", "Subject serialized");
-            tes_assert_eq!(tracker, parsed["data"]["test"], true, "Data serialized");
+
+            tes_assert_eq!(
+                tracker,
+                parsed["source"].clone(),
+                json!("/test/source"),
+                "Source serialized"
+            );
+            tes_assert_eq!(
+                tracker,
+                parsed["type"].clone(),
+                json!("test.complete"),
+                "Type serialized"
+            );
+            tes_assert_eq!(
+                tracker,
+                parsed["specversion"].clone(),
+                json!("1.0"),
+                "Version serialized"
+            );
+            tes_assert_eq!(
+                tracker,
+                parsed["datacontenttype"].clone(),
+                json!("application/json"),
+                "Content type serialized"
+            );
+            tes_assert_eq!(
+                tracker,
+                parsed["subject"].clone(),
+                json!("/test/subject"),
+                "Subject serialized"
+            );
+            tes_assert_eq!(
+                tracker,
+                parsed["data"]["test"].clone(),
+                json!(true),
+                "Data serialized"
+            );
             tes_assert_eq!(tracker, parsed["id"].as_str().unwrap().len(), 36, "UUID serialized correctly");
             tes_assert_eq!(tracker, parsed.get("correlation_id").is_some(), true, "Correlation ID present");
             tes_assert_eq!(tracker, parsed.get("causation_id").is_some(), true, "Causation ID present");
-            
+
             true
         }
     );
-    
+
     // Test 2: Minimal serialization
     tes_behavior!(tracker, "minimal_serialization",
         given: "An event with only required fields",
@@ -201,20 +256,20 @@ fn test_event_serialization_comprehensive() {
         then: "Optional fields are omitted",
         {
             let event = Event::new("source".to_string(), "type".to_string(), None);
-            
+
             let serialized = serde_json::to_string(&event).unwrap();
             let parsed: Value = serde_json::from_str(&serialized).unwrap();
-            
+
             tes_assert_eq!(tracker, parsed.get("data").is_none(), true, "No data field");
             tes_assert_eq!(tracker, parsed.get("datacontenttype").is_none(), true, "No content type");
             tes_assert_eq!(tracker, parsed.get("subject").is_none(), true, "No subject");
             tes_assert_eq!(tracker, parsed.get("correlation_id").is_none(), true, "No correlation ID");
             tes_assert_eq!(tracker, parsed.get("causation_id").is_none(), true, "No causation ID");
-            
+
             true
         }
     );
-    
+
     // Test 3: Deserialization
     tes_behavior!(tracker, "deserialization_roundtrip",
         given: "A serialized event",
@@ -226,20 +281,20 @@ fn test_event_serialization_comprehensive() {
                 "test.roundtrip".to_string(),
                 Some(json!({"number": 42, "array": [1, 2, 3]}))
             );
-            
+
             let serialized = serde_json::to_string(&original).unwrap();
             let deserialized: Event = serde_json::from_str(&serialized).unwrap();
-            
+
             tes_assert_eq!(tracker, deserialized.id, original.id, "ID matches");
             tes_assert_eq!(tracker, deserialized.source, original.source, "Source matches");
             tes_assert_eq!(tracker, deserialized.r#type, original.r#type, "Type matches");
             tes_assert_eq!(tracker, deserialized.data, original.data, "Data matches");
             tes_assert_eq!(tracker, deserialized.time, original.time, "Time matches");
-            
+
             true
         }
     );
-    
+
     tracker.record_mutations(16, 18);
     println!("{}", tracker.report());
 }
@@ -247,7 +302,7 @@ fn test_event_serialization_comprehensive() {
 #[test]
 fn test_event_cloudevents_compliance() {
     let mut tracker = TesTracker::new("test_event_cloudevents_compliance");
-    
+
     // Test CloudEvents v1.0 compliance
     tes_behavior!(tracker, "cloudevents_required_attributes",
         given: "CloudEvents specification requirements",
@@ -255,22 +310,22 @@ fn test_event_cloudevents_compliance() {
         then: "All required attributes are present",
         {
             let event = Event::new("source".to_string(), "type".to_string(), None);
-            
+
             // Required attributes per CloudEvents v1.0
             tes_assert_eq!(tracker, event.id.to_string().len() > 0, true, "ID is non-empty");
-            tes_assert_eq!(tracker, event.source.len() >= 0, true, "Source exists");
-            tes_assert_eq!(tracker, event.specversion, "1.0", "Spec version is 1.0");
-            tes_assert_eq!(tracker, event.r#type.len() >= 0, true, "Type exists");
-            
+            tes_assert_eq!(tracker, !event.source.is_empty(), true, "Source is non-empty");
+            tes_assert_eq!(tracker, event.specversion.as_str(), "1.0", "Spec version is 1.0");
+            tes_assert_eq!(tracker, !event.r#type.is_empty(), true, "Type is non-empty");
+
             // Time should be in RFC3339 format
             let time_str = event.time.to_rfc3339();
             tes_assert_eq!(tracker, time_str.contains('T'), true, "Time has T separator");
             tes_assert_eq!(tracker, time_str.ends_with('Z') || time_str.contains('+'), true, "Time has timezone");
-            
+
             true
         }
     );
-    
+
     // Test extension attributes
     tes_behavior!(tracker, "cloudevents_extensions",
         given: "Custom extension attributes",
@@ -289,16 +344,16 @@ fn test_event_cloudevents_compliance() {
                 correlation_id: Some(Uuid::new_v4()),
                 causation_id: Some(Uuid::new_v4()),
             };
-            
+
             // Extension attributes should use lowercase with underscores
             let serialized = serde_json::to_string(&event).unwrap();
             tes_assert_eq!(tracker, serialized.contains("correlation_id"), true, "Has correlation_id");
             tes_assert_eq!(tracker, serialized.contains("causation_id"), true, "Has causation_id");
-            
+
             true
         }
     );
-    
+
     tracker.record_mutations(10, 12);
     println!("{}", tracker.report());
 }

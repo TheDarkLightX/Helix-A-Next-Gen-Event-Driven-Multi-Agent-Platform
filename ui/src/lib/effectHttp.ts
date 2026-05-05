@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 import type * as Duration from "effect/Duration";
+import { loadApiToken } from "./apiAuth";
 
 const DEFAULT_TIMEOUT: Duration.DurationInput = "5 seconds";
 const DEFAULT_RETRY_DELAY = "150 millis";
@@ -98,6 +99,23 @@ function shouldRetry(method: string, options?: ApiRequestOptions): boolean {
   return options?.retry ?? method === "GET";
 }
 
+function withApiAuthHeaders(path: string, init?: RequestInit): RequestInit | undefined {
+  if (!path.startsWith("/api/")) return init;
+
+  const token = loadApiToken();
+  if (!token) return init;
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return {
+    ...init,
+    headers,
+  };
+}
+
 export function requestResponse(
   baseUrl: string,
   path: string,
@@ -105,8 +123,9 @@ export function requestResponse(
   options?: ApiRequestOptions
 ): Promise<Response> {
   const method = normalizeMethod(init);
+  const requestInit = withApiAuthHeaders(path, init);
   const effect = Effect.tryPromise({
-    try: (signal) => fetch(`${baseUrl}${path}`, { ...init, signal }),
+    try: (signal) => fetch(`${baseUrl}${path}`, { ...requestInit, signal }),
     catch: (error) => buildNetworkError(method, path, error),
   }).pipe(
     Effect.timeoutFail({

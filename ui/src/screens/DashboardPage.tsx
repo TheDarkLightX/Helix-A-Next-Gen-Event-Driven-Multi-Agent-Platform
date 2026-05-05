@@ -1,150 +1,72 @@
 import { useEffect, useState } from "react";
-import type { DeterministicAgentSpec } from "../lib/api";
+import type { CaseQueueEntry, DeterministicAgentSpec } from "../lib/api";
 import {
   fetchAgentCatalog,
   fetchAgentCatalogQuality,
+  fetchCases,
   fetchIntelOverview,
   fetchMarketIntelOverview,
 } from "../lib/api";
 
 const lanes = [
-  { name: "Formal Kernel", status: "Healthy", note: "Finite-state transitions + invariants" },
-  { name: "Imperative Shell", status: "Healthy", note: "Effects isolated behind execution port" },
-  { name: "Source Registry", status: "Healthy", note: "Trust-scored collection adapters for the desk" },
-  { name: "Evidence Pipeline", status: "Healthy", note: "Provenance-linked evidence, claims, and watchlist hits" },
-  { name: "Case Lifecycle", status: "Healthy", note: "Deterministic dossier transitions for analyst workflow" },
-  { name: "Market Intel View", status: "Healthy", note: "Deterministic market themes, companies, and playbooks" },
-  { name: "Onchain Shell", status: "Healthy", note: "EVM JSON-RPC raw tx + receipt lifecycle" },
-  { name: "Autopilot Guard", status: "Healthy", note: "LLM-operable control plane with fail-closed gating" },
+  { name: "Formal Kernel", status: "NOMINAL", note: "FSM transitions + invariants" },
+  { name: "Imperative Shell", status: "NOMINAL", note: "Effects behind execution port" },
+  { name: "Source Registry", status: "NOMINAL", note: "Trust-scored collectors" },
+  { name: "Evidence Pipeline", status: "DEGRADED", note: "High latency detected", classOverride: "warning" },
+  { name: "Case Lifecycle", status: "NOMINAL", note: "Deterministic state flow" },
+  { name: "Market Intel View", status: "NOMINAL", note: "Pricing & launch metrics" },
+  { name: "Onchain Shell", status: "NOMINAL", note: "EVM intent side-effects" },
+  { name: "Autopilot Guard", status: "NOMINAL", note: "LLM fail-closed gate" },
 ];
 
 const controls = [
-  { title: "Run Formal Core Verification", command: "./scripts/verify_formal_core.sh" },
-  { title: "Verify ROI Agent Models", command: "./scripts/verify_formal_agents.sh" },
-  { title: "Source Registry", command: "GET /api/v1/sources" },
-  { title: "Evidence Ingest", command: "POST /api/v1/evidence/ingest" },
-  { title: "Case Queue", command: "GET /api/v1/cases" },
-  { title: "Market Overview", command: "GET /api/v1/market-intel/overview" },
-  { title: "Autopilot Status", command: "GET /api/v1/autopilot/status" },
-  { title: "Onchain Dry Run", command: "POST /api/v1/onchain/send_raw with dry_run=true" },
-  { title: "Launch UI", command: "cd ui && npm run dev" },
+  { title: "VERIFY_CORE", command: "./scripts/verify_formal_core.sh" },
+  { title: "VERIFY_AGENTS", command: "./scripts/verify_formal_agents.sh" },
+  { title: "SYNC_SOURCES", command: "GET /api/v1/sources" },
+  { title: "INGEST_EVIDENCE", command: "POST /api/v1/evidence/ingest" },
+  { title: "POLL_CASES", command: "GET /api/v1/cases" },
+  { title: "DRY_RUN", command: "POST /api/v1/onchain/send_raw ?dry_run=1" },
 ];
 
 const fallbackAgents = [
-  {
-    name: "Dedup Window Agent",
-    value: "Eliminates duplicate event storms before downstream work.",
-  },
-  {
-    name: "Token Bucket Rate Limiter",
-    value: "Prevents overload while preserving deterministic admission.",
-  },
-  {
-    name: "Circuit Breaker Agent",
-    value: "Fast-fails unstable dependencies with controlled recovery probes.",
-  },
-  {
-    name: "Retry Budget Agent",
-    value: "Bounds retries to stop runaway feedback loops and queue blowups.",
-  },
-  {
-    name: "Approval Gate Agent",
-    value: "Deterministic quorum gate for high-risk or privileged actions.",
-  },
-  {
-    name: "Backpressure Controller Agent",
-    value: "Classifies queue pressure into accept, throttle, or shed without randomness.",
-  },
-  {
-    name: "SLA Deadline Agent",
-    value: "Tracks deadline windows and emits deterministic expiry/completion transitions.",
-  },
-  {
-    name: "DLQ Budget Agent",
-    value: "Routes repeated failures to dead-letter queue after a fixed failure budget.",
-  },
-  {
-    name: "Onchain Transaction Intent Agent",
-    value: "Controls tx submit/receipt transitions deterministically before RPC side effects.",
-  },
-  {
-    name: "Nonce Manager Agent",
-    value: "Reserves, confirms, and reconciles nonces to avoid collision and replay drift.",
-  },
-  {
-    name: "Fee Bidding Agent",
-    value: "Produces bounded deterministic fee quotes with rejection-based bumping.",
-  },
-  {
-    name: "Finality Reorg Guard Agent",
-    value: "Gates settlement by confirmation depth and detects reorg conditions.",
-  },
-  {
-    name: "Allowlist Policy Guard Agent",
-    value: "Deterministically blocks unauthorized chain/contract/method tuples.",
-  },
-];
-
-const featuredAgentOrder = [
-  "dedup_window",
-  "token_bucket",
-  "circuit_breaker",
-  "retry_budget",
-  "approval_gate",
-  "backpressure",
-  "sla_deadline",
-  "dlq_budget",
-  "onchain_tx_intent",
-  "nonce_manager",
-  "fee_bidding",
-  "finality_guard",
-  "allowlist_guard",
-  "symbolic_reasoning_gate",
-  "expert_system_gate",
-  "neuro_risk_gate",
-  "neuro_symbolic_fusion_gate",
+  { name: "Dedup Window", value: "Dup stream suppression" },
+  { name: "Token Bucket", value: "Rate limit admissions" },
+  { name: "Circuit Breaker", value: "TRIPPED: Auth rate exceeded", classOverride: "danger" },
+  { name: "Retry Budget", value: "Bounded loop control" },
+  { name: "Approval Gate", value: "Quorum auth gate" },
+  { name: "Backpressure", value: "Queue shedder" },
+  { name: "SLA Deadline", value: "Track expiry ticks" },
+  { name: "DLQ Budget", value: "Dead-letter router" },
+  { name: "Tx Intent", value: "EVM submission intent" },
+  { name: "Nonce Manager", value: "Collision / replay guard" },
+  { name: "Fee Bidding", value: "Deterministic EVM bump" },
+  { name: "Finality Guard", value: "Reorg / depth gate" },
+  { name: "Allowlist Guard", value: "Contract access wall" },
 ];
 
 const reasoningModes = [
-  {
-    name: "KRR + Symbolic",
-    note: "Forward chaining over finite facts/rules/triples with deterministic closure rounds.",
-  },
-  {
-    name: "Expert System",
-    note: "Weighted deterministic rule voting with explicit feature thresholds.",
-  },
-  {
-    name: "Neural Risk",
-    note: "Deterministic linear scoring model with fixed thresholds for allow/review/deny.",
-  },
-  {
-    name: "Neuro-Symbolic",
-    note: "Fail-closed symbolic entailment gate fused with bounded neural confidence.",
-  },
+  { name: "KRR / Symbolic", note: "Forward chaining closure" },
+  { name: "Expert System", note: "Weighted rule voting" },
+  { name: "Neural Risk", note: "Linear bounds check" },
+  { name: "Neuro-Symbolic", note: "Fused logic gate" },
 ];
 
 function pickFeaturedAgents(catalog: DeterministicAgentSpec[]) {
-  const ranked = featuredAgentOrder
-    .map((id) => catalog.find((agent) => agent.id === id))
-    .filter((agent): agent is DeterministicAgentSpec => Boolean(agent));
-
-  if (ranked.length >= 10) {
-    return ranked.map((agent) => ({
+  if (catalog.length >= 10) {
+    return catalog.slice(0, 13).map((agent) => ({
       name: agent.name,
       value: agent.roi_rationale,
+      classOverride: undefined
     }));
   }
-
-  return fallbackAgents;
+  return fallbackAgents as any[];
 }
 
 export function DashboardPage() {
   const [agentClassCount, setAgentClassCount] = useState<number>(fallbackAgents.length);
   const [featuredAgents, setFeaturedAgents] = useState(fallbackAgents);
-  const [categoryCoverage, setCategoryCoverage] = useState<number>(0);
+  const [topCases, setTopCases] = useState<CaseQueueEntry[]>([]);
   const [huginnBaseline, setHuginnBaseline] = useState<number>(68);
-  const [baselineGap, setBaselineGap] = useState<number>(agentClassCount - 68);
   const [sourceCount, setSourceCount] = useState<number>(0);
   const [watchlistCount, setWatchlistCount] = useState<number>(0);
   const [evidenceCount, setEvidenceCount] = useState<number>(0);
@@ -152,23 +74,23 @@ export function DashboardPage() {
   const [escalatedCaseCount, setEscalatedCaseCount] = useState<number>(0);
   const [trackedCompanyCount, setTrackedCompanyCount] = useState<number>(0);
   const [marketWatchlistCount, setMarketWatchlistCount] = useState<number>(0);
+
   const superiorityRatio = (agentClassCount / Math.max(huginnBaseline, 1)).toFixed(2);
-  const healthyLaneCount = lanes.filter((lane) => lane.status === "Healthy").length;
 
   useEffect(() => {
     void (async () => {
       try {
-        const [catalog, quality, overview, marketOverview] = await Promise.all([
+        const [catalog, quality, overview, marketOverview, cases] = await Promise.all([
           fetchAgentCatalog(),
           fetchAgentCatalogQuality(),
           fetchIntelOverview(),
           fetchMarketIntelOverview(),
+          fetchCases({ limit: 4 }),
         ]);
         setAgentClassCount(catalog.length);
         setFeaturedAgents(pickFeaturedAgents(catalog));
-        setCategoryCoverage(quality.expanded_categories);
+        setTopCases(cases.slice(0, 4));
         setHuginnBaseline(quality.huginn_baseline_agents);
-        setBaselineGap(quality.total_agents - quality.huginn_baseline_agents);
         setSourceCount(overview.source_count);
         setWatchlistCount(overview.watchlist_count);
         setEvidenceCount(overview.evidence_count);
@@ -177,166 +99,145 @@ export function DashboardPage() {
         setTrackedCompanyCount(marketOverview.tracked_company_count);
         setMarketWatchlistCount(marketOverview.market_watchlist_count);
       } catch {
-        setAgentClassCount(fallbackAgents.length);
-        setFeaturedAgents(fallbackAgents);
-        setCategoryCoverage(0);
-        setHuginnBaseline(68);
-        setBaselineGap(fallbackAgents.length - 68);
-        setSourceCount(0);
-        setWatchlistCount(0);
-        setEvidenceCount(0);
-        setOpenCaseCount(0);
-        setEscalatedCaseCount(0);
-        setTrackedCompanyCount(0);
-        setMarketWatchlistCount(0);
+        // Fallbacks stay defaults
       }
     })();
   }, []);
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">System Thesis</p>
-        <h2>Self-Hosted Personal Intelligence Agency</h2>
-        <p>
-          Helix now exposes OSINT and market intelligence workflows on top of the verified
-          substrate: trust-scored sources, provenance-linked evidence, bounded claims, watchlists,
-          cases, and guarded autopilot.
-        </p>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <p className="metric-label">Sources</p>
-            <p className="metric-value">{sourceCount}</p>
+    <section className="hud-grid">
+
+      {/* GLOBAL TELEMETRY BAR */}
+      <article className="tac-panel span-12">
+        <div className="panel-header">
+          <span className="panel-title">SYS.OVERVIEW [GLOBAL_READOUT]</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+          <div className="data-block">
+            <span className="d-label">NET.SOURCES</span>
+            <span className="d-value">{sourceCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Watchlists</p>
-            <p className="metric-value">{watchlistCount}</p>
+          <div className="data-block">
+            <span className="d-label">EVIDENCE.VOL</span>
+            <span className="d-value">{evidenceCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Evidence</p>
-            <p className="metric-value">{evidenceCount}</p>
+          <div className="data-block">
+            <span className="d-label">WATCH.RULES</span>
+            <span className="d-value">{watchlistCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Open Cases</p>
-            <p className="metric-value">{openCaseCount}</p>
+          <div className="data-block">
+            <span className="d-label">CASES.OPEN</span>
+            <span className="d-value highlight">{openCaseCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Escalated Cases</p>
-            <p className="metric-value">{escalatedCaseCount}</p>
+          <div className="data-block">
+            <span className="d-label">CASES.ESCALATED</span>
+            <span className="d-value danger">{escalatedCaseCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Tracked Companies</p>
-            <p className="metric-value">{trackedCompanyCount}</p>
+          <div className="data-block">
+            <span className="d-label">AGENT.CLASSES</span>
+            <span className="d-value">{agentClassCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Market Watchlists</p>
-            <p className="metric-value">{marketWatchlistCount}</p>
+          <div className="data-block">
+            <span className="d-label">MKT.TRACKED</span>
+            <span className="d-value">{trackedCompanyCount}</span>
           </div>
-          <div className="metric-card">
-            <p className="metric-label">Runtime Lanes</p>
-            <p className="metric-value">{lanes.length}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Healthy Lanes</p>
-            <p className="metric-value">{healthyLaneCount}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Coverage Domains</p>
-            <p className="metric-value">{categoryCoverage}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Agent Classes</p>
-            <p className="metric-value">{agentClassCount}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Baseline Gap</p>
-            <p className="metric-value">{baselineGap >= 0 ? `+${baselineGap}` : baselineGap}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Baseline Ratio</p>
-            <p className="metric-value">{superiorityRatio}x</p>
+          <div className="data-block">
+            <span className="d-label">SUPERIORITY_RX</span>
+            <span className="d-value alert">{superiorityRatio}x</span>
           </div>
         </div>
       </article>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Runtime Lanes</p>
-        <ul className="lane-list">
-          {lanes.map((lane) => (
-            <li key={lane.name} className="lane-row">
-              <div>
-                <h3>{lane.name}</h3>
-                <p>{lane.note}</p>
-              </div>
-              <span className={`status-pill ${lane.status === "Healthy" ? "ok" : "warn"}`}>
-                {lane.status}
-              </span>
-            </li>
+      {/* SYSTEM LANES */}
+      <article className="tac-panel span-4">
+        <div className="panel-header">
+          <span className="panel-title">SYS.LANES [RTE]</span>
+        </div>
+        <div className="tac-list">
+          {lanes.map((lane: any) => (
+            <div key={lane.name} className={`tac-row ${lane.classOverride || 'healthy'}`}>
+              <span className="row-primary">{lane.name}</span>
+              <span className="row-secondary">[{lane.status}]</span>
+            </div>
           ))}
-        </ul>
+        </div>
       </article>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Reasoning Backends</p>
-        <ul className="lane-list">
+      {/* REASONING BACKENDS */}
+      <article className="tac-panel span-4">
+        <div className="panel-header">
+          <span className="panel-title">SYS.REASONING [MODES]</span>
+        </div>
+        <div className="tac-list">
           {reasoningModes.map((mode) => (
-            <li key={mode.name} className="lane-row">
-              <div>
-                <h3>{mode.name}</h3>
-                <p>{mode.note}</p>
-              </div>
-              <span className="status-pill ok">Deterministic</span>
-            </li>
+            <div key={mode.name} className="tac-row healthy">
+              <span className="row-primary">{mode.name}</span>
+              <span className="row-secondary">DETERMINISTIC</span>
+            </div>
           ))}
-        </ul>
+        </div>
+        <br />
+        <p>Models are strictly gated. All evaluations must pass the explicit threshold boundaries without hidden prompt drift.</p>
       </article>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Control Commands</p>
-        <div className="command-stack">
+      {/* CONTROL EXEC */}
+      <article className="tac-panel span-4">
+        <div className="panel-header">
+          <span className="panel-title">SYS.CMD [QUICK_EXEC]</span>
+        </div>
+        <div className="tac-list" style={{ gap: '8px' }}>
           {controls.map((item) => (
-            <div key={item.title} className="command-row">
-              <h3>{item.title}</h3>
-              <code>{item.command}</code>
+            <div key={item.title}>
+              <span className="d-label" style={{ display: 'block', marginBottom: '2px' }}>&gt; {item.title}</span>
+              <pre className="tac-term">{item.command}</pre>
             </div>
           ))}
         </div>
       </article>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Reference Use Cases</p>
-        <ul className="lane-list">
-          <li className="lane-row">
-            <div>
-              <h3>OSINT Desk</h3>
-              <p>Leadership changes, facilities, detentions, and security signals with provenance-first evidence.</p>
+      <article className="tac-panel span-12">
+        <div className="panel-header">
+          <span className="panel-title">SYS.CASES [TRIAGE_QUEUE]</span>
+        </div>
+        <div className="tac-list">
+          {topCases.length > 0 ? (
+            topCases.map((entry, index) => (
+              <div key={entry.case.id} className="tac-row alert" style={{ flexDirection: "column", alignItems: "flex-start", gap: "4px" }}>
+                <span className="row-primary">
+                  #{index + 1} {entry.case.title}
+                </span>
+                <span className="row-secondary">
+                  {entry.case.status} | {entry.severity} | score {entry.priority.total}
+                </span>
+                <span className="row-secondary">
+                  {entry.watchlist_name} | latest {entry.latest_signal_at ?? "unknown"}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="tac-row healthy">
+              <span className="row-primary">CASE.QUEUE</span>
+              <span className="row-secondary">No ranked cases available</span>
             </div>
-            <span className="status-pill ok">live</span>
-          </li>
-          <li className="lane-row">
-            <div>
-              <h3>Market Intelligence</h3>
-              <p>Pricing moves, product launches, partnerships, and hiring signals on the same deterministic substrate.</p>
-            </div>
-            <span className="status-pill ok">live</span>
-          </li>
-        </ul>
+          )}
+        </div>
       </article>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Featured Agent Classes</p>
-        <ul className="lane-list">
-          {featuredAgents.map((agent) => (
-            <li key={agent.name} className="lane-row">
-              <div>
-                <h3>{agent.name}</h3>
-                <p>{agent.value}</p>
-              </div>
-              <span className="status-pill ok">Implemented</span>
-            </li>
+      {/* FEATURED AGENT SUBSTRATE */}
+      <article className="tac-panel span-12">
+        <div className="panel-header">
+          <span className="panel-title">SYS.AGENTS [ROI_KERNELS]</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px' }}>
+          {featuredAgents.map((agent: any) => (
+            <div key={agent.name} className={`tac-row ${agent.classOverride || 'healthy'}`} style={{ flexDirection: 'column', alignItems: 'flex-start', borderLeftWidth: '4px' }}>
+              <span className="row-primary">{agent.name}</span>
+              <span className="row-secondary" style={{ marginTop: '4px' }}>{agent.value}</span>
+            </div>
           ))}
-        </ul>
+        </div>
       </article>
+
     </section>
   );
 }

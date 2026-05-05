@@ -1,3 +1,9 @@
+---
+title: architectural_improvement_proposal_core_components
+type: note
+permalink: helix-platform-review/docs/architectural-improvement-proposal-core-components
+---
+
 # Architectural Improvement Proposal: Phased Implementation of Core Components
 
 **1. Introduction**
@@ -122,7 +128,7 @@ graph TD
         Security[helix-security (Cedar, Age)]
         Storage[helix-storage (Postgres, etc.)]
         LLM[helix-llm (Placeholder for now)]
-        Embeddings[helix-embeddings (Placeholder for now)]
+        Embeddings[helix-embeddings (Deterministic lexical retrieval)]
         NATS[NATS JetStream (Event Mesh)]
 
         UserCLI -- Manages Rules/Policies/Agents --> API

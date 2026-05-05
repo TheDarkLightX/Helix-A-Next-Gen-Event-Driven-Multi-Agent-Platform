@@ -1,3 +1,9 @@
+---
+title: typescript_sdk_plan
+type: note
+permalink: helix-platform-review/docs/typescript-sdk-plan
+---
+
 # Plan: TypeScript SDK for Helix WASM Agents
 
 ## 1. Overview

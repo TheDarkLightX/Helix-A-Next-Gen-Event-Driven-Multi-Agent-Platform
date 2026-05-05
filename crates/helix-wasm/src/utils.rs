@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Utility functions for WASM operations, including serialization.
 
 use crate::{WasmError, WasmRuntimeConfig}; // Added WasmRuntimeConfig
@@ -20,37 +19,45 @@ use serde::{Deserialize, Serialize};
 /// Validates basic WASM bytecode structure (magic number and version).
 pub fn validate_wasm(wasm_bytes: &[u8]) -> Result<(), WasmError> {
     if wasm_bytes.len() < 8 {
-        return Err(WasmError::InvalidModule("WASM module too small".to_string()));
+        return Err(WasmError::InvalidModule(
+            "WASM module too small".to_string(),
+        ));
     }
     let magic = &wasm_bytes[0..4];
     if magic != b"\0asm" {
-        return Err(WasmError::InvalidModule("Invalid WASM magic number".to_string()));
+        return Err(WasmError::InvalidModule(
+            "Invalid WASM magic number".to_string(),
+        ));
     }
-    let version = u32::from_le_bytes([
-        wasm_bytes[4], wasm_bytes[5], wasm_bytes[6], wasm_bytes[7]
-    ]);
+    let version = u32::from_le_bytes([wasm_bytes[4], wasm_bytes[5], wasm_bytes[6], wasm_bytes[7]]);
     if version != 1 {
-        return Err(WasmError::InvalidModule(format!("Unsupported WASM version: {}", version)));
+        return Err(WasmError::InvalidModule(format!(
+            "Unsupported WASM version: {}",
+            version
+        )));
     }
     Ok(())
 }
 
 /// Serializes data to MessagePack format.
 pub fn serialize_to_msgpack<T: Serialize>(data: &T) -> Result<Vec<u8>, WasmError> {
-    rmp_serde::to_vec_named(data).map_err(|e| WasmError::SerializationError(format!("Msgpack serialization failed: {}", e)))
+    rmp_serde::to_vec_named(data)
+        .map_err(|e| WasmError::SerializationError(format!("Msgpack serialization failed: {}", e)))
 }
 
 /// Deserializes data from MessagePack format.
 pub fn deserialize_from_msgpack<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, WasmError> {
-    rmp_serde::from_slice(bytes).map_err(|e| WasmError::SerializationError(format!("Msgpack deserialization failed: {}", e)))
+    rmp_serde::from_slice(bytes).map_err(|e| {
+        WasmError::SerializationError(format!("Msgpack deserialization failed: {}", e))
+    })
 }
 
 /// Extract function names from WASM module (simplified placeholder).
 /// In practice, a proper WASM parsing library should be used.
 pub fn extract_function_names(wasm_bytes: &[u8]) -> Result<Vec<String>, WasmError> {
     validate_wasm(wasm_bytes)?; // Ensure basic validity first
-    // This is a highly simplified placeholder.
-    // A real implementation would parse the export section of the WASM module.
+                                // This is a highly simplified placeholder.
+                                // A real implementation would parse the export section of the WASM module.
     Ok(vec![
         "agent_init".to_string(), // Example expected exports for an agent
         "agent_run".to_string(),
@@ -72,11 +79,12 @@ pub fn estimate_execution_cost(wasm_bytes: &[u8]) -> Result<u64, WasmError> {
 /// Check if WASM module is safe to execute based on preliminary checks (simplified placeholder).
 pub fn is_safe_module(wasm_bytes: &[u8], config: &WasmRuntimeConfig) -> Result<bool, WasmError> {
     validate_wasm(wasm_bytes)?;
-    
+
     // Example: Check against max_instructions if it's used as a proxy for complexity/size.
     // This is not a direct fuel cost but can be a simple size-based heuristic.
     let estimated_complexity = wasm_bytes.len() as u64; // Using size as complexity proxy
-    if estimated_complexity > config.max_instructions { // Assuming max_instructions can be a general complexity limit
+    if estimated_complexity > config.max_instructions {
+        // Assuming max_instructions can be a general complexity limit
         // tracing::warn!("Module considered unsafe due to size/complexity exceeding configured limit.");
         return Ok(false);
     }
@@ -86,10 +94,9 @@ pub fn is_safe_module(wasm_bytes: &[u8], config: &WasmRuntimeConfig) -> Result<b
     //   This is usually handled by the Linker configuration (only linking allowed functions).
     // - Static analysis for known dangerous patterns (if feasible and tools exist).
     // - For WASI, ensure filesystem/network access aligns with sandbox config (done at WasiCtx setup).
-    
+
     Ok(true)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -146,7 +153,6 @@ mod tests {
             .collect();
         assert!(!is_safe_module(&large_wasm_data, &config).unwrap());
     }
-
 
     #[test]
     fn test_msgpack_serialization_deserialization() {

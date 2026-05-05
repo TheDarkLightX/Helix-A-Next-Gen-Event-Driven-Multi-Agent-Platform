@@ -74,14 +74,17 @@ impl EvmRpcClient {
     pub async fn send_raw_transaction(&self, raw_tx_hex: &str) -> Result<String, HelixError> {
         validate_hex_string(raw_tx_hex, "raw_tx_hex")?;
         let value = self
-            .rpc_call("eth_sendRawTransaction", vec![Value::String(raw_tx_hex.to_string())])
+            .rpc_call(
+                "eth_sendRawTransaction",
+                vec![Value::String(raw_tx_hex.to_string())],
+            )
             .await?;
-        let tx_hash = value.as_str().ok_or_else(|| {
-            HelixError::ExternalServiceError {
+        let tx_hash = value
+            .as_str()
+            .ok_or_else(|| HelixError::ExternalServiceError {
                 service: "evm_rpc".to_string(),
                 details: "eth_sendRawTransaction result is not a string".to_string(),
-            }
-        })?;
+            })?;
         validate_tx_hash(tx_hash)?;
         Ok(tx_hash.to_string())
     }
@@ -93,7 +96,10 @@ impl EvmRpcClient {
     ) -> Result<Option<EvmReceipt>, HelixError> {
         validate_tx_hash(tx_hash)?;
         let value = self
-            .rpc_call("eth_getTransactionReceipt", vec![Value::String(tx_hash.to_string())])
+            .rpc_call(
+                "eth_getTransactionReceipt",
+                vec![Value::String(tx_hash.to_string())],
+            )
             .await?;
         if value.is_null() {
             return Ok(None);
@@ -143,12 +149,12 @@ impl EvmRpcClient {
             });
         }
 
-        parsed.result.ok_or_else(|| {
-            HelixError::ExternalServiceError {
+        parsed
+            .result
+            .ok_or_else(|| HelixError::ExternalServiceError {
                 service: "evm_rpc".to_string(),
                 details: format!("rpc method {method} missing result"),
-            }
-        })
+            })
     }
 }
 

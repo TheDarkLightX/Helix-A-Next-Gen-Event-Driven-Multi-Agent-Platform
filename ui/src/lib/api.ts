@@ -101,6 +101,173 @@ export type DeterministicAgentSpec = {
   formal_model: string;
 };
 
+export type AuditLogEntry = {
+  id: number;
+  subject: string;
+  action: string;
+  resource: string;
+  decision: string;
+  reason?: string | null;
+  metadata: unknown;
+  created_at: string;
+};
+
+export type AuditLogResponse = {
+  persistence_enabled: boolean;
+  entries: AuditLogEntry[];
+};
+
+export type CredentialMetadataEntry = {
+  id: string;
+  profile_id: string;
+  name: string;
+  kind: string;
+  metadata: Record<string, string>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CredentialCatalogResponse = {
+  persistence_enabled: boolean;
+  credentials: CredentialMetadataEntry[];
+};
+
+export type CredentialUpsertRequest = {
+  id?: string | null;
+  profile_id: string;
+  name: string;
+  kind: string;
+  secret: string;
+  metadata?: Record<string, string>;
+};
+
+export type CredentialResponse = {
+  persistence_enabled: boolean;
+  credential: CredentialMetadataEntry | null;
+};
+
+export type CredentialDeleteResponse = {
+  persistence_enabled: boolean;
+  deleted: boolean;
+};
+
+export type RuleOperator =
+  | "equals"
+  | "not_equals"
+  | "greater_than"
+  | "greater_than_or_equals"
+  | "less_than"
+  | "less_than_or_equals"
+  | "contains"
+  | "not_contains"
+  | "starts_with"
+  | "ends_with"
+  | "regex_matches"
+  | "exists"
+  | "not_exists"
+  | "is_null"
+  | "is_not_null"
+  | "is_true"
+  | "is_false"
+  | "is_empty"
+  | "is_not_empty"
+  | "in"
+  | "not_in"
+  | "type_is";
+
+export type RuleParameterValue = { literal: unknown } | { from_event: string };
+
+export type RuleAction = {
+  type?: "trigger_recipe";
+  recipe_id?: string | null;
+  recipe_name?: string | null;
+  parameters?: Record<string, RuleParameterValue>;
+  delay?: string | null;
+  on_failure?: string;
+  action_id?: string | null;
+};
+
+export type AutomationRule = {
+  id: string;
+  name: string;
+  description?: string | null;
+  version?: string;
+  author?: string | null;
+  enabled?: boolean;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  condition: unknown;
+  actions: RuleAction[];
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AutomationRuleCatalogResponse = {
+  persistence_enabled: boolean;
+  rules: AutomationRule[];
+};
+
+export type RecipeTriggerPlan = {
+  rule_id: string;
+  rule_name: string;
+  action_id?: string | null;
+  recipe_id?: string | null;
+  recipe_name?: string | null;
+  parameters: Record<string, unknown>;
+};
+
+export type AutomationRuleEvaluateResponse = {
+  rule_count: number;
+  trigger_plans: RecipeTriggerPlan[];
+  evaluation?: AutomationRuleEvaluationEntry | null;
+};
+
+export type AutomationRuleEvaluationEntry = {
+  id: number;
+  event_id: string;
+  event_type: string;
+  event_source: string;
+  event: unknown;
+  rule_count: number;
+  trigger_plan_count: number;
+  trigger_plans: RecipeTriggerPlan[];
+  created_at: string;
+};
+
+export type AutomationRuleEvaluationCatalogResponse = {
+  persistence_enabled: boolean;
+  entries: AutomationRuleEvaluationEntry[];
+};
+
+export type RecipeRunEntry = {
+  id: number;
+  evaluation_id?: number | null;
+  rule_id: string;
+  action_id?: string | null;
+  requested_recipe_id?: string | null;
+  requested_recipe_name?: string | null;
+  resolved_recipe_id?: string | null;
+  resolved_recipe_name?: string | null;
+  trigger_plan: RecipeTriggerPlan;
+  parameters: Record<string, unknown>;
+  status: "completed" | "failed" | string;
+  started_agent_ids: string[];
+  emitted_events: unknown[];
+  state_snapshots: Record<string, unknown>;
+  error?: string | null;
+  created_at: string;
+};
+
+export type RecipeRunCatalogResponse = {
+  persistence_enabled: boolean;
+  entries: RecipeRunEntry[];
+};
+
+export type RecipeTriggerRunResponse = {
+  persistence_enabled: boolean;
+  run?: RecipeRunEntry | null;
+};
+
 export type DeterministicAgentTemplate = {
   id: string;
   name: string;
@@ -235,9 +402,14 @@ export type ClaimReviewStatus = "needs_review" | "corroborated" | "rejected";
 
 export type SourceDefinition = {
   id: string;
+  profile_id: string;
   name: string;
   description: string;
   kind: SourceKind;
+  endpoint_url?: string | null;
+  credential_id?: string | null;
+  credential_header_name: string;
+  credential_header_prefix?: string | null;
   cadence_minutes: number;
   trust_score: number;
   enabled: boolean;
@@ -276,6 +448,27 @@ export type EvidenceItem = {
   provenance_hash: string;
 };
 
+export type EvidenceQueueEntry = {
+  evidence: EvidenceItem;
+  source_name: string;
+  source_trust_score: number;
+  priority: PriorityBreakdown;
+  linked_case_count: number;
+  linked_claim_count: number;
+  max_linked_severity: WatchlistSeverity | null;
+  semantic_score_bps: number | null;
+};
+
+export type EvidenceQueueFilters = {
+  source_id?: string;
+  tag?: string;
+  entity?: string;
+  linked_status?: CaseStatus;
+  min_trust?: number;
+  q?: string;
+  limit?: number;
+};
+
 export type ClaimRecord = {
   id: string;
   evidence_id: string;
@@ -285,6 +478,28 @@ export type ClaimRecord = {
   confidence_bps: number;
   review_status: ClaimReviewStatus;
   rationale: string;
+};
+
+export type ClaimQueueEntry = {
+  claim: ClaimRecord;
+  evidence_title: string;
+  evidence_observed_at: string;
+  source_name: string;
+  source_trust_score: number;
+  priority: PriorityBreakdown;
+  linked_case_count: number;
+  max_linked_severity: WatchlistSeverity | null;
+  semantic_score_bps: number | null;
+};
+
+export type ClaimQueueFilters = {
+  review_status?: ClaimReviewStatus;
+  predicate?: string;
+  subject?: string;
+  linked_status?: CaseStatus;
+  min_confidence_bps?: number;
+  q?: string;
+  limit?: number;
 };
 
 export type WatchlistHit = {
@@ -336,10 +551,22 @@ export type IntelDeskOverviewResponse = {
   escalated_case_count: number;
 };
 
+export type PriorityBreakdown = {
+  total: number;
+  attention_tier: number;
+  severity_tier: number;
+  corroboration_tier: number;
+  credibility_bps: number;
+  freshness_tier: number;
+  trust_tier: number;
+  density_tier: number;
+};
+
 export type MarketIntelThemeCard = {
   theme_id: string;
   name: string;
   summary: string;
+  priority: PriorityBreakdown;
   watchlist_count: number;
   evidence_count: number;
   active_case_count: number;
@@ -349,6 +576,7 @@ export type MarketIntelThemeCard = {
 
 export type MarketIntelCompanyCard = {
   company: string;
+  priority: PriorityBreakdown;
   mention_count: number;
   claim_count: number;
   active_case_count: number;
@@ -369,6 +597,7 @@ export type MarketIntelCaseBrief = {
   company: string | null;
   theme_id: string;
   theme_name: string;
+  priority: PriorityBreakdown;
   status: CaseStatus;
   latest_signal_at: string | null;
   evidence_count: number;
@@ -399,14 +628,104 @@ export type GenerateMarketIntelBriefResponse = {
   transition: CaseTransition | null;
 };
 
+export type CaseQueueEntry = {
+  case: CaseFile;
+  watchlist_name: string;
+  severity: WatchlistSeverity;
+  priority: PriorityBreakdown;
+  latest_signal_at: string | null;
+};
+
+export type CaseQueueFilters = {
+  status?: CaseStatus;
+  severity?: WatchlistSeverity;
+  watchlist_id?: string;
+  primary_entity?: string;
+  limit?: number;
+};
+
+export type AutopilotReviewKind = "case" | "claim" | "evidence";
+
+export type AutopilotReviewQueueEntry = {
+  kind: AutopilotReviewKind;
+  item_id: string;
+  title: string;
+  summary: string;
+  context_label: string;
+  route: string;
+  goal_hint: string;
+  priority: PriorityBreakdown;
+  latest_signal_at: string | null;
+  severity: WatchlistSeverity | null;
+  case_status: CaseStatus | null;
+  claim_review_status: ClaimReviewStatus | null;
+};
+
+export type AutopilotReviewQueueFilters = {
+  kind?: AutopilotReviewKind;
+  limit?: number;
+};
+
+export type AutopilotReviewProposeRequest = {
+  review_kind: AutopilotReviewKind;
+  item_id: string;
+  kind: AutopilotProposeKind;
+  rpc_url?: string | null;
+  raw_tx_hex?: string | null;
+  dry_run?: boolean | null;
+};
+
+export type AutopilotReviewProposeResponse = {
+  review_item: AutopilotReviewQueueEntry;
+  proposal: AutopilotProposeResponse;
+};
+
+export type AutopilotReviewExportPacketResponse = {
+  packet_id: string;
+  kind: AutopilotReviewKind;
+  item: AutopilotReviewQueueEntry;
+  narrative: string;
+  supporting_cases: CaseQueueEntry[];
+  supporting_claims: ClaimQueueEntry[];
+  supporting_evidence: EvidenceQueueEntry[];
+};
+
+export type MarketIntelBriefExportPacketResponse = {
+  packet_id: string;
+  narrative: string;
+  briefing: MarketIntelCaseBrief;
+  case_file: CaseFile;
+  watchlist: Watchlist;
+  evidence: EvidenceQueueEntry[];
+  claims: ClaimQueueEntry[];
+};
+
 export type CreateSourceRequest = {
+  profile_id?: string | null;
   name: string;
   description: string;
   kind: SourceKind;
+  endpoint_url?: string | null;
+  credential_id?: string | null;
+  credential_header_name?: string | null;
+  credential_header_prefix?: string | null;
   cadence_minutes: number;
   trust_score: number;
   enabled: boolean;
   tags: string[];
+};
+
+export type CollectSourceRequest = {
+  observed_at: string;
+  max_items?: number;
+};
+
+export type CollectSourceResponse = {
+  source: SourceDefinition;
+  fetched_url: string;
+  collected_count: number;
+  duplicate_count: number;
+  results: IngestEvidenceResponse[];
 };
 
 export type CreateWatchlistRequest = {
@@ -437,6 +756,13 @@ export type IngestEvidenceResponse = {
   claims: ClaimRecord[];
   hits: WatchlistHit[];
   case_updates: CaseTransition[];
+};
+
+export type CloudEventInput = {
+  source: string;
+  type: string;
+  data?: unknown;
+  subject?: string | null;
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3000";
@@ -519,6 +845,75 @@ export async function applyAgentTemplate(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ run_bootstrap_simulation: runBootstrapSimulation }),
+    },
+    { retry: false }
+  );
+}
+
+export async function fetchAutomationRules(): Promise<AutomationRuleCatalogResponse> {
+  return requestJson<AutomationRuleCatalogResponse>(API_BASE, "/api/v1/rules");
+}
+
+export async function upsertAutomationRule(rule: AutomationRule): Promise<AutomationRule> {
+  const payload = await requestJson<{ rule: AutomationRule }>(
+    API_BASE,
+    "/api/v1/rules",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rule }),
+    },
+    { retry: false }
+  );
+  return payload.rule;
+}
+
+export async function evaluateAutomationRules(
+  event: CloudEventInput
+): Promise<AutomationRuleEvaluateResponse> {
+  return requestJson<AutomationRuleEvaluateResponse>(
+    API_BASE,
+    "/api/v1/rules/evaluate",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event }),
+    },
+    { retry: false }
+  );
+}
+
+export async function fetchAutomationRuleEvaluations(
+  limit = 25
+): Promise<AutomationRuleEvaluationCatalogResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return requestJson<AutomationRuleEvaluationCatalogResponse>(
+    API_BASE,
+    `/api/v1/rules/evaluations?${params.toString()}`
+  );
+}
+
+export async function fetchRecipeRuns(limit = 25): Promise<RecipeRunCatalogResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return requestJson<RecipeRunCatalogResponse>(
+    API_BASE,
+    `/api/v1/recipe-runs?${params.toString()}`
+  );
+}
+
+export async function runRecipeTriggerPlan(
+  plan: RecipeTriggerPlan,
+  evaluationId?: number | null
+): Promise<RecipeTriggerRunResponse> {
+  return requestJson<RecipeTriggerRunResponse>(
+    API_BASE,
+    "/api/v1/rules/trigger-plans/run",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plan, evaluation_id: evaluationId ?? null }),
     },
     { retry: false }
   );
@@ -623,6 +1018,45 @@ export async function proposeAutopilot(
   };
 }
 
+export async function fetchAutopilotReviewQueue(
+  filters?: AutopilotReviewQueueFilters
+): Promise<AutopilotReviewQueueEntry[]> {
+  const params = new URLSearchParams();
+  if (filters?.kind) params.set("kind", filters.kind);
+  if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+  const query = params.toString();
+  const payload = await requestJson<{ items: AutopilotReviewQueueEntry[] }>(
+    API_BASE,
+    query ? `/api/v1/autopilot/review-queue?${query}` : "/api/v1/autopilot/review-queue"
+  );
+  return payload.items;
+}
+
+export async function proposeAutopilotFromReviewItem(
+  request: AutopilotReviewProposeRequest
+): Promise<AutopilotReviewProposeResponse> {
+  return requestJson<AutopilotReviewProposeResponse>(
+    API_BASE,
+    "/api/v1/autopilot/review-queue/propose",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+}
+
+export async function fetchAutopilotReviewExportPacket(
+  reviewKind: AutopilotReviewKind,
+  itemId: string
+): Promise<AutopilotReviewExportPacketResponse> {
+  return requestJson<AutopilotReviewExportPacketResponse>(
+    API_BASE,
+    `/api/v1/autopilot/review-queue/export?review_kind=${encodeURIComponent(reviewKind)}&item_id=${encodeURIComponent(itemId)}`
+  );
+}
+
 export async function fetchIntelOverview(): Promise<IntelDeskOverviewResponse> {
   return requestJson<IntelDeskOverviewResponse>(API_BASE, "/api/v1/intel/overview");
 }
@@ -647,6 +1081,15 @@ export async function generateMarketIntelBrief(
   );
 }
 
+export async function fetchMarketIntelBriefExportPacket(
+  caseId: string
+): Promise<MarketIntelBriefExportPacketResponse> {
+  return requestJson<MarketIntelBriefExportPacketResponse>(
+    API_BASE,
+    `/api/v1/market-intel/cases/${encodeURIComponent(caseId)}/export`
+  );
+}
+
 export async function fetchSources(): Promise<SourceDefinition[]> {
   const payload = await requestJson<{ sources: SourceDefinition[] }>(API_BASE, "/api/v1/sources");
   return payload.sources;
@@ -664,6 +1107,22 @@ export async function createSource(request: CreateSourceRequest): Promise<Source
     { retry: false }
   );
   return payload.source;
+}
+
+export async function collectSource(
+  sourceId: string,
+  request: CollectSourceRequest
+): Promise<CollectSourceResponse> {
+  return requestJson<CollectSourceResponse>(
+    API_BASE,
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/collect`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
 }
 
 export async function fetchWatchlists(): Promise<Watchlist[]> {
@@ -688,8 +1147,20 @@ export async function createWatchlist(request: CreateWatchlistRequest): Promise<
   return payload.watchlist;
 }
 
-export async function fetchEvidence(): Promise<EvidenceItem[]> {
-  const payload = await requestJson<{ evidence: EvidenceItem[] }>(API_BASE, "/api/v1/evidence");
+export async function fetchEvidence(filters?: EvidenceQueueFilters): Promise<EvidenceQueueEntry[]> {
+  const params = new URLSearchParams();
+  if (filters?.source_id) params.set("source_id", filters.source_id);
+  if (filters?.tag) params.set("tag", filters.tag);
+  if (filters?.entity) params.set("entity", filters.entity);
+  if (filters?.linked_status) params.set("linked_status", filters.linked_status);
+  if (filters?.min_trust !== undefined) params.set("min_trust", String(filters.min_trust));
+  if (filters?.q) params.set("q", filters.q);
+  if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+  const query = params.toString();
+  const payload = await requestJson<{ evidence: EvidenceQueueEntry[] }>(
+    API_BASE,
+    query ? `/api/v1/evidence?${query}` : "/api/v1/evidence"
+  );
   return payload.evidence;
 }
 
@@ -706,8 +1177,22 @@ export async function ingestEvidence(request: IngestEvidenceRequest): Promise<In
   );
 }
 
-export async function fetchClaims(): Promise<ClaimRecord[]> {
-  const payload = await requestJson<{ claims: ClaimRecord[] }>(API_BASE, "/api/v1/claims");
+export async function fetchClaims(filters?: ClaimQueueFilters): Promise<ClaimQueueEntry[]> {
+  const params = new URLSearchParams();
+  if (filters?.review_status) params.set("review_status", filters.review_status);
+  if (filters?.predicate) params.set("predicate", filters.predicate);
+  if (filters?.subject) params.set("subject", filters.subject);
+  if (filters?.linked_status) params.set("linked_status", filters.linked_status);
+  if (filters?.min_confidence_bps !== undefined) {
+    params.set("min_confidence_bps", String(filters.min_confidence_bps));
+  }
+  if (filters?.q) params.set("q", filters.q);
+  if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+  const query = params.toString();
+  const payload = await requestJson<{ claims: ClaimQueueEntry[] }>(
+    API_BASE,
+    query ? `/api/v1/claims?${query}` : "/api/v1/claims"
+  );
   return payload.claims;
 }
 
@@ -728,8 +1213,18 @@ export async function reviewClaim(
   return payload.claim;
 }
 
-export async function fetchCases(): Promise<CaseFile[]> {
-  const payload = await requestJson<{ cases: CaseFile[] }>(API_BASE, "/api/v1/cases");
+export async function fetchCases(filters?: CaseQueueFilters): Promise<CaseQueueEntry[]> {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.severity) params.set("severity", filters.severity);
+  if (filters?.watchlist_id) params.set("watchlist_id", filters.watchlist_id);
+  if (filters?.primary_entity) params.set("primary_entity", filters.primary_entity);
+  if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+  const query = params.toString();
+  const payload = await requestJson<{ cases: CaseQueueEntry[] }>(
+    API_BASE,
+    query ? `/api/v1/cases?${query}` : "/api/v1/cases"
+  );
   return payload.cases;
 }
 
@@ -748,4 +1243,47 @@ export async function transitionCase(
     { retry: false }
   );
   return payload.transition;
+}
+
+export async function fetchAuditLog(limit = 50): Promise<AuditLogResponse> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return requestJson<AuditLogResponse>(API_BASE, `/api/v1/audit?${params.toString()}`);
+}
+
+export async function fetchCredentials(profileId: string): Promise<CredentialCatalogResponse> {
+  const params = new URLSearchParams();
+  params.set("profile_id", profileId);
+  return requestJson<CredentialCatalogResponse>(
+    API_BASE,
+    `/api/v1/credentials?${params.toString()}`
+  );
+}
+
+export async function upsertCredential(
+  request: CredentialUpsertRequest
+): Promise<CredentialMetadataEntry | null> {
+  const payload = await requestJson<CredentialResponse>(
+    API_BASE,
+    "/api/v1/credentials",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.credential;
+}
+
+export async function deleteCredential(
+  profileId: string,
+  credentialId: string
+): Promise<CredentialDeleteResponse> {
+  return requestJson<CredentialDeleteResponse>(
+    API_BASE,
+    `/api/v1/credentials/${encodeURIComponent(profileId)}/${encodeURIComponent(credentialId)}`,
+    { method: "DELETE" },
+    { retry: false }
+  );
 }

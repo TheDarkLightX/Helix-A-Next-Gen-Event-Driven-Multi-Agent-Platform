@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 #![warn(missing_docs)]
 
 //! Vector embeddings and similarity search for Helix.
@@ -23,23 +22,31 @@
 //! - Semantic search capabilities
 
 pub mod embeddings;
+pub mod errors;
 pub mod search;
 pub mod storage;
-pub mod errors;
 
+pub use embeddings::{EmbeddingGenerator, DEFAULT_EMBEDDING_DIMENSIONS, MAX_TEXT_BYTES};
 pub use errors::EmbeddingError;
-
-/// Placeholder for embeddings functionality
-pub fn placeholder() -> String {
-    "Embeddings module placeholder".to_string()
-}
+pub use search::{cosine_similarity, SearchEngine, SearchResult, SemanticIndex};
+pub use storage::VectorStore;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        assert_eq!(placeholder(), "Embeddings module placeholder");
+    fn crate_exposes_deterministic_semantic_index() {
+        let mut index = SemanticIndex::new();
+
+        index
+            .add_document(
+                "case",
+                "Orion Dynamics leadership changed after Alice North resigned.",
+            )
+            .unwrap();
+        let results = index.query("Alice North Orion leadership", 1).unwrap();
+
+        assert_eq!(results[0].id, "case");
     }
 }

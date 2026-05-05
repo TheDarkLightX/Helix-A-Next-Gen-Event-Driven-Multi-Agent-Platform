@@ -8,5 +8,10 @@ repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Mul
 
 [dependencies]
 helix-core = { path = "../helix-core" }
+chrono = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
 
 # Add rule engine dependencies (cedar, rete implementation) later

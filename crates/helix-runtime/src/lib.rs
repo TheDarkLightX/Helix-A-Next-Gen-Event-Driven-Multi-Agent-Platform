@@ -11,28 +11,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-/// Represents the lifecycle status of an agent.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum AgentStatus {
-    /// The agent is being initialized.
-    Initializing,
-    /// The agent is currently running.
-    Running,
-    /// The agent has been stopped.
-    Stopped,
-    /// The agent has encountered an error.
-    Errored,
-    /// The agent has completed its execution successfully.
-    Completed,
-}
 #![warn(missing_docs)]
 
-//! The core runtime engine for Helix, managing agent execution and event flow.
+//! Helix runtime: imperative orchestration for executing SDK agents.
+//!
+//! The runtime is intentionally an *imperative shell* around the deterministic cores
+//! in `helix-core`. It owns side effects (messaging, plugin execution, IO) and treats
+//! all non-deterministic inputs (e.g., LLM outputs) as untrusted data that must be
+//! gated by deterministic kernels.
 
-pub use messaging::{NatsConfig, NatsClient, StreamConfig, MessagingError};
-
+pub mod agent_registry;
 pub mod agent_runner;
-pub mod agent_registry; // Added agent_registry module
 pub mod imperative_shell;
 pub mod messaging;
+
+pub use messaging::{InMemoryEventCollector, MessagingError, NatsClient, NatsConfig, StreamConfig};
+
+/// Lifecycle status for a managed agent instance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AgentStatus {
+    /// The runtime is setting up the agent.
+    Initializing,
+    /// The agent is running.
+    Running,
+    /// The agent has been requested to stop.
+    Stopping,
+    /// The agent is stopped.
+    Stopped,
+    /// The agent errored and is no longer running.
+    Errored,
+    /// The agent completed successfully (for finite agents).
+    Completed,
+}

@@ -1,6 +1,8 @@
-use crate::{api_error_response, AppState};
+use crate::{
+    api_error_response, credential_encrypter_from_env, record_audit_event, AppState, AuditEvent,
+};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
 };
@@ -10,10 +12,36 @@ use helix_core::intel_desk::{
     CaseStatus, CaseTransition, ClaimRecord, ClaimReviewStatus, EvidenceDraft, EvidenceItem,
     ProposedClaim, SourceDefinition, SourceKind, Watchlist, WatchlistHit, WatchlistSeverity,
 };
+use helix_core::intel_priority::{
+    score_case, score_claim, score_evidence, CasePriorityInput, ClaimPriorityInput,
+    EvidencePriorityInput, IntelPriorityBreakdown, IntelSignalWindow,
+};
+use helix_core::market_intel::{
+    score_market_company, score_market_theme, MarketCompanyPriorityInput, MarketSignalWindow,
+    MarketThemePriorityInput,
+};
+use helix_core::types::{CredentialId, ProfileId};
 use helix_core::HelixError;
+use helix_embeddings::{cosine_similarity, EmbeddingGenerator};
+use helix_security::encryption::CredentialEncrypterDecrypter;
+use reqwest::header::{HeaderName, HeaderValue};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::{PgPool, Row};
 use std::collections::{BTreeMap, BTreeSet};
+
+const MAX_COLLECT_ITEMS: usize = 50;
+const MAX_SOURCE_FETCH_BYTES: usize = 1_048_576;
+const MAX_COLLECT_CONTENT_LEN: usize = 16_384;
+const MAX_SEMANTIC_QUERY_LEN: usize = 512;
+
+#[derive(Debug, Clone)]
+struct SourceFetchAuth {
+    credential_id: String,
+    header_name: HeaderName,
+    header_value: HeaderValue,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct IntelDeskOverviewResponse {
@@ -30,6 +58,7 @@ pub(crate) struct MarketIntelThemeCard {
     pub(crate) theme_id: String,
     pub(crate) name: String,
     pub(crate) summary: String,
+    pub(crate) priority: IntelPriorityBreakdown,
     pub(crate) watchlist_count: usize,
     pub(crate) evidence_count: usize,
     pub(crate) active_case_count: usize,
@@ -40,6 +69,7 @@ pub(crate) struct MarketIntelThemeCard {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct MarketIntelCompanyCard {
     pub(crate) company: String,
+    pub(crate) priority: IntelPriorityBreakdown,
     pub(crate) mention_count: usize,
     pub(crate) claim_count: usize,
     pub(crate) active_case_count: usize,
@@ -74,6 +104,7 @@ pub(crate) struct MarketIntelCaseBrief {
     pub(crate) company: Option<String>,
     pub(crate) theme_id: String,
     pub(crate) theme_name: String,
+    pub(crate) priority: IntelPriorityBreakdown,
     pub(crate) status: CaseStatus,
     pub(crate) latest_signal_at: Option<String>,
     pub(crate) evidence_count: usize,
@@ -102,9 +133,19 @@ pub(crate) struct SourceCatalogResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CreateSourceRequest {
+    #[serde(default)]
+    pub(crate) profile_id: Option<String>,
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) kind: SourceKind,
+    #[serde(default)]
+    pub(crate) endpoint_url: Option<String>,
+    #[serde(default)]
+    pub(crate) credential_id: Option<String>,
+    #[serde(default)]
+    pub(crate) credential_header_name: Option<String>,
+    #[serde(default)]
+    pub(crate) credential_header_prefix: Option<String>,
     pub(crate) cadence_minutes: u16,
     pub(crate) trust_score: u8,
     pub(crate) enabled: bool,
@@ -114,6 +155,51 @@ pub(crate) struct CreateSourceRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SourceResponse {
     pub(crate) source: SourceDefinition,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CollectSourceRequest {
+    pub(crate) observed_at: String,
+    #[serde(default)]
+    pub(crate) max_items: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CollectSourceResponse {
+    pub(crate) source: SourceDefinition,
+    pub(crate) fetched_url: String,
+    pub(crate) collected_count: usize,
+    pub(crate) duplicate_count: usize,
+    pub(crate) results: Vec<IngestEvidenceResponse>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum JsonCollectionPayload {
+    Envelope {
+        items: Vec<CollectedEvidencePayload>,
+    },
+    Array(Vec<CollectedEvidencePayload>),
+    Single(CollectedEvidencePayload),
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CollectedEvidencePayload {
+    title: String,
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    observed_at: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    entity_labels: Vec<String>,
+    #[serde(default)]
+    proposed_claims: Vec<ProposedClaim>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,12 +225,37 @@ pub(crate) struct WatchlistResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct EvidenceCatalogResponse {
-    pub(crate) evidence: Vec<EvidenceItem>,
+    pub(crate) evidence: Vec<EvidenceQueueEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ClaimCatalogResponse {
-    pub(crate) claims: Vec<ClaimRecord>,
+    pub(crate) claims: Vec<ClaimQueueEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct EvidenceQueueEntry {
+    pub(crate) evidence: EvidenceItem,
+    pub(crate) source_name: String,
+    pub(crate) source_trust_score: u8,
+    pub(crate) priority: IntelPriorityBreakdown,
+    pub(crate) linked_case_count: usize,
+    pub(crate) linked_claim_count: usize,
+    pub(crate) max_linked_severity: Option<WatchlistSeverity>,
+    pub(crate) semantic_score_bps: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ClaimQueueEntry {
+    pub(crate) claim: ClaimRecord,
+    pub(crate) evidence_title: String,
+    pub(crate) evidence_observed_at: String,
+    pub(crate) source_name: String,
+    pub(crate) source_trust_score: u8,
+    pub(crate) priority: IntelPriorityBreakdown,
+    pub(crate) linked_case_count: usize,
+    pub(crate) max_linked_severity: Option<WatchlistSeverity>,
+    pub(crate) semantic_score_bps: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +270,112 @@ pub(crate) struct ClaimResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CaseCatalogResponse {
-    pub(crate) cases: Vec<CaseFile>,
+    pub(crate) cases: Vec<CaseQueueEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CaseQueueEntry {
+    pub(crate) case: CaseFile,
+    pub(crate) watchlist_name: String,
+    pub(crate) severity: WatchlistSeverity,
+    pub(crate) priority: IntelPriorityBreakdown,
+    pub(crate) latest_signal_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct CaseQueueFilterQuery {
+    pub(crate) status: Option<CaseStatus>,
+    pub(crate) severity: Option<WatchlistSeverity>,
+    pub(crate) watchlist_id: Option<String>,
+    pub(crate) primary_entity: Option<String>,
+    pub(crate) limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct EvidenceQueueFilterQuery {
+    pub(crate) source_id: Option<String>,
+    pub(crate) tag: Option<String>,
+    pub(crate) entity: Option<String>,
+    pub(crate) linked_status: Option<CaseStatus>,
+    pub(crate) min_trust: Option<u8>,
+    #[serde(default, alias = "semantic_query")]
+    pub(crate) q: Option<String>,
+    pub(crate) limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct ClaimQueueFilterQuery {
+    pub(crate) review_status: Option<ClaimReviewStatus>,
+    pub(crate) predicate: Option<String>,
+    pub(crate) subject: Option<String>,
+    pub(crate) linked_status: Option<CaseStatus>,
+    pub(crate) min_confidence_bps: Option<u16>,
+    #[serde(default, alias = "semantic_query")]
+    pub(crate) q: Option<String>,
+    pub(crate) limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AutopilotReviewKind {
+    Case,
+    Claim,
+    Evidence,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AutopilotReviewQueueResponse {
+    pub(crate) items: Vec<AutopilotReviewQueueEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AutopilotReviewQueueEntry {
+    pub(crate) kind: AutopilotReviewKind,
+    pub(crate) item_id: String,
+    pub(crate) title: String,
+    pub(crate) summary: String,
+    pub(crate) context_label: String,
+    pub(crate) route: String,
+    pub(crate) goal_hint: String,
+    pub(crate) priority: IntelPriorityBreakdown,
+    pub(crate) latest_signal_at: Option<String>,
+    pub(crate) severity: Option<WatchlistSeverity>,
+    pub(crate) case_status: Option<CaseStatus>,
+    pub(crate) claim_review_status: Option<ClaimReviewStatus>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub(crate) struct AutopilotReviewQueueQuery {
+    pub(crate) kind: Option<AutopilotReviewKind>,
+    pub(crate) limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AutopilotReviewExportPacketResponse {
+    pub(crate) packet_id: String,
+    pub(crate) kind: AutopilotReviewKind,
+    pub(crate) item: AutopilotReviewQueueEntry,
+    pub(crate) narrative: String,
+    pub(crate) supporting_cases: Vec<CaseQueueEntry>,
+    pub(crate) supporting_claims: Vec<ClaimQueueEntry>,
+    pub(crate) supporting_evidence: Vec<EvidenceQueueEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct AutopilotReviewExportQuery {
+    pub(crate) review_kind: AutopilotReviewKind,
+    pub(crate) item_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct MarketIntelBriefExportPacketResponse {
+    pub(crate) packet_id: String,
+    pub(crate) narrative: String,
+    pub(crate) briefing: MarketIntelCaseBrief,
+    pub(crate) case_file: CaseFile,
+    pub(crate) watchlist: Watchlist,
+    pub(crate) evidence: Vec<EvidenceQueueEntry>,
+    pub(crate) claims: Vec<ClaimQueueEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,9 +419,126 @@ pub(crate) struct IntelDeskStore {
     cases: BTreeMap<String, CaseFile>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct IntelDeskPostgresStore {
+    pool: PgPool,
+}
+
 impl Default for IntelDeskStore {
     fn default() -> Self {
         Self::seeded()
+    }
+}
+
+impl IntelDeskPostgresStore {
+    pub(crate) fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    pub(crate) async fn load_or_seed(&self) -> Result<IntelDeskStore, HelixError> {
+        let store = IntelDeskStore {
+            sources: load_records(&self.pool, "intel_sources").await?,
+            watchlists: load_records(&self.pool, "intel_watchlists").await?,
+            evidence: load_records(&self.pool, "intel_evidence").await?,
+            claims: load_records(&self.pool, "intel_claims").await?,
+            cases: load_records(&self.pool, "intel_cases").await?,
+        };
+
+        if store.is_empty() {
+            let seeded = IntelDeskStore::seeded();
+            self.save(&seeded).await?;
+            Ok(seeded)
+        } else {
+            Ok(store)
+        }
+    }
+
+    pub(crate) async fn save(&self, store: &IntelDeskStore) -> Result<(), HelixError> {
+        let mut tx = self.pool.begin().await.map_err(db_error)?;
+
+        sqlx::query("DELETE FROM intel_cases")
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        sqlx::query("DELETE FROM intel_claims")
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        sqlx::query("DELETE FROM intel_evidence")
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        sqlx::query("DELETE FROM intel_watchlists")
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        sqlx::query("DELETE FROM intel_sources")
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+
+        for source in store.sources.values() {
+            sqlx::query(
+                "INSERT INTO intel_sources (id, record, updated_at) VALUES ($1, $2, now())",
+            )
+            .bind(&source.id)
+            .bind(serde_json::to_value(source).map_err(serde_error)?)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        }
+
+        for watchlist in store.watchlists.values() {
+            sqlx::query(
+                "INSERT INTO intel_watchlists (id, record, updated_at) VALUES ($1, $2, now())",
+            )
+            .bind(&watchlist.id)
+            .bind(serde_json::to_value(watchlist).map_err(serde_error)?)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        }
+
+        for evidence in store.evidence.values() {
+            sqlx::query(
+                "INSERT INTO intel_evidence (id, record, source_id, observed_at, updated_at) VALUES ($1, $2, $3, $4, now())",
+            )
+            .bind(&evidence.id)
+            .bind(serde_json::to_value(evidence).map_err(serde_error)?)
+            .bind(&evidence.source_id)
+            .bind(&evidence.observed_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        }
+
+        for claim in store.claims.values() {
+            sqlx::query(
+                "INSERT INTO intel_claims (id, record, evidence_id, review_status, updated_at) VALUES ($1, $2, $3, $4, now())",
+            )
+            .bind(&claim.id)
+            .bind(serde_json::to_value(claim).map_err(serde_error)?)
+            .bind(&claim.evidence_id)
+            .bind(json_string(&claim.review_status))
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        }
+
+        for case in store.cases.values() {
+            sqlx::query(
+                "INSERT INTO intel_cases (id, record, status, watchlist_id, updated_at) VALUES ($1, $2, $3, $4, now())",
+            )
+            .bind(&case.id)
+            .bind(serde_json::to_value(case).map_err(serde_error)?)
+            .bind(json_string(&case.status))
+            .bind(&case.watchlist_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        }
+
+        tx.commit().await.map_err(db_error)
     }
 }
 
@@ -222,10 +555,15 @@ impl IntelDeskStore {
         let sources = [
             SourceDefinition {
                 id: "rss_national_security".to_string(),
+                profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
                 name: "National Security RSS".to_string(),
                 description: "Trusted feed for security, diplomacy, and leadership movements."
                     .to_string(),
                 kind: SourceKind::RssFeed,
+                endpoint_url: None,
+                credential_id: None,
+                credential_header_name: "Authorization".to_string(),
+                credential_header_prefix: Some("Bearer".to_string()),
                 cadence_minutes: 30,
                 trust_score: 88,
                 enabled: true,
@@ -233,10 +571,15 @@ impl IntelDeskStore {
             },
             SourceDefinition {
                 id: "website_orion_dynamics".to_string(),
+                profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
                 name: "Orion Dynamics Website Diff".to_string(),
                 description: "Website diff watcher for executive, facilities, and product signals."
                     .to_string(),
                 kind: SourceKind::WebsiteDiff,
+                endpoint_url: None,
+                credential_id: None,
+                credential_header_name: "Authorization".to_string(),
+                credential_header_prefix: Some("Bearer".to_string()),
                 cadence_minutes: 120,
                 trust_score: 76,
                 enabled: true,
@@ -244,10 +587,15 @@ impl IntelDeskStore {
             },
             SourceDefinition {
                 id: "json_api_cloud_pricing".to_string(),
+                profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
                 name: "Cloud Pricing API".to_string(),
                 description: "Normalized pricing snapshots for competitor packaging, discounting, and seat changes."
                     .to_string(),
                 kind: SourceKind::JsonApi,
+                endpoint_url: None,
+                credential_id: None,
+                credential_header_name: "Authorization".to_string(),
+                credential_header_prefix: Some("Bearer".to_string()),
                 cadence_minutes: 240,
                 trust_score: 82,
                 enabled: true,
@@ -259,10 +607,15 @@ impl IntelDeskStore {
             },
             SourceDefinition {
                 id: "website_vector_launches".to_string(),
+                profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
                 name: "Vector Works Release Diff".to_string(),
                 description: "Website diff feed for product launches, beta announcements, and packaging changes."
                     .to_string(),
                 kind: SourceKind::WebsiteDiff,
+                endpoint_url: None,
+                credential_id: None,
+                credential_header_name: "Authorization".to_string(),
+                credential_header_prefix: Some("Bearer".to_string()),
                 cadence_minutes: 180,
                 trust_score: 74,
                 enabled: true,
@@ -274,10 +627,15 @@ impl IntelDeskStore {
             },
             SourceDefinition {
                 id: "rss_partner_ecosystem".to_string(),
+                profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
                 name: "Partner Ecosystem Feed".to_string(),
                 description: "Partnership, channel, and ecosystem signal feed for market mapping."
                     .to_string(),
                 kind: SourceKind::RssFeed,
+                endpoint_url: None,
+                credential_id: None,
+                credential_header_name: "Authorization".to_string(),
+                credential_header_prefix: Some("Bearer".to_string()),
                 cadence_minutes: 180,
                 trust_score: 71,
                 enabled: true,
@@ -289,10 +647,15 @@ impl IntelDeskStore {
             },
             SourceDefinition {
                 id: "rss_gtm_hiring_tracker".to_string(),
+                profile_id: "50000000-0000-0000-0000-000000000010".to_string(),
                 name: "GTM Hiring Tracker".to_string(),
                 description: "Hiring and expansion signal feed for sales, success, and channel roles."
                     .to_string(),
                 kind: SourceKind::RssFeed,
+                endpoint_url: None,
+                credential_id: None,
+                credential_header_name: "Authorization".to_string(),
+                credential_header_prefix: Some("Bearer".to_string()),
                 cadence_minutes: 360,
                 trust_score: 68,
                 enabled: true,
@@ -407,13 +770,22 @@ impl IntelDeskStore {
             },
         ];
         for watchlist in watchlists {
-            let watchlist = canonicalize_watchlist(watchlist).expect("seed watchlist should be valid");
+            let watchlist =
+                canonicalize_watchlist(watchlist).expect("seed watchlist should be valid");
             store.watchlists.insert(watchlist.id.clone(), watchlist);
         }
 
         store.seed_market_activity_demo();
 
         store
+    }
+
+    fn is_empty(&self) -> bool {
+        self.sources.is_empty()
+            && self.watchlists.is_empty()
+            && self.evidence.is_empty()
+            && self.claims.is_empty()
+            && self.cases.is_empty()
     }
 
     fn seed_market_activity_demo(&mut self) {
@@ -531,8 +903,9 @@ impl IntelDeskStore {
             })
             .cloned()
             .collect::<Vec<_>>();
+        let signal_window = self.market_signal_window(&market_source_ids);
 
-        let theme_cards = market_theme_descriptors()
+        let mut theme_cards = market_theme_descriptors()
             .iter()
             .map(|(theme_id, name, summary)| {
                 let theme_watchlists = market_watchlists
@@ -551,6 +924,33 @@ impl IntelDeskStore {
                     .iter()
                     .flat_map(|case| case.evidence_ids.iter().cloned())
                     .collect::<BTreeSet<_>>();
+                let theme_evidence = theme_evidence_ids
+                    .iter()
+                    .filter_map(|evidence_id| self.evidence.get(evidence_id).cloned())
+                    .collect::<Vec<_>>();
+                let theme_claims = theme_cases
+                    .iter()
+                    .flat_map(|case| case.claim_ids.iter())
+                    .filter_map(|claim_id| self.claims.get(claim_id).cloned())
+                    .collect::<Vec<_>>();
+                let latest_signal_at = theme_evidence
+                    .iter()
+                    .map(|item| item.observed_at.as_str())
+                    .max();
+                let source_trust_scores = theme_evidence
+                    .iter()
+                    .filter_map(|item| {
+                        self.sources
+                            .get(&item.source_id)
+                            .map(|source| source.trust_score)
+                    })
+                    .collect::<Vec<_>>();
+                let max_severity = theme_watchlists
+                    .iter()
+                    .map(|watchlist| watchlist.severity)
+                    .max_by_key(|severity| severity.weight());
+                let (corroborated_claim_count, rejected_claim_count, max_claim_confidence_bps) =
+                    claim_review_metrics(&theme_claims);
                 let top_entities = theme_watchlists
                     .iter()
                     .flat_map(|watchlist| watchlist.entities.iter().cloned())
@@ -563,11 +963,31 @@ impl IntelDeskStore {
                     .into_iter()
                     .take(4)
                     .collect::<Vec<_>>();
+                let priority = score_market_theme(
+                    &MarketThemePriorityInput {
+                        max_severity,
+                        active_case_count: theme_cases.len(),
+                        escalated_case_count: theme_cases
+                            .iter()
+                            .filter(|case| case.status == CaseStatus::Escalated)
+                            .count(),
+                        watchlist_count: theme_watchlists.len(),
+                        evidence_count: theme_evidence.len(),
+                        claim_count: theme_claims.len(),
+                        corroborated_claim_count,
+                        rejected_claim_count,
+                        max_claim_confidence_bps,
+                        source_trust_scores,
+                        latest_signal_at: latest_signal_at.map(str::to_string),
+                    },
+                    &signal_window,
+                );
 
                 MarketIntelThemeCard {
                     theme_id: (*theme_id).to_string(),
                     name: (*name).to_string(),
                     summary: (*summary).to_string(),
+                    priority,
                     watchlist_count: theme_watchlists.len(),
                     evidence_count: theme_evidence_ids.len(),
                     active_case_count: theme_cases.len(),
@@ -579,6 +999,13 @@ impl IntelDeskStore {
                 }
             })
             .collect::<Vec<_>>();
+        theme_cards.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(left.theme_id.cmp(&right.theme_id))
+        });
 
         let tracked_companies = market_watchlists
             .iter()
@@ -591,35 +1018,34 @@ impl IntelDeskStore {
             )
             .collect::<BTreeSet<_>>();
 
-        let company_cards = tracked_companies
+        let mut company_cards = tracked_companies
             .iter()
             .map(|company| {
-                let mention_count = self
+                let company_evidence = self
                     .evidence
                     .values()
                     .filter(|evidence| market_source_ids.contains(&evidence.source_id))
                     .filter(|evidence| evidence.entity_labels.iter().any(|label| label == company))
-                    .count();
-                let claim_count = self
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let mention_count = company_evidence.len();
+                let company_claims = self
                     .claims
                     .values()
                     .filter(|claim| {
-                        self.evidence
-                            .get(&claim.evidence_id)
-                            .map(|evidence| market_source_ids.contains(&evidence.source_id))
-                            .unwrap_or(false)
+                        company_evidence
+                            .iter()
+                            .any(|evidence| evidence.id == claim.evidence_id)
                             && (claim.subject == *company || claim.object == *company)
                     })
-                    .count();
+                    .cloned()
+                    .collect::<Vec<_>>();
                 let company_cases = active_market_cases
                     .iter()
                     .filter(|case| case.primary_entity.as_deref() == Some(company.as_str()))
                     .collect::<Vec<_>>();
-                let latest_signal_at = self
-                    .evidence
-                    .values()
-                    .filter(|evidence| market_source_ids.contains(&evidence.source_id))
-                    .filter(|evidence| evidence.entity_labels.iter().any(|label| label == company))
+                let latest_signal_at = company_evidence
+                    .iter()
                     .map(|evidence| evidence.observed_at.clone())
                     .max();
                 let themes = company_cases
@@ -633,7 +1059,9 @@ impl IntelDeskStore {
                     .chain(
                         market_watchlists
                             .iter()
-                            .filter(|watchlist| watchlist.entities.iter().any(|entity| entity == company))
+                            .filter(|watchlist| {
+                                watchlist.entities.iter().any(|entity| entity == company)
+                            })
                             .filter_map(|watchlist| market_theme_id_for_watchlist(watchlist))
                             .map(market_theme_name),
                     )
@@ -641,28 +1069,83 @@ impl IntelDeskStore {
                     .into_iter()
                     .map(str::to_string)
                     .collect::<Vec<_>>();
+                let source_trust_scores = company_evidence
+                    .iter()
+                    .filter_map(|evidence| {
+                        self.sources
+                            .get(&evidence.source_id)
+                            .map(|source| source.trust_score)
+                    })
+                    .collect::<Vec<_>>();
+                let max_severity = company_cases
+                    .iter()
+                    .filter_map(|case| {
+                        self.watchlists
+                            .get(&case.watchlist_id)
+                            .map(|watchlist| watchlist.severity)
+                    })
+                    .chain(
+                        market_watchlists
+                            .iter()
+                            .filter(|watchlist| {
+                                watchlist.entities.iter().any(|entity| entity == company)
+                            })
+                            .map(|watchlist| watchlist.severity),
+                    )
+                    .max_by_key(|severity| severity.weight());
+                let (corroborated_claim_count, rejected_claim_count, max_claim_confidence_bps) =
+                    claim_review_metrics(&company_claims);
+                let priority = score_market_company(
+                    &MarketCompanyPriorityInput {
+                        max_severity,
+                        active_case_count: company_cases.len(),
+                        escalated_case_count: company_cases
+                            .iter()
+                            .filter(|case| case.status == CaseStatus::Escalated)
+                            .count(),
+                        mention_count,
+                        claim_count: company_claims.len(),
+                        corroborated_claim_count,
+                        rejected_claim_count,
+                        max_claim_confidence_bps,
+                        source_trust_scores,
+                        latest_signal_at: latest_signal_at.clone(),
+                    },
+                    &signal_window,
+                );
 
                 MarketIntelCompanyCard {
                     company: company.clone(),
+                    priority,
                     mention_count,
-                    claim_count,
+                    claim_count: company_claims.len(),
                     active_case_count: company_cases.len(),
                     themes,
                     latest_signal_at,
                 }
             })
             .filter(|card| !card.themes.is_empty() || card.mention_count > 0)
-            .take(6)
             .collect::<Vec<_>>();
+        company_cards.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.latest_signal_at.cmp(&left.latest_signal_at))
+                .then(left.company.cmp(&right.company))
+        });
+        company_cards.truncate(6);
 
         let mut case_briefs = active_market_cases
             .iter()
-            .filter_map(|case| self.market_case_brief(case))
+            .filter_map(|case| self.market_case_brief_with_window(case, &signal_window))
             .collect::<Vec<_>>();
         case_briefs.sort_by(|left, right| {
             right
-                .latest_signal_at
-                .cmp(&left.latest_signal_at)
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.latest_signal_at.cmp(&left.latest_signal_at))
                 .then(left.case_id.cmp(&right.case_id))
         });
 
@@ -679,20 +1162,29 @@ impl IntelDeskStore {
     }
 
     fn market_case_brief(&self, case: &CaseFile) -> Option<MarketIntelCaseBrief> {
+        let signal_window = self.market_signal_window(
+            &self
+                .sources
+                .values()
+                .filter(|source| is_market_source(source))
+                .map(|source| source.id.clone())
+                .collect::<BTreeSet<_>>(),
+        );
+        self.market_case_brief_with_window(case, &signal_window)
+    }
+
+    fn market_case_brief_with_window(
+        &self,
+        case: &CaseFile,
+        signal_window: &MarketSignalWindow,
+    ) -> Option<MarketIntelCaseBrief> {
         let watchlist = self.watchlists.get(&case.watchlist_id)?;
         let theme_id = market_theme_id_for_watchlist(watchlist)?;
         let theme_name = market_theme_name(theme_id).to_string();
-        let evidence = case
-            .evidence_ids
-            .iter()
-            .filter_map(|evidence_id| self.evidence.get(evidence_id).cloned())
-            .collect::<Vec<_>>();
-        let claims = case
-            .claim_ids
-            .iter()
-            .filter_map(|claim_id| self.claims.get(claim_id).cloned())
-            .collect::<Vec<_>>();
-        let latest_signal_at = evidence.iter().map(|item| item.observed_at.clone()).max();
+        let priority = self.case_priority(case, signal_window)?;
+        let evidence = self.case_evidence(case);
+        let claims = self.case_claims(case);
+        let latest_signal_at = latest_signal_at(&evidence);
         let latest_titles = evidence
             .iter()
             .map(|item| item.title.clone())
@@ -715,6 +1207,7 @@ impl IntelDeskStore {
             company: case.primary_entity.clone(),
             theme_id: theme_id.to_string(),
             theme_name,
+            priority,
             status: case.status,
             latest_signal_at,
             evidence_count: evidence.len(),
@@ -736,9 +1229,9 @@ impl IntelDeskStore {
             .get(case_id)
             .cloned()
             .ok_or_else(|| HelixError::not_found(format!("case {}", case_id)))?;
-        let briefing = self
-            .market_case_brief(&case)
-            .ok_or_else(|| HelixError::validation_error("case", "case is not a market intelligence case"))?;
+        let briefing = self.market_case_brief(&case).ok_or_else(|| {
+            HelixError::validation_error("case", "case is not a market intelligence case")
+        })?;
 
         let transition = if attach_to_case {
             let attached = self.transition_case(
@@ -759,15 +1252,777 @@ impl IntelDeskStore {
             briefing
         };
 
-        Ok(GenerateMarketIntelBriefResponse { briefing, transition })
+        Ok(GenerateMarketIntelBriefResponse {
+            briefing,
+            transition,
+        })
     }
 
-    fn create_source(&mut self, request: CreateSourceRequest) -> Result<SourceDefinition, HelixError> {
+    fn market_signal_window(&self, market_source_ids: &BTreeSet<String>) -> MarketSignalWindow {
+        MarketSignalWindow::from_observed_at_values(
+            self.evidence
+                .values()
+                .filter(|evidence| market_source_ids.contains(&evidence.source_id))
+                .map(|evidence| evidence.observed_at.as_str()),
+        )
+    }
+
+    fn case_signal_window(&self) -> IntelSignalWindow {
+        IntelSignalWindow::from_observed_at_values(
+            self.evidence
+                .values()
+                .map(|evidence| evidence.observed_at.as_str()),
+        )
+    }
+
+    fn case_queue(
+        &self,
+        filters: &CaseQueueFilterQuery,
+    ) -> Result<Vec<CaseQueueEntry>, HelixError> {
+        let limit = normalized_limit(filters.limit, "case")?;
+        let watchlist_id =
+            normalized_optional_filter(filters.watchlist_id.as_deref(), "watchlist_id")?;
+        let primary_entity =
+            normalized_optional_filter(filters.primary_entity.as_deref(), "primary_entity")?
+                .map(|value| value.to_lowercase());
+        let signal_window = self.case_signal_window();
+        let mut cases = self
+            .cases
+            .values()
+            .filter(|case| {
+                filters
+                    .status
+                    .map(|status| case.status == status)
+                    .unwrap_or(true)
+            })
+            .filter(|case| {
+                filters
+                    .severity
+                    .map(|severity| {
+                        self.watchlists
+                            .get(&case.watchlist_id)
+                            .map(|watchlist| watchlist.severity == severity)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(true)
+            })
+            .filter(|case| {
+                watchlist_id
+                    .as_deref()
+                    .map(|target| case.watchlist_id == target)
+                    .unwrap_or(true)
+            })
+            .filter(|case| {
+                primary_entity
+                    .as_deref()
+                    .map(|target| {
+                        case.primary_entity
+                            .as_deref()
+                            .map(|entity| entity == target)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(true)
+            })
+            .map(|case| self.case_queue_entry(case, &signal_window))
+            .collect::<Result<Vec<_>, _>>()?;
+        cases.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.latest_signal_at.cmp(&left.latest_signal_at))
+                .then(left.case.id.cmp(&right.case.id))
+        });
+        if let Some(limit) = limit {
+            cases.truncate(limit);
+        }
+        Ok(cases)
+    }
+
+    fn case_queue_entry(
+        &self,
+        case: &CaseFile,
+        signal_window: &IntelSignalWindow,
+    ) -> Result<CaseQueueEntry, HelixError> {
+        let watchlist = self
+            .watchlists
+            .get(&case.watchlist_id)
+            .ok_or_else(|| HelixError::internal_error("case references unknown watchlist"))?;
+        let priority = self
+            .case_priority(case, signal_window)
+            .ok_or_else(|| HelixError::internal_error("case priority could not be computed"))?;
+        Ok(CaseQueueEntry {
+            case: case.clone(),
+            watchlist_name: watchlist.name.clone(),
+            severity: watchlist.severity,
+            priority,
+            latest_signal_at: latest_signal_at(&self.case_evidence(case)),
+        })
+    }
+
+    fn case_priority(
+        &self,
+        case: &CaseFile,
+        signal_window: &IntelSignalWindow,
+    ) -> Option<IntelPriorityBreakdown> {
+        let watchlist = self.watchlists.get(&case.watchlist_id)?;
+        let evidence = self.case_evidence(case);
+        let claims = self.case_claims(case);
+        let source_trust_scores = evidence
+            .iter()
+            .filter_map(|item| {
+                self.sources
+                    .get(&item.source_id)
+                    .map(|source| source.trust_score)
+            })
+            .collect::<Vec<_>>();
+        let latest_signal_at = latest_signal_at(&evidence);
+        let (corroborated_claim_count, rejected_claim_count, max_claim_confidence_bps) =
+            claim_review_metrics(&claims);
+
+        Some(score_case(
+            &CasePriorityInput {
+                status: case.status,
+                severity: watchlist.severity,
+                source_trust_scores,
+                evidence_count: evidence.len(),
+                claim_count: claims.len(),
+                corroborated_claim_count,
+                rejected_claim_count,
+                max_claim_confidence_bps,
+                latest_signal_at,
+                attached_to_case: case.briefing_summary.is_some(),
+            },
+            signal_window,
+        ))
+    }
+
+    fn case_evidence(&self, case: &CaseFile) -> Vec<EvidenceItem> {
+        case.evidence_ids
+            .iter()
+            .filter_map(|evidence_id| self.evidence.get(evidence_id).cloned())
+            .collect()
+    }
+
+    fn case_claims(&self, case: &CaseFile) -> Vec<ClaimRecord> {
+        case.claim_ids
+            .iter()
+            .filter_map(|claim_id| self.claims.get(claim_id).cloned())
+            .collect()
+    }
+
+    fn evidence_cases(&self, evidence_id: &str) -> Vec<CaseFile> {
+        self.cases
+            .values()
+            .filter(|case| case.evidence_ids.iter().any(|id| id == evidence_id))
+            .cloned()
+            .collect()
+    }
+
+    fn claim_cases(&self, claim_id: &str) -> Vec<CaseFile> {
+        self.cases
+            .values()
+            .filter(|case| case.claim_ids.iter().any(|id| id == claim_id))
+            .cloned()
+            .collect()
+    }
+
+    fn max_linked_severity(&self, cases: &[CaseFile]) -> Option<WatchlistSeverity> {
+        cases
+            .iter()
+            .filter_map(|case| {
+                self.watchlists
+                    .get(&case.watchlist_id)
+                    .map(|watchlist| watchlist.severity)
+            })
+            .max_by_key(|severity| severity.weight())
+    }
+
+    fn evidence_queue(
+        &self,
+        filters: &EvidenceQueueFilterQuery,
+    ) -> Result<Vec<EvidenceQueueEntry>, HelixError> {
+        let limit = normalized_limit(filters.limit, "evidence")?;
+        let source_id = normalized_optional_filter(filters.source_id.as_deref(), "source_id")?;
+        let tag = normalized_optional_filter(filters.tag.as_deref(), "tag")?
+            .map(|value| value.to_lowercase());
+        let entity = normalized_optional_filter(filters.entity.as_deref(), "entity")?
+            .map(|value| value.to_lowercase());
+        let min_trust = normalized_trust_score(filters.min_trust)?;
+        let semantic_ranker = normalized_semantic_query(filters.q.as_deref(), "q")?
+            .map(|query| SemanticRanker::new(&query))
+            .transpose()?;
+        let signal_window = self.case_signal_window();
+        let mut evidence = self
+            .evidence
+            .values()
+            .filter(|item| {
+                source_id
+                    .as_deref()
+                    .map(|value| item.source_id == value)
+                    .unwrap_or(true)
+            })
+            .filter(|item| {
+                tag.as_deref()
+                    .map(|value| item.tags.iter().any(|tag| tag == value))
+                    .unwrap_or(true)
+            })
+            .filter(|item| {
+                entity
+                    .as_deref()
+                    .map(|value| item.entity_labels.iter().any(|entity| entity == value))
+                    .unwrap_or(true)
+            })
+            .filter(|item| {
+                min_trust
+                    .map(|min_trust| {
+                        self.sources
+                            .get(&item.source_id)
+                            .map(|source| source.trust_score >= min_trust)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(true)
+            })
+            .filter(|item| {
+                filters
+                    .linked_status
+                    .map(|status| {
+                        self.evidence_cases(&item.id)
+                            .iter()
+                            .any(|case| case.status == status)
+                    })
+                    .unwrap_or(true)
+            })
+            .map(|item| self.evidence_queue_entry(item, &signal_window))
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(ranker) = &semantic_ranker {
+            for entry in &mut evidence {
+                entry.semantic_score_bps =
+                    Some(ranker.score_bps(&evidence_semantic_document(entry))?);
+            }
+            evidence.sort_by(|left, right| {
+                right
+                    .semantic_score_bps
+                    .unwrap_or(i32::MIN)
+                    .cmp(&left.semantic_score_bps.unwrap_or(i32::MIN))
+                    .then(right.priority.total.cmp(&left.priority.total))
+                    .then(right.evidence.observed_at.cmp(&left.evidence.observed_at))
+                    .then(left.evidence.id.cmp(&right.evidence.id))
+            });
+        } else {
+            evidence.sort_by(|left, right| {
+                right
+                    .priority
+                    .total
+                    .cmp(&left.priority.total)
+                    .then(right.evidence.observed_at.cmp(&left.evidence.observed_at))
+                    .then(left.evidence.id.cmp(&right.evidence.id))
+            });
+        }
+        if let Some(limit) = limit {
+            evidence.truncate(limit);
+        }
+        Ok(evidence)
+    }
+
+    fn evidence_queue_entry(
+        &self,
+        evidence: &EvidenceItem,
+        signal_window: &IntelSignalWindow,
+    ) -> Result<EvidenceQueueEntry, HelixError> {
+        let source = self
+            .sources
+            .get(&evidence.source_id)
+            .ok_or_else(|| HelixError::internal_error("evidence references unknown source"))?;
+        let linked_cases = self.evidence_cases(&evidence.id);
+        let linked_claims = self
+            .claims
+            .values()
+            .filter(|claim| claim.evidence_id == evidence.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        let (corroborated_claim_count, rejected_claim_count, max_claim_confidence_bps) =
+            claim_review_metrics(&linked_claims);
+        let priority = score_evidence(
+            &EvidencePriorityInput {
+                linked_case_statuses: linked_cases.iter().map(|case| case.status).collect(),
+                max_linked_severity: self.max_linked_severity(&linked_cases),
+                source_trust_scores: vec![source.trust_score],
+                claim_count: linked_claims.len(),
+                corroborated_claim_count,
+                rejected_claim_count,
+                max_claim_confidence_bps,
+                observed_at: Some(evidence.observed_at.clone()),
+                linked_case_count: linked_cases.len(),
+            },
+            signal_window,
+        );
+
+        Ok(EvidenceQueueEntry {
+            evidence: evidence.clone(),
+            source_name: source.name.clone(),
+            source_trust_score: source.trust_score,
+            priority,
+            linked_case_count: linked_cases.len(),
+            linked_claim_count: linked_claims.len(),
+            max_linked_severity: self.max_linked_severity(&linked_cases),
+            semantic_score_bps: None,
+        })
+    }
+
+    fn claim_queue(
+        &self,
+        filters: &ClaimQueueFilterQuery,
+    ) -> Result<Vec<ClaimQueueEntry>, HelixError> {
+        let limit = normalized_limit(filters.limit, "claim")?;
+        let predicate = normalized_optional_filter(filters.predicate.as_deref(), "predicate")?
+            .map(|value| value.to_lowercase());
+        let subject = normalized_optional_filter(filters.subject.as_deref(), "subject")?
+            .map(|value| value.to_lowercase());
+        let min_confidence_bps = normalized_confidence_bps(filters.min_confidence_bps)?;
+        let semantic_ranker = normalized_semantic_query(filters.q.as_deref(), "q")?
+            .map(|query| SemanticRanker::new(&query))
+            .transpose()?;
+        let signal_window = self.case_signal_window();
+        let mut claims = self
+            .claims
+            .values()
+            .filter(|claim| {
+                filters
+                    .review_status
+                    .map(|status| claim.review_status == status)
+                    .unwrap_or(true)
+            })
+            .filter(|claim| {
+                predicate
+                    .as_deref()
+                    .map(|value| claim.predicate == value)
+                    .unwrap_or(true)
+            })
+            .filter(|claim| {
+                subject
+                    .as_deref()
+                    .map(|value| claim.subject == value)
+                    .unwrap_or(true)
+            })
+            .filter(|claim| {
+                min_confidence_bps
+                    .map(|minimum| claim.confidence_bps >= minimum)
+                    .unwrap_or(true)
+            })
+            .filter(|claim| {
+                filters
+                    .linked_status
+                    .map(|status| {
+                        self.claim_cases(&claim.id)
+                            .iter()
+                            .any(|case| case.status == status)
+                    })
+                    .unwrap_or(true)
+            })
+            .map(|claim| self.claim_queue_entry(claim, &signal_window))
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(ranker) = &semantic_ranker {
+            for entry in &mut claims {
+                entry.semantic_score_bps = Some(ranker.score_bps(&claim_semantic_document(entry))?);
+            }
+            claims.sort_by(|left, right| {
+                right
+                    .semantic_score_bps
+                    .unwrap_or(i32::MIN)
+                    .cmp(&left.semantic_score_bps.unwrap_or(i32::MIN))
+                    .then(right.priority.total.cmp(&left.priority.total))
+                    .then(right.claim.confidence_bps.cmp(&left.claim.confidence_bps))
+                    .then(left.claim.id.cmp(&right.claim.id))
+            });
+        } else {
+            claims.sort_by(|left, right| {
+                right
+                    .priority
+                    .total
+                    .cmp(&left.priority.total)
+                    .then(right.claim.confidence_bps.cmp(&left.claim.confidence_bps))
+                    .then(left.claim.id.cmp(&right.claim.id))
+            });
+        }
+        if let Some(limit) = limit {
+            claims.truncate(limit);
+        }
+        Ok(claims)
+    }
+
+    fn claim_queue_entry(
+        &self,
+        claim: &ClaimRecord,
+        signal_window: &IntelSignalWindow,
+    ) -> Result<ClaimQueueEntry, HelixError> {
+        let evidence = self
+            .evidence
+            .get(&claim.evidence_id)
+            .ok_or_else(|| HelixError::internal_error("claim references unknown evidence"))?;
+        let source = self.sources.get(&evidence.source_id).ok_or_else(|| {
+            HelixError::internal_error("claim evidence references unknown source")
+        })?;
+        let linked_cases = self.claim_cases(&claim.id);
+        let sibling_claims = self
+            .claims
+            .values()
+            .filter(|item| item.evidence_id == claim.evidence_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        let corroborated_sibling_count = sibling_claims
+            .iter()
+            .filter(|item| {
+                item.id != claim.id && item.review_status == ClaimReviewStatus::Corroborated
+            })
+            .count();
+        let rejected_sibling_count = sibling_claims
+            .iter()
+            .filter(|item| item.id != claim.id && item.review_status == ClaimReviewStatus::Rejected)
+            .count();
+        let priority = score_claim(
+            &ClaimPriorityInput {
+                review_status: claim.review_status,
+                confidence_bps: claim.confidence_bps,
+                linked_case_statuses: linked_cases.iter().map(|case| case.status).collect(),
+                max_linked_severity: self.max_linked_severity(&linked_cases),
+                source_trust_scores: vec![source.trust_score],
+                evidence_observed_at: Some(evidence.observed_at.clone()),
+                sibling_claim_count: sibling_claims.len(),
+                corroborated_sibling_count,
+                rejected_sibling_count,
+            },
+            signal_window,
+        );
+
+        Ok(ClaimQueueEntry {
+            claim: claim.clone(),
+            evidence_title: evidence.title.clone(),
+            evidence_observed_at: evidence.observed_at.clone(),
+            source_name: source.name.clone(),
+            source_trust_score: source.trust_score,
+            priority,
+            linked_case_count: linked_cases.len(),
+            max_linked_severity: self.max_linked_severity(&linked_cases),
+            semantic_score_bps: None,
+        })
+    }
+
+    pub(crate) fn autopilot_review_queue(
+        &self,
+        filters: &AutopilotReviewQueueQuery,
+    ) -> Result<Vec<AutopilotReviewQueueEntry>, HelixError> {
+        let limit = normalized_limit(filters.limit, "review queue")?;
+        let mut items = Vec::new();
+
+        if filters.kind.is_none() || filters.kind == Some(AutopilotReviewKind::Case) {
+            for entry in self
+                .case_queue(&CaseQueueFilterQuery::default())?
+                .into_iter()
+                .filter(|entry| entry.case.status != CaseStatus::Closed)
+            {
+                items.push(AutopilotReviewQueueEntry {
+                    kind: AutopilotReviewKind::Case,
+                    item_id: entry.case.id.clone(),
+                    title: entry.case.title.clone(),
+                    summary: entry.case.latest_reason.clone(),
+                    context_label: entry.watchlist_name.clone(),
+                    route: "/cases".to_string(),
+                    goal_hint: case_goal_hint(&entry.case, &entry.watchlist_name),
+                    priority: entry.priority.clone(),
+                    latest_signal_at: entry.latest_signal_at.clone(),
+                    severity: Some(entry.severity),
+                    case_status: Some(entry.case.status),
+                    claim_review_status: None,
+                });
+            }
+        }
+
+        if filters.kind.is_none() || filters.kind == Some(AutopilotReviewKind::Claim) {
+            for entry in self
+                .claim_queue(&ClaimQueueFilterQuery::default())?
+                .into_iter()
+                .filter(|entry| entry.claim.review_status != ClaimReviewStatus::Rejected)
+            {
+                items.push(AutopilotReviewQueueEntry {
+                    kind: AutopilotReviewKind::Claim,
+                    item_id: entry.claim.id.clone(),
+                    title: format!(
+                        "{} {} {}",
+                        entry.claim.subject, entry.claim.predicate, entry.claim.object
+                    ),
+                    summary: entry.claim.rationale.clone(),
+                    context_label: entry.evidence_title.clone(),
+                    route: "/evidence".to_string(),
+                    goal_hint: claim_goal_hint(&entry.claim, &entry.evidence_title),
+                    priority: entry.priority.clone(),
+                    latest_signal_at: Some(entry.evidence_observed_at.clone()),
+                    severity: entry.max_linked_severity,
+                    case_status: None,
+                    claim_review_status: Some(entry.claim.review_status),
+                });
+            }
+        }
+
+        if filters.kind.is_none() || filters.kind == Some(AutopilotReviewKind::Evidence) {
+            for entry in self.evidence_queue(&EvidenceQueueFilterQuery::default())? {
+                items.push(AutopilotReviewQueueEntry {
+                    kind: AutopilotReviewKind::Evidence,
+                    item_id: entry.evidence.id.clone(),
+                    title: entry.evidence.title.clone(),
+                    summary: if entry.evidence.summary.is_empty() {
+                        entry.evidence.content.chars().take(160).collect()
+                    } else {
+                        entry.evidence.summary.clone()
+                    },
+                    context_label: entry.source_name.clone(),
+                    route: "/evidence".to_string(),
+                    goal_hint: evidence_goal_hint(&entry.evidence, entry.linked_case_count),
+                    priority: entry.priority.clone(),
+                    latest_signal_at: Some(entry.evidence.observed_at.clone()),
+                    severity: entry.max_linked_severity,
+                    case_status: None,
+                    claim_review_status: None,
+                });
+            }
+        }
+
+        items.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.latest_signal_at.cmp(&left.latest_signal_at))
+                .then(
+                    autopilot_review_kind_rank(left.kind)
+                        .cmp(&autopilot_review_kind_rank(right.kind)),
+                )
+                .then(left.item_id.cmp(&right.item_id))
+        });
+        if let Some(limit) = limit {
+            items.truncate(limit);
+        }
+        Ok(items)
+    }
+
+    pub(crate) fn autopilot_review_item(
+        &self,
+        kind: AutopilotReviewKind,
+        item_id: &str,
+    ) -> Result<AutopilotReviewQueueEntry, HelixError> {
+        self.autopilot_review_queue(&AutopilotReviewQueueQuery {
+            kind: Some(kind),
+            limit: None,
+        })?
+        .into_iter()
+        .find(|item| item.item_id == item_id)
+        .ok_or_else(|| {
+            HelixError::not_found(format!(
+                "review item {}:{}",
+                match kind {
+                    AutopilotReviewKind::Case => "case",
+                    AutopilotReviewKind::Claim => "claim",
+                    AutopilotReviewKind::Evidence => "evidence",
+                },
+                item_id
+            ))
+        })
+    }
+
+    pub(crate) fn build_review_export_packet(
+        &self,
+        kind: AutopilotReviewKind,
+        item_id: &str,
+    ) -> Result<AutopilotReviewExportPacketResponse, HelixError> {
+        let signal_window = self.case_signal_window();
+        let item = self.autopilot_review_item(kind, item_id)?;
+
+        let (mut supporting_cases, mut supporting_claims, mut supporting_evidence) = match kind {
+            AutopilotReviewKind::Case => {
+                let case = self
+                    .cases
+                    .get(item_id)
+                    .ok_or_else(|| HelixError::internal_error("review case missing"))?;
+                let cases = vec![self.case_queue_entry(case, &signal_window)?];
+                let claims = self
+                    .case_claims(case)
+                    .iter()
+                    .map(|claim| self.claim_queue_entry(claim, &signal_window))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let evidence = self
+                    .case_evidence(case)
+                    .iter()
+                    .map(|evidence| self.evidence_queue_entry(evidence, &signal_window))
+                    .collect::<Result<Vec<_>, _>>()?;
+                (cases, claims, evidence)
+            }
+            AutopilotReviewKind::Claim => {
+                let claim = self
+                    .claims
+                    .get(item_id)
+                    .ok_or_else(|| HelixError::internal_error("review claim missing"))?;
+                let cases = self
+                    .claim_cases(&claim.id)
+                    .iter()
+                    .map(|case| self.case_queue_entry(case, &signal_window))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let claims = vec![self.claim_queue_entry(claim, &signal_window)?];
+                let evidence = self
+                    .evidence
+                    .get(&claim.evidence_id)
+                    .map(|evidence| self.evidence_queue_entry(evidence, &signal_window))
+                    .transpose()?
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                (cases, claims, evidence)
+            }
+            AutopilotReviewKind::Evidence => {
+                let evidence = self
+                    .evidence
+                    .get(item_id)
+                    .ok_or_else(|| HelixError::internal_error("review evidence missing"))?;
+                let cases = self
+                    .evidence_cases(&evidence.id)
+                    .iter()
+                    .map(|case| self.case_queue_entry(case, &signal_window))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let claims = self
+                    .claims_for_evidence(&evidence.id)
+                    .iter()
+                    .map(|claim| self.claim_queue_entry(claim, &signal_window))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let evidence_entries = vec![self.evidence_queue_entry(evidence, &signal_window)?];
+                (cases, claims, evidence_entries)
+            }
+        };
+
+        supporting_cases.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.latest_signal_at.cmp(&left.latest_signal_at))
+                .then(left.case.id.cmp(&right.case.id))
+        });
+        supporting_claims.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.claim.confidence_bps.cmp(&left.claim.confidence_bps))
+                .then(left.claim.id.cmp(&right.claim.id))
+        });
+        supporting_evidence.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.evidence.observed_at.cmp(&left.evidence.observed_at))
+                .then(left.evidence.id.cmp(&right.evidence.id))
+        });
+
+        Ok(AutopilotReviewExportPacketResponse {
+            packet_id: stable_id("review_export", &[review_kind_label(kind), item_id]),
+            kind,
+            narrative: build_review_export_narrative(
+                &item,
+                &supporting_cases,
+                &supporting_claims,
+                &supporting_evidence,
+            ),
+            item,
+            supporting_cases,
+            supporting_claims,
+            supporting_evidence,
+        })
+    }
+
+    pub(crate) fn build_market_brief_export_packet(
+        &self,
+        case_id: &str,
+    ) -> Result<MarketIntelBriefExportPacketResponse, HelixError> {
+        let case = self
+            .cases
+            .get(case_id)
+            .cloned()
+            .ok_or_else(|| HelixError::not_found(format!("case {}", case_id)))?;
+        let watchlist = self
+            .watchlists
+            .get(&case.watchlist_id)
+            .cloned()
+            .ok_or_else(|| {
+                HelixError::internal_error("market export references unknown watchlist")
+            })?;
+        if !is_market_watchlist(&watchlist) {
+            return Err(HelixError::validation_error(
+                "case",
+                "case is not a market intelligence case",
+            ));
+        }
+
+        let briefing = self.market_case_brief(&case).ok_or_else(|| {
+            HelixError::validation_error("case", "case is not a market intelligence case")
+        })?;
+        let signal_window = self.case_signal_window();
+        let mut evidence = self
+            .case_evidence(&case)
+            .iter()
+            .map(|item| self.evidence_queue_entry(item, &signal_window))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut claims = self
+            .case_claims(&case)
+            .iter()
+            .map(|claim| self.claim_queue_entry(claim, &signal_window))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        evidence.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.evidence.observed_at.cmp(&left.evidence.observed_at))
+                .then(left.evidence.id.cmp(&right.evidence.id))
+        });
+        claims.sort_by(|left, right| {
+            right
+                .priority
+                .total
+                .cmp(&left.priority.total)
+                .then(right.claim.confidence_bps.cmp(&left.claim.confidence_bps))
+                .then(left.claim.id.cmp(&right.claim.id))
+        });
+
+        Ok(MarketIntelBriefExportPacketResponse {
+            packet_id: stable_id("market_brief_export", &[case_id]),
+            narrative: briefing_text(&briefing),
+            briefing,
+            case_file: case,
+            watchlist,
+            evidence,
+            claims,
+        })
+    }
+
+    fn create_source(
+        &mut self,
+        request: CreateSourceRequest,
+    ) -> Result<SourceDefinition, HelixError> {
         let source = canonicalize_source(SourceDefinition {
             id: slugify(&request.name),
+            profile_id: request
+                .profile_id
+                .unwrap_or_else(|| "50000000-0000-0000-0000-000000000010".to_string()),
             name: request.name,
             description: request.description,
             kind: request.kind,
+            endpoint_url: request.endpoint_url,
+            credential_id: request.credential_id,
+            credential_header_name: request
+                .credential_header_name
+                .unwrap_or_else(|| "Authorization".to_string()),
+            credential_header_prefix: request
+                .credential_header_prefix
+                .or_else(|| Some("Bearer".to_string())),
             cadence_minutes: request.cadence_minutes,
             trust_score: request.trust_score,
             enabled: request.enabled,
@@ -791,7 +2046,8 @@ impl IntelDeskStore {
             severity: request.severity,
             enabled: request.enabled,
         })?;
-        self.watchlists.insert(watchlist.id.clone(), watchlist.clone());
+        self.watchlists
+            .insert(watchlist.id.clone(), watchlist.clone());
         Ok(watchlist)
     }
 
@@ -805,10 +2061,7 @@ impl IntelDeskStore {
             .cloned()
             .ok_or_else(|| HelixError::not_found(format!("source {}", request.source_id)))?;
         if !source.enabled {
-            return Err(HelixError::validation_error(
-                "source",
-                "source is disabled",
-            ));
+            return Err(HelixError::validation_error("source", "source is disabled"));
         }
 
         let evidence_id = stable_id(
@@ -916,7 +2169,12 @@ impl IntelDeskStore {
         ClaimRecord {
             id: stable_id(
                 "claim",
-                &[&evidence.id, &proposed.subject, &proposed.predicate, &proposed.object],
+                &[
+                    &evidence.id,
+                    &proposed.subject,
+                    &proposed.predicate,
+                    &proposed.object,
+                ],
             ),
             evidence_id: evidence.id.clone(),
             subject: proposed.subject,
@@ -952,7 +2210,10 @@ impl IntelDeskStore {
                 .first()
                 .cloned()
                 .or_else(|| evidence.entity_labels.first().cloned());
-            let claim_ids = claims.iter().map(|claim| claim.id.clone()).collect::<Vec<_>>();
+            let claim_ids = claims
+                .iter()
+                .map(|claim| claim.id.clone())
+                .collect::<Vec<_>>();
 
             let existing_case_id = self
                 .cases
@@ -1008,7 +2269,11 @@ impl IntelDeskStore {
     }
 }
 
-fn build_case_title(hit: &WatchlistHit, evidence: &EvidenceItem, primary_entity: Option<&str>) -> String {
+fn build_case_title(
+    hit: &WatchlistHit,
+    evidence: &EvidenceItem,
+    primary_entity: Option<&str>,
+) -> String {
     match primary_entity {
         Some(entity) => format!("{}: {}", hit.watchlist_name, entity),
         None => format!("{}: {}", hit.watchlist_name, evidence.title),
@@ -1043,6 +2308,391 @@ fn provenance_hash(request: &IngestEvidenceRequest) -> String {
         &request.observed_at,
         request.url.as_deref().unwrap_or(""),
     ])
+}
+
+async fn fetch_source_body(
+    endpoint_url: &str,
+    auth: Option<&SourceFetchAuth>,
+) -> Result<String, HelixError> {
+    let client = reqwest::Client::new();
+    let mut request = client.get(endpoint_url);
+    if let Some(auth) = auth {
+        request = request.header(auth.header_name.clone(), auth.header_value.clone());
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|error| source_fetch_error(error.to_string()))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(source_fetch_error(format!(
+            "source endpoint returned HTTP {status}"
+        )));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| source_fetch_error(error.to_string()))?;
+    if bytes.len() > MAX_SOURCE_FETCH_BYTES {
+        return Err(HelixError::validation_error(
+            "source.payload",
+            "source payload exceeds 1 MiB",
+        ));
+    }
+    String::from_utf8(bytes.to_vec()).map_err(|_| {
+        HelixError::validation_error("source.payload", "source payload must be UTF-8 text")
+    })
+}
+
+fn source_fetch_error(details: String) -> HelixError {
+    HelixError::external_service_error("source_fetch".to_string(), details)
+}
+
+async fn source_fetch_auth(
+    state: &AppState,
+    source: &SourceDefinition,
+) -> Result<Option<SourceFetchAuth>, HelixError> {
+    let Some(credential_id) = source.credential_id.as_deref() else {
+        return Ok(None);
+    };
+    let profile_id: ProfileId = source
+        .profile_id
+        .parse()
+        .map_err(|_| HelixError::validation_error("source.profile_id", "must be a valid UUID"))?;
+    let credential_id_uuid: CredentialId = credential_id.parse().map_err(|_| {
+        HelixError::validation_error("source.credential_id", "must be a valid UUID")
+    })?;
+    let Some(persistence) = state.state_persistence.as_ref() else {
+        return Err(HelixError::config_error(
+            "source credential collection requires DATABASE_URL",
+        ));
+    };
+    let Some(encrypted_data) = persistence
+        .encrypted_credential_data(&profile_id, &credential_id_uuid)
+        .await?
+    else {
+        return Err(HelixError::not_found(format!(
+            "credential {credential_id} for source {}",
+            source.id
+        )));
+    };
+    let encrypter = credential_encrypter_from_env()?;
+    let secret = encrypter
+        .decrypt(&encrypted_data)
+        .await
+        .map_err(|error| HelixError::encryption_error(error.to_string()))?;
+    let header_name =
+        HeaderName::from_bytes(source.credential_header_name.as_bytes()).map_err(|_| {
+            HelixError::validation_error(
+                "source.credential_header_name",
+                "must be a valid HTTP header name",
+            )
+        })?;
+    let header_value =
+        source_credential_header_value(source.credential_header_prefix.as_deref(), &secret)?;
+
+    Ok(Some(SourceFetchAuth {
+        credential_id: credential_id.to_string(),
+        header_name,
+        header_value,
+    }))
+}
+
+fn source_credential_header_value(
+    prefix: Option<&str>,
+    secret: &str,
+) -> Result<HeaderValue, HelixError> {
+    if secret.trim().is_empty() {
+        return Err(HelixError::validation_error(
+            "credential.secret",
+            "decrypted credential must not be empty",
+        ));
+    }
+    let value = match prefix.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(prefix) => format!("{prefix} {secret}"),
+        None => secret.to_string(),
+    };
+    HeaderValue::from_str(&value).map_err(|_| {
+        HelixError::validation_error(
+            "credential.secret",
+            "decrypted credential cannot be represented as an HTTP header value",
+        )
+    })
+}
+
+fn collect_requests_from_payload(
+    source: &SourceDefinition,
+    payload: &str,
+    fallback_observed_at: &str,
+    max_items: usize,
+) -> Result<Vec<IngestEvidenceRequest>, HelixError> {
+    if fallback_observed_at.trim().is_empty() {
+        return Err(HelixError::validation_error(
+            "observed_at",
+            "fallback observed_at is required",
+        ));
+    }
+    let endpoint_url = source.endpoint_url.as_deref().ok_or_else(|| {
+        HelixError::validation_error("source.endpoint_url", "source has no endpoint_url")
+    })?;
+
+    let mut requests = match source.kind {
+        SourceKind::JsonApi => json_collection_requests(source, payload, fallback_observed_at)?,
+        SourceKind::RssFeed => rss_collection_requests(source, payload, fallback_observed_at),
+        SourceKind::WebsiteDiff => {
+            website_collection_requests(source, payload, endpoint_url, fallback_observed_at)
+        }
+        SourceKind::WebhookIngest | SourceKind::EmailDigest | SourceKind::FileImport => {
+            return Err(HelixError::validation_error(
+                "source.kind",
+                "source kind does not support pull collection",
+            ));
+        }
+    };
+    requests.truncate(max_items);
+    Ok(requests)
+}
+
+fn normalize_collect_limit(limit: Option<usize>) -> Result<usize, HelixError> {
+    let limit = limit.unwrap_or(10);
+    if limit == 0 || limit > MAX_COLLECT_ITEMS {
+        return Err(HelixError::validation_error(
+            "max_items",
+            &format!("must be between 1 and {MAX_COLLECT_ITEMS}"),
+        ));
+    }
+    Ok(limit)
+}
+
+fn json_collection_requests(
+    source: &SourceDefinition,
+    payload: &str,
+    fallback_observed_at: &str,
+) -> Result<Vec<IngestEvidenceRequest>, HelixError> {
+    let payload: JsonCollectionPayload = serde_json::from_str(payload).map_err(HelixError::from)?;
+    let items = match payload {
+        JsonCollectionPayload::Envelope { items } | JsonCollectionPayload::Array(items) => items,
+        JsonCollectionPayload::Single(item) => vec![item],
+    };
+    items
+        .into_iter()
+        .map(|item| collected_item_to_request(source, item, fallback_observed_at))
+        .collect()
+}
+
+fn collected_item_to_request(
+    source: &SourceDefinition,
+    item: CollectedEvidencePayload,
+    fallback_observed_at: &str,
+) -> Result<IngestEvidenceRequest, HelixError> {
+    let title = item.title.trim();
+    if title.is_empty() {
+        return Err(HelixError::validation_error(
+            "source.item.title",
+            "title is required",
+        ));
+    }
+
+    let content = first_non_empty([
+        item.content.as_deref(),
+        item.summary.as_deref(),
+        Some(title),
+    ])
+    .unwrap_or(title);
+    let summary = first_non_empty([item.summary.as_deref(), Some(content)]).unwrap_or(content);
+    let observed_at = first_non_empty([item.observed_at.as_deref(), Some(fallback_observed_at)])
+        .unwrap_or(fallback_observed_at);
+    let url = item
+        .url
+        .or_else(|| source.endpoint_url.as_ref().map(ToString::to_string));
+
+    Ok(IngestEvidenceRequest {
+        source_id: source.id.clone(),
+        title: truncate_text(title, 240),
+        summary: truncate_text(summary, 1_024),
+        content: truncate_text(content, MAX_COLLECT_CONTENT_LEN),
+        url,
+        observed_at: observed_at.trim().to_string(),
+        tags: merge_source_tags(source, item.tags),
+        entity_labels: item.entity_labels,
+        proposed_claims: item.proposed_claims,
+    })
+}
+
+fn rss_collection_requests(
+    source: &SourceDefinition,
+    payload: &str,
+    fallback_observed_at: &str,
+) -> Vec<IngestEvidenceRequest> {
+    let endpoint_url = source.endpoint_url.clone();
+    extract_blocks(payload, "item")
+        .into_iter()
+        .filter_map(|item| {
+            let title = xml_tag_text(&item, "title")?;
+            let description = xml_tag_text(&item, "description")
+                .or_else(|| xml_tag_text(&item, "content:encoded"))
+                .unwrap_or_else(|| title.clone());
+            let content = strip_markup(&description);
+            let link = xml_tag_text(&item, "link").or_else(|| endpoint_url.clone());
+            let observed_at =
+                xml_tag_text(&item, "pubDate").unwrap_or_else(|| fallback_observed_at.to_string());
+            Some(IngestEvidenceRequest {
+                source_id: source.id.clone(),
+                title: truncate_text(&title, 240),
+                summary: summarize_text(&content),
+                content: truncate_text(&content, MAX_COLLECT_CONTENT_LEN),
+                url: link,
+                observed_at,
+                tags: merge_source_tags(source, vec!["rss".to_string()]),
+                entity_labels: Vec::new(),
+                proposed_claims: Vec::new(),
+            })
+        })
+        .collect()
+}
+
+fn website_collection_requests(
+    source: &SourceDefinition,
+    payload: &str,
+    endpoint_url: &str,
+    fallback_observed_at: &str,
+) -> Vec<IngestEvidenceRequest> {
+    let title = html_title(payload).unwrap_or_else(|| source.name.clone());
+    let content = strip_markup(payload);
+    vec![IngestEvidenceRequest {
+        source_id: source.id.clone(),
+        title: truncate_text(&title, 240),
+        summary: summarize_text(&content),
+        content: truncate_text(&content, MAX_COLLECT_CONTENT_LEN),
+        url: Some(endpoint_url.to_string()),
+        observed_at: fallback_observed_at.trim().to_string(),
+        tags: merge_source_tags(source, vec!["website-diff".to_string()]),
+        entity_labels: Vec::new(),
+        proposed_claims: Vec::new(),
+    }]
+}
+
+fn merge_source_tags(source: &SourceDefinition, tags: Vec<String>) -> Vec<String> {
+    let mut merged = source.tags.clone();
+    for tag in tags {
+        if !merged.iter().any(|existing| existing == &tag) {
+            merged.push(tag);
+        }
+    }
+    merged
+}
+
+fn first_non_empty<const N: usize>(values: [Option<&str>; N]) -> Option<&str> {
+    values
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+}
+
+fn extract_blocks(input: &str, tag: &str) -> Vec<String> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut blocks = Vec::new();
+    let mut rest = input;
+    while let Some(open_start) = rest.find(&open) {
+        let after_open = &rest[open_start..];
+        let Some(open_end) = after_open.find('>') else {
+            break;
+        };
+        let body_start = open_start + open_end + 1;
+        let after_body_start = &rest[body_start..];
+        let Some(close_start) = after_body_start.find(&close) else {
+            break;
+        };
+        blocks.push(after_body_start[..close_start].to_string());
+        rest = &after_body_start[close_start + close.len()..];
+    }
+    blocks
+}
+
+fn xml_tag_text(input: &str, tag: &str) -> Option<String> {
+    extract_blocks(input, tag)
+        .into_iter()
+        .next()
+        .map(|value| decode_xml_entities(strip_cdata(&value).trim()))
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn html_title(input: &str) -> Option<String> {
+    extract_blocks(input, "title")
+        .into_iter()
+        .next()
+        .map(|value| decode_xml_entities(strip_cdata(&value).trim()))
+        .filter(|value| !value.trim().is_empty())
+}
+
+fn strip_cdata(value: &str) -> &str {
+    value
+        .strip_prefix("<![CDATA[")
+        .and_then(|value| value.strip_suffix("]]>"))
+        .unwrap_or(value)
+}
+
+fn strip_markup(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut in_tag = false;
+    let mut previous_space = false;
+    for ch in input.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                if !previous_space {
+                    output.push(' ');
+                    previous_space = true;
+                }
+            }
+            _ if in_tag => {}
+            _ if ch.is_whitespace() => {
+                if !previous_space {
+                    output.push(' ');
+                    previous_space = true;
+                }
+            }
+            _ => {
+                output.push(ch);
+                previous_space = false;
+            }
+        }
+    }
+    decode_xml_entities(output.trim())
+}
+
+fn decode_xml_entities(input: &str) -> String {
+    input
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+}
+
+fn summarize_text(input: &str) -> String {
+    truncate_text(input, 280)
+}
+
+fn truncate_text(input: &str, max_len: usize) -> String {
+    let trimmed = input.trim();
+    if trimmed.len() <= max_len {
+        return trimmed.to_string();
+    }
+    let mut end = 0;
+    for (idx, _) in trimmed.char_indices() {
+        if idx > max_len {
+            break;
+        }
+        end = idx;
+    }
+    trimmed[..end].trim().to_string()
 }
 
 fn stable_id(prefix: &str, parts: &[&str]) -> String {
@@ -1221,6 +2871,226 @@ fn summarize_key_claims(claims: &[ClaimRecord]) -> Vec<String> {
         .collect()
 }
 
+fn claim_review_metrics(claims: &[ClaimRecord]) -> (usize, usize, u16) {
+    let corroborated = claims
+        .iter()
+        .filter(|claim| claim.review_status == ClaimReviewStatus::Corroborated)
+        .count();
+    let rejected = claims
+        .iter()
+        .filter(|claim| claim.review_status == ClaimReviewStatus::Rejected)
+        .count();
+    let max_confidence_bps = claims
+        .iter()
+        .map(|claim| claim.confidence_bps)
+        .max()
+        .unwrap_or(0);
+    (corroborated, rejected, max_confidence_bps)
+}
+
+fn review_kind_label(kind: AutopilotReviewKind) -> &'static str {
+    match kind {
+        AutopilotReviewKind::Case => "case",
+        AutopilotReviewKind::Claim => "claim",
+        AutopilotReviewKind::Evidence => "evidence",
+    }
+}
+
+fn autopilot_review_kind_rank(kind: AutopilotReviewKind) -> u8 {
+    match kind {
+        AutopilotReviewKind::Case => 0,
+        AutopilotReviewKind::Claim => 1,
+        AutopilotReviewKind::Evidence => 2,
+    }
+}
+
+fn case_goal_hint(case: &CaseFile, watchlist_name: &str) -> String {
+    let entity = case
+        .primary_entity
+        .as_deref()
+        .unwrap_or("unassigned entity");
+    let status = match case.status {
+        CaseStatus::Open => "open",
+        CaseStatus::Monitoring => "monitoring",
+        CaseStatus::BriefReady => "brief_ready",
+        CaseStatus::Escalated => "escalated",
+        CaseStatus::Closed => "closed",
+    };
+    format!(
+        "Review the {} case '{}' for {} on watchlist '{}'. Validate the linked evidence, decide whether to keep monitoring, escalate, or attach a brief, and keep the proposal bounded to deterministic follow-up steps.",
+        status, case.title, entity, watchlist_name
+    )
+}
+
+fn claim_goal_hint(claim: &ClaimRecord, evidence_title: &str) -> String {
+    format!(
+        "Review the claim '{} {} {}' from evidence '{}'. Propose only deterministic next steps for corroboration, rejection, or case linkage with cited evidence.",
+        claim.subject, claim.predicate, claim.object, evidence_title
+    )
+}
+
+fn evidence_goal_hint(evidence: &EvidenceItem, linked_case_count: usize) -> String {
+    let entity = evidence
+        .entity_labels
+        .first()
+        .map(String::as_str)
+        .unwrap_or("tracked entity");
+    format!(
+        "Triage evidence '{}' observed at {} for {}. Linked cases: {}. Propose a bounded deterministic follow-up such as claim review, case escalation, watchlist refinement, or briefing preparation.",
+        evidence.title, evidence.observed_at, entity, linked_case_count
+    )
+}
+
+fn build_review_export_narrative(
+    item: &AutopilotReviewQueueEntry,
+    cases: &[CaseQueueEntry],
+    claims: &[ClaimQueueEntry],
+    evidence: &[EvidenceQueueEntry],
+) -> String {
+    format!(
+        "{} export packet for '{}'. Supporting cases: {}. Supporting claims: {}. Supporting evidence: {}.",
+        review_kind_label(item.kind),
+        item.title,
+        cases.len(),
+        claims.len(),
+        evidence.len()
+    )
+}
+
+struct SemanticRanker {
+    generator: EmbeddingGenerator,
+    query_vector: Vec<f32>,
+}
+
+impl SemanticRanker {
+    fn new(query: &str) -> Result<Self, HelixError> {
+        let generator = EmbeddingGenerator;
+        let query_vector = generator
+            .generate_text_embedding(query)
+            .map_err(semantic_embedding_error)?;
+        Ok(Self {
+            generator,
+            query_vector,
+        })
+    }
+
+    fn score_bps(&self, document: &str) -> Result<i32, HelixError> {
+        let document_vector = self
+            .generator
+            .generate_text_embedding(document)
+            .map_err(semantic_embedding_error)?;
+        let score = cosine_similarity(&self.query_vector, &document_vector)
+            .map_err(semantic_embedding_error)?;
+        Ok((score.clamp(-1.0, 1.0) * 10_000.0).round() as i32)
+    }
+}
+
+fn evidence_semantic_document(entry: &EvidenceQueueEntry) -> String {
+    format!(
+        "{} {} {} {} {} {} trust:{} cases:{} claims:{}",
+        entry.evidence.title,
+        entry.evidence.summary,
+        entry.evidence.content,
+        entry.evidence.tags.join(" "),
+        entry.evidence.entity_labels.join(" "),
+        entry.source_name,
+        entry.source_trust_score,
+        entry.linked_case_count,
+        entry.linked_claim_count
+    )
+}
+
+fn claim_semantic_document(entry: &ClaimQueueEntry) -> String {
+    format!(
+        "{} {} {} {} {} {} {} confidence:{} status:{} cases:{}",
+        entry.claim.subject,
+        entry.claim.predicate,
+        entry.claim.object,
+        entry.claim.rationale,
+        entry.evidence_title,
+        entry.evidence_observed_at,
+        entry.source_name,
+        entry.claim.confidence_bps,
+        json_string(&entry.claim.review_status),
+        entry.linked_case_count
+    )
+}
+
+fn semantic_embedding_error(error: helix_embeddings::EmbeddingError) -> HelixError {
+    HelixError::InternalError(format!("semantic retrieval error: {error}"))
+}
+
+fn normalized_limit(limit: Option<usize>, subject: &str) -> Result<Option<usize>, HelixError> {
+    match limit {
+        None => Ok(None),
+        Some(0) => Err(HelixError::validation_error(
+            "limit".to_string(),
+            format!("{subject} limit must be between 1 and 100"),
+        )),
+        Some(limit) if limit > 100 => Err(HelixError::validation_error(
+            "limit".to_string(),
+            format!("{subject} limit must be between 1 and 100"),
+        )),
+        Some(limit) => Ok(Some(limit)),
+    }
+}
+
+fn normalized_semantic_query(
+    value: Option<&str>,
+    field: &str,
+) -> Result<Option<String>, HelixError> {
+    match value.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) if value.len() > MAX_SEMANTIC_QUERY_LEN => Err(HelixError::validation_error(
+            field.to_string(),
+            format!("semantic query must be at most {MAX_SEMANTIC_QUERY_LEN} bytes"),
+        )),
+        Some(value) if !value.chars().any(char::is_alphanumeric) => {
+            Err(HelixError::validation_error(
+                field.to_string(),
+                "semantic query must contain at least one alphanumeric character".to_string(),
+            ))
+        }
+        Some(value) => Ok(Some(value.to_string())),
+    }
+}
+
+fn normalized_trust_score(value: Option<u8>) -> Result<Option<u8>, HelixError> {
+    match value {
+        None => Ok(None),
+        Some(score) if score > 100 => Err(HelixError::validation_error(
+            "min_trust",
+            "min_trust must be between 0 and 100",
+        )),
+        Some(score) => Ok(Some(score)),
+    }
+}
+
+fn normalized_confidence_bps(value: Option<u16>) -> Result<Option<u16>, HelixError> {
+    match value {
+        None => Ok(None),
+        Some(score) if score > 10_000 => Err(HelixError::validation_error(
+            "min_confidence_bps",
+            "min_confidence_bps must be between 0 and 10000",
+        )),
+        Some(score) => Ok(Some(score)),
+    }
+}
+
+fn normalized_optional_filter(
+    value: Option<&str>,
+    _field: &str,
+) -> Result<Option<String>, HelixError> {
+    match value.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(value) => Ok(Some(value.to_string())),
+    }
+}
+
+fn latest_signal_at(evidence: &[EvidenceItem]) -> Option<String> {
+    evidence.iter().map(|item| item.observed_at.clone()).max()
+}
+
 fn build_market_case_summary(
     case: &CaseFile,
     theme_name: &str,
@@ -1228,10 +3098,7 @@ fn build_market_case_summary(
     latest_titles: &[String],
     key_claims: &[String],
 ) -> String {
-    let company = case
-        .primary_entity
-        .as_deref()
-        .unwrap_or("tracked company");
+    let company = case.primary_entity.as_deref().unwrap_or("tracked company");
     let timing = latest_signal_at.unwrap_or("unknown_time");
     let title_context = if latest_titles.is_empty() {
         "no evidence titles captured".to_string()
@@ -1292,6 +3159,91 @@ fn briefing_text(briefing: &MarketIntelCaseBrief) -> String {
     )
 }
 
+async fn load_records<T>(pool: &PgPool, table: &str) -> Result<BTreeMap<String, T>, HelixError>
+where
+    T: DeserializeOwned + HasIntelRecordId,
+{
+    let sql = format!("SELECT record FROM {table} ORDER BY id");
+    let rows = sqlx::query(&sql).fetch_all(pool).await.map_err(db_error)?;
+    let mut records = BTreeMap::new();
+    for row in rows {
+        let record_value: serde_json::Value = row.try_get("record").map_err(db_error)?;
+        let record: T = serde_json::from_value(record_value).map_err(serde_error)?;
+        records.insert(record.record_id().to_string(), record);
+    }
+    Ok(records)
+}
+
+trait HasIntelRecordId {
+    fn record_id(&self) -> &str;
+}
+
+impl HasIntelRecordId for SourceDefinition {
+    fn record_id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl HasIntelRecordId for Watchlist {
+    fn record_id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl HasIntelRecordId for EvidenceItem {
+    fn record_id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl HasIntelRecordId for ClaimRecord {
+    fn record_id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl HasIntelRecordId for CaseFile {
+    fn record_id(&self) -> &str {
+        &self.id
+    }
+}
+
+fn json_string<T: Serialize>(value: &T) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn db_error(error: sqlx::Error) -> HelixError {
+    HelixError::InternalError(format!("intel desk persistence error: {error}"))
+}
+
+fn serde_error(error: serde_json::Error) -> HelixError {
+    HelixError::InternalError(format!("intel desk serialization error: {error}"))
+}
+
+async fn mutate_intel_desk<T>(
+    state: &AppState,
+    mutation: impl FnOnce(&mut IntelDeskStore) -> Result<T, HelixError>,
+) -> Result<T, HelixError> {
+    let persistence = state.intel_persistence.clone();
+    let mut store = state.intel_desk.write().await;
+    let rollback = persistence.as_ref().map(|_| store.clone());
+    let result = mutation(&mut store)?;
+
+    if let Some(persistence) = persistence {
+        if let Err(error) = persistence.save(&store).await {
+            if let Some(rollback) = rollback {
+                *store = rollback;
+            }
+            return Err(error);
+        }
+    }
+
+    Ok(result)
+}
+
 pub(crate) async fn get_intel_overview(State(state): State<AppState>) -> impl IntoResponse {
     let store = state.intel_desk.read().await;
     (StatusCode::OK, Json(store.overview()))
@@ -1307,13 +3259,30 @@ pub(crate) async fn generate_market_intel_brief_handler(
     Path(case_id): Path<String>,
     Json(request): Json<GenerateMarketIntelBriefRequest>,
 ) -> Response {
-    let result = state
-        .intel_desk
-        .write()
-        .await
-        .generate_market_brief(&case_id, request.attach_to_case);
+    let result = mutate_intel_desk(&state, |store| {
+        store.generate_market_brief(&case_id, request.attach_to_case)
+    })
+    .await;
     match result {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Ok(response) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.market_brief.generate",
+                    format!("cases/{case_id}/brief"),
+                    serde_json::json!({
+                        "case_id": case_id,
+                        "attach_to_case": request.attach_to_case,
+                        "transition": response.transition,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (StatusCode::OK, Json(response)).into_response()
+        }
         Err(error) => api_error_response(error),
     }
 }
@@ -1332,9 +3301,127 @@ pub(crate) async fn create_source(
     State(state): State<AppState>,
     Json(request): Json<CreateSourceRequest>,
 ) -> Response {
-    let result = state.intel_desk.write().await.create_source(request);
+    let result = mutate_intel_desk(&state, |store| store.create_source(request)).await;
     match result {
-        Ok(source) => (StatusCode::CREATED, Json(SourceResponse { source })).into_response(),
+        Ok(source) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.source.create",
+                    format!("sources/{}", source.id),
+                    serde_json::json!({
+                        "source_id": source.id,
+                        "profile_id": source.profile_id,
+                        "kind": source.kind,
+                        "endpoint_url": source.endpoint_url,
+                        "credential_id": source.credential_id,
+                        "credential_header_name": source.credential_header_name,
+                        "enabled": source.enabled,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (StatusCode::CREATED, Json(SourceResponse { source })).into_response()
+        }
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn collect_source_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    Json(request): Json<CollectSourceRequest>,
+) -> Response {
+    let limit = match normalize_collect_limit(request.max_items) {
+        Ok(limit) => limit,
+        Err(error) => return api_error_response(error),
+    };
+    let source = {
+        let store = state.intel_desk.read().await;
+        match store.sources.get(&source_id).cloned() {
+            Some(source) => source,
+            None => {
+                return api_error_response(HelixError::not_found(format!("source {source_id}")))
+            }
+        }
+    };
+    if !source.enabled {
+        return api_error_response(HelixError::validation_error("source", "source is disabled"));
+    }
+    let endpoint_url = match source.endpoint_url.clone() {
+        Some(endpoint_url) => endpoint_url,
+        None => {
+            return api_error_response(HelixError::validation_error(
+                "source.endpoint_url",
+                "source has no endpoint_url",
+            ));
+        }
+    };
+    let fetch_auth = match source_fetch_auth(&state, &source).await {
+        Ok(fetch_auth) => fetch_auth,
+        Err(error) => return api_error_response(error),
+    };
+    let payload = match fetch_source_body(&endpoint_url, fetch_auth.as_ref()).await {
+        Ok(payload) => payload,
+        Err(error) => return api_error_response(error),
+    };
+    let requests =
+        match collect_requests_from_payload(&source, &payload, &request.observed_at, limit) {
+            Ok(requests) => requests,
+            Err(error) => return api_error_response(error),
+        };
+    if requests.is_empty() {
+        return api_error_response(HelixError::validation_error(
+            "source.payload",
+            "source payload produced no evidence",
+        ));
+    }
+
+    let result = mutate_intel_desk(&state, |store| {
+        requests
+            .into_iter()
+            .map(|request| store.ingest_evidence(request))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .await;
+
+    match result {
+        Ok(results) => {
+            let duplicate_count = results.iter().filter(|result| result.duplicate).count();
+            let collected_count = results.len();
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.source.collect",
+                    format!("sources/{}/collect", source.id),
+                    serde_json::json!({
+                        "source_id": source.id,
+                        "fetched_url": endpoint_url,
+                        "credential_id": fetch_auth.as_ref().map(|auth| auth.credential_id.as_str()),
+                        "collected_count": collected_count,
+                        "duplicate_count": duplicate_count,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (
+                StatusCode::CREATED,
+                Json(CollectSourceResponse {
+                    source,
+                    fetched_url: endpoint_url,
+                    collected_count,
+                    duplicate_count,
+                    results,
+                }),
+            )
+                .into_response()
+        }
         Err(error) => api_error_response(error),
     }
 }
@@ -1353,31 +3440,54 @@ pub(crate) async fn create_watchlist(
     State(state): State<AppState>,
     Json(request): Json<CreateWatchlistRequest>,
 ) -> Response {
-    let result = state.intel_desk.write().await.create_watchlist(request);
+    let result = mutate_intel_desk(&state, |store| store.create_watchlist(request)).await;
     match result {
-        Ok(watchlist) => (StatusCode::CREATED, Json(WatchlistResponse { watchlist })).into_response(),
+        Ok(watchlist) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.watchlist.create",
+                    format!("watchlists/{}", watchlist.id),
+                    serde_json::json!({
+                        "watchlist_id": watchlist.id,
+                        "severity": watchlist.severity,
+                        "min_source_trust": watchlist.min_source_trust,
+                        "enabled": watchlist.enabled,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (StatusCode::CREATED, Json(WatchlistResponse { watchlist })).into_response()
+        }
         Err(error) => api_error_response(error),
     }
 }
 
-pub(crate) async fn list_evidence(State(state): State<AppState>) -> impl IntoResponse {
+pub(crate) async fn list_evidence(
+    State(state): State<AppState>,
+    Query(filters): Query<EvidenceQueueFilterQuery>,
+) -> Response {
     let store = state.intel_desk.read().await;
-    (
-        StatusCode::OK,
-        Json(EvidenceCatalogResponse {
-            evidence: store.evidence.values().cloned().collect(),
-        }),
-    )
+    match store.evidence_queue(&filters) {
+        Ok(evidence) => {
+            (StatusCode::OK, Json(EvidenceCatalogResponse { evidence })).into_response()
+        }
+        Err(error) => api_error_response(error),
+    }
 }
 
-pub(crate) async fn list_claims(State(state): State<AppState>) -> impl IntoResponse {
+pub(crate) async fn list_claims(
+    State(state): State<AppState>,
+    Query(filters): Query<ClaimQueueFilterQuery>,
+) -> Response {
     let store = state.intel_desk.read().await;
-    (
-        StatusCode::OK,
-        Json(ClaimCatalogResponse {
-            claims: store.claims.values().cloned().collect(),
-        }),
-    )
+    match store.claim_queue(&filters) {
+        Ok(claims) => (StatusCode::OK, Json(ClaimCatalogResponse { claims })).into_response(),
+        Err(error) => api_error_response(error),
+    }
 }
 
 pub(crate) async fn review_claim_handler(
@@ -1385,13 +3495,30 @@ pub(crate) async fn review_claim_handler(
     Path(claim_id): Path<String>,
     Json(request): Json<ClaimReviewRequest>,
 ) -> Response {
-    let result = state
-        .intel_desk
-        .write()
-        .await
-        .review_claim(&claim_id, request.status);
+    let result = mutate_intel_desk(&state, |store| {
+        store.review_claim(&claim_id, request.status)
+    })
+    .await;
     match result {
-        Ok(claim) => (StatusCode::OK, Json(ClaimResponse { claim })).into_response(),
+        Ok(claim) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.claim.review",
+                    format!("claims/{claim_id}/review"),
+                    serde_json::json!({
+                        "claim_id": claim.id,
+                        "review_status": claim.review_status,
+                        "evidence_id": claim.evidence_id,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (StatusCode::OK, Json(ClaimResponse { claim })).into_response()
+        }
         Err(error) => api_error_response(error),
     }
 }
@@ -1400,21 +3527,72 @@ pub(crate) async fn ingest_evidence(
     State(state): State<AppState>,
     Json(request): Json<IngestEvidenceRequest>,
 ) -> Response {
-    let result = state.intel_desk.write().await.ingest_evidence(request);
+    let result = mutate_intel_desk(&state, |store| store.ingest_evidence(request)).await;
     match result {
-        Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
+        Ok(response) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.evidence.ingest",
+                    format!("evidence/{}", response.evidence.id),
+                    serde_json::json!({
+                        "evidence_id": response.evidence.id,
+                        "source_id": response.evidence.source_id,
+                        "duplicate": response.duplicate,
+                        "claim_count": response.claims.len(),
+                        "hit_count": response.hits.len(),
+                        "case_update_count": response.case_updates.len(),
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (StatusCode::CREATED, Json(response)).into_response()
+        }
         Err(error) => api_error_response(error),
     }
 }
 
-pub(crate) async fn list_cases(State(state): State<AppState>) -> impl IntoResponse {
+pub(crate) async fn list_cases(
+    State(state): State<AppState>,
+    Query(filters): Query<CaseQueueFilterQuery>,
+) -> Response {
     let store = state.intel_desk.read().await;
-    (
-        StatusCode::OK,
-        Json(CaseCatalogResponse {
-            cases: store.cases.values().cloned().collect(),
-        }),
-    )
+    match store.case_queue(&filters) {
+        Ok(cases) => (StatusCode::OK, Json(CaseCatalogResponse { cases })).into_response(),
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn get_autopilot_review_queue(
+    State(state): State<AppState>,
+    Query(filters): Query<AutopilotReviewQueueQuery>,
+) -> Response {
+    let store = state.intel_desk.read().await;
+    match store.autopilot_review_queue(&filters) {
+        Ok(items) => (StatusCode::OK, Json(AutopilotReviewQueueResponse { items })).into_response(),
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn export_autopilot_review_packet(
+    State(state): State<AppState>,
+    Query(query): Query<AutopilotReviewExportQuery>,
+) -> Response {
+    if query.item_id.trim().is_empty() {
+        return api_error_response(HelixError::validation_error(
+            "item_id",
+            "item_id is required",
+        ));
+    }
+
+    let store = state.intel_desk.read().await;
+    match store.build_review_export_packet(query.review_kind, query.item_id.trim()) {
+        Ok(packet) => (StatusCode::OK, Json(packet)).into_response(),
+        Err(error) => api_error_response(error),
+    }
 }
 
 pub(crate) async fn transition_case_handler(
@@ -1422,13 +3600,41 @@ pub(crate) async fn transition_case_handler(
     Path(case_id): Path<String>,
     Json(request): Json<CaseTransitionRequest>,
 ) -> Response {
-    let result = state
-        .intel_desk
-        .write()
-        .await
-        .transition_case(&case_id, request.command);
+    let result = mutate_intel_desk(&state, |store| {
+        store.transition_case(&case_id, request.command)
+    })
+    .await;
     match result {
-        Ok(transition) => (StatusCode::OK, Json(CaseTransitionResponse { transition })).into_response(),
+        Ok(transition) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.case.transition",
+                    format!("cases/{case_id}/transition"),
+                    serde_json::json!({
+                        "case_id": transition.case.id,
+                        "status": transition.case.status,
+                        "decision": transition.decision,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (StatusCode::OK, Json(CaseTransitionResponse { transition })).into_response()
+        }
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn export_market_brief_packet_handler(
+    State(state): State<AppState>,
+    Path(case_id): Path<String>,
+) -> Response {
+    let store = state.intel_desk.read().await;
+    match store.build_market_brief_export_packet(&case_id) {
+        Ok(packet) => (StatusCode::OK, Json(packet)).into_response(),
         Err(error) => api_error_response(error),
     }
 }

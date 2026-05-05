@@ -8,7 +8,12 @@ repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Mul
 
 [dependencies]
 helix-core = { path = "../helix-core" }
+helix-agent-sdk = { path = "../helix-agent-sdk" }
+helix-embeddings = { path = "../helix-embeddings" }
 helix-llm = { path = "../helix-llm" }
+helix-rule-engine = { path = "../helix-rule-engine" }
+helix-runtime = { path = "../helix-runtime" }
+helix-security = { path = "../helix-security" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.7"
 hyper = { version = "1", features = ["full"] }
@@ -16,7 +21,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = { workspace = true }
-tower-http = { version = "0.5.0", features = ["trace", "cors"] }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres", "json", "uuid", "chrono"] }
+tower-http = { version = "0.5.0", features = ["trace", "cors", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 

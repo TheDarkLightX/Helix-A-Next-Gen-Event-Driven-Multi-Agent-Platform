@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Mutation operators for different code patterns
 
 use super::{Mutation, MutationType};
@@ -39,7 +38,7 @@ impl MutationOperator for ArithmeticOperatorMutator {
             ("/", vec!["+", "-", "*", "%"]),
             ("%", vec!["+", "-", "*", "/"]),
         ];
-        
+
         for (line_num, line) in code.lines().enumerate() {
             for (op, replacements) in &operators {
                 if let Some(col) = line.find(op) {
@@ -57,7 +56,7 @@ impl MutationOperator for ArithmeticOperatorMutator {
                 }
             }
         }
-        
+
         Ok(mutations)
     }
 }
@@ -76,7 +75,7 @@ impl MutationOperator for ComparisonOperatorMutator {
             ("<", vec!["<=", ">", ">=", "==", "!="]),
             (">", vec![">=", "<", "<=", "==", "!="]),
         ];
-        
+
         for (line_num, line) in code.lines().enumerate() {
             for (op, replacements) in &operators {
                 if let Some(col) = line.find(op) {
@@ -94,7 +93,7 @@ impl MutationOperator for ComparisonOperatorMutator {
                 }
             }
         }
-        
+
         Ok(mutations)
     }
 }
@@ -107,7 +106,7 @@ impl MutationOperator for BooleanLiteralMutator {
         let mut mutations = Vec::new();
         let true_regex = Regex::new(r"\btrue\b").unwrap();
         let false_regex = Regex::new(r"\bfalse\b").unwrap();
-        
+
         for (line_num, line) in code.lines().enumerate() {
             // Find true literals
             for mat in true_regex.find_iter(line) {
@@ -121,7 +120,7 @@ impl MutationOperator for BooleanLiteralMutator {
                     mutated: "false".to_string(),
                 });
             }
-            
+
             // Find false literals
             for mat in false_regex.find_iter(line) {
                 mutations.push(Mutation {
@@ -135,7 +134,7 @@ impl MutationOperator for BooleanLiteralMutator {
                 });
             }
         }
-        
+
         Ok(mutations)
     }
 }
@@ -146,11 +145,8 @@ pub struct LogicalOperatorMutator;
 impl MutationOperator for LogicalOperatorMutator {
     fn mutate(&self, code: &str, file_path: &Path) -> Result<Vec<Mutation>, HelixError> {
         let mut mutations = Vec::new();
-        let operators = vec![
-            ("&&", vec!["||"]),
-            ("||", vec!["&&"]),
-        ];
-        
+        let operators = vec![("&&", vec!["||"]), ("||", vec!["&&"])];
+
         for (line_num, line) in code.lines().enumerate() {
             for (op, replacements) in &operators {
                 let mut start = 0;
@@ -171,7 +167,7 @@ impl MutationOperator for LogicalOperatorMutator {
                 }
             }
         }
-        
+
         Ok(mutations)
     }
 }
@@ -204,14 +200,14 @@ impl CompositeOperator {
 impl MutationOperator for CompositeOperator {
     fn mutate(&self, code: &str, file_path: &Path) -> Result<Vec<Mutation>, HelixError> {
         let mut all_mutations = Vec::new();
-        
+
         for operator in &self.operators {
             match operator.mutate(code, file_path) {
                 Ok(mutations) => all_mutations.extend(mutations),
                 Err(e) => return Err(e),
             }
         }
-        
+
         Ok(all_mutations)
     }
 }
@@ -219,54 +215,52 @@ impl MutationOperator for CompositeOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_arithmetic_operator_mutator() {
         let mutator = ArithmeticOperatorMutator;
         let code = "let result = a + b - c * d / e % f;";
         let path = PathBuf::from("test.rs");
-        
+
         let mutations = mutator.mutate(code, &path).unwrap();
         assert!(!mutations.is_empty());
-        
+
         // Check that we found the + operator
-        let plus_mutations: Vec<_> = mutations.iter()
-            .filter(|m| m.original == "+")
-            .collect();
+        let plus_mutations: Vec<_> = mutations.iter().filter(|m| m.original == "+").collect();
         assert!(!plus_mutations.is_empty());
     }
-    
+
     #[test]
     fn test_comparison_operator_mutator() {
         let mutator = ComparisonOperatorMutator;
         let code = "if a == b && c != d && e < f && g > h && i <= j && k >= l {}";
         let path = PathBuf::from("test.rs");
-        
+
         let mutations = mutator.mutate(code, &path).unwrap();
         assert!(!mutations.is_empty());
-        
+
         // Check various operators were found
         assert!(mutations.iter().any(|m| m.original == "=="));
         assert!(mutations.iter().any(|m| m.original == "!="));
         assert!(mutations.iter().any(|m| m.original == "<"));
     }
-    
+
     #[test]
     fn test_boolean_literal_mutator() {
         let mutator = BooleanLiteralMutator;
         let code = "let a = true; let b = false; if true { return false; }";
         let path = PathBuf::from("test.rs");
-        
+
         let mutations = mutator.mutate(code, &path).unwrap();
         assert_eq!(mutations.len(), 4); // 2 true and 2 false literals
     }
-    
+
     #[test]
     fn test_logical_operator_mutator() {
         let mutator = LogicalOperatorMutator;
         let code = "if a && b || c && d {}";
         let path = PathBuf::from("test.rs");
-        
+
         let mutations = mutator.mutate(code, &path).unwrap();
         assert_eq!(mutations.len(), 3); // 2 && and 1 ||
     }

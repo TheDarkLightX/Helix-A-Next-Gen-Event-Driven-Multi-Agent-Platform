@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  HELIX_ESSO_REF: 1145cf77668b6d86cda83d79820b13a65fbde12f
+  HELIX_FORMAL_MODULE: ESSO
+  HELIX_FORMAL_PYTHONPATH: external/ESSO
+
+jobs:
+  release-gates:
+    name: Release gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            ui/package-lock.json
+            helix-ts-sdk/package-lock.json
+
+      - name: Install Lean
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Install ESSO verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf external/ESSO
+          git clone --depth 1 https://github.com/TheDarkLightX/ESSO.git external/ESSO
+          git -C external/ESSO fetch --depth 1 origin "$HELIX_ESSO_REF"
+          git -C external/ESSO checkout "$HELIX_ESSO_REF"
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e external/ESSO
+
+      - name: Install npm dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix ui
+          if [[ -f helix-ts-sdk/package-lock.json ]]; then
+            npm ci --prefix helix-ts-sdk
+          else
+            npm install --prefix helix-ts-sdk
+          fi
+
+      - name: Run release verification
+        shell: bash
+        run: bash scripts/verify_release.sh

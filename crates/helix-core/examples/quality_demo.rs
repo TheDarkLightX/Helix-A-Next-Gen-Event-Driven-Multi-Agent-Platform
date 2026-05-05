@@ -11,13 +11,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 //! Quality Assessment Demo
-//! 
+//!
 //! This example demonstrates the Helix Mutation Testing Framework's quality assessment capabilities.
 
-use helix_core::mutation_testing::{quick_assessment, generate_quality_report};
+#[cfg(not(feature = "mutation-testing"))]
+fn main() {
+    eprintln!(
+        "This example requires the `mutation-testing` feature.\n\
+Run:\n  cargo run --example quality_demo --features mutation-testing"
+    );
+}
 
+#[cfg(feature = "mutation-testing")]
+use helix_core::mutation_testing::{generate_quality_report, quick_assessment};
+
+#[cfg(feature = "mutation-testing")]
 fn main() {
     println!("🎯 Helix Core Quality Assessment Demo");
     println!("=====================================\n");

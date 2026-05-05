@@ -34,6 +34,8 @@ pub struct AutopilotGuardConfig {
     pub mode: AutopilotMode,
     /// Permit on-chain side effects.
     pub allow_onchain: bool,
+    /// Require explicit human confirmation for on-chain actions (even in `auto` mode).
+    pub require_onchain_confirmation: bool,
     /// Require dry-run mode for on-chain actions.
     pub require_onchain_dry_run: bool,
     /// Upper bound for policy commands in one request.
@@ -45,6 +47,7 @@ impl Default for AutopilotGuardConfig {
         Self {
             mode: AutopilotMode::Assist,
             allow_onchain: false,
+            require_onchain_confirmation: true,
             require_onchain_dry_run: true,
             max_policy_commands: 128,
         }
@@ -136,6 +139,11 @@ impl AutopilotGuardMachine {
         }
     }
 
+    /// Restores guard machine from a persisted deterministic snapshot.
+    pub fn from_snapshot(config: AutopilotGuardConfig, stats: AutopilotStats) -> Self {
+        Self { config, stats }
+    }
+
     /// Returns current config.
     pub fn config(self) -> AutopilotGuardConfig {
         self.config
@@ -189,6 +197,12 @@ impl AutopilotGuardMachine {
                                 reason: "onchain_disabled".to_string(),
                             };
                         }
+                        if self.config.require_onchain_confirmation && !confirmed_by_human {
+                            self.stats.denied = self.stats.denied.saturating_add(1);
+                            return AutopilotGuardDecision::Deny {
+                                reason: "onchain_requires_confirmation".to_string(),
+                            };
+                        }
                         if self.config.require_onchain_dry_run && !dry_run {
                             self.stats.denied = self.stats.denied.saturating_add(1);
                             return AutopilotGuardDecision::Deny {
@@ -235,10 +249,29 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_restore_preserves_config_and_stats() {
+        let config = AutopilotGuardConfig {
+            mode: AutopilotMode::Auto,
+            allow_onchain: true,
+            require_onchain_confirmation: false,
+            require_onchain_dry_run: true,
+            max_policy_commands: 8,
+        };
+        let stats = AutopilotStats {
+            evaluations: 5,
+            denied: 2,
+        };
+        let machine = AutopilotGuardMachine::from_snapshot(config, stats);
+        assert_eq!(machine.config(), config);
+        assert_eq!(machine.stats(), stats);
+    }
+
+    #[test]
     fn onchain_rules_are_fail_closed() {
         let mut machine = AutopilotGuardMachine::new(AutopilotGuardConfig {
             mode: AutopilotMode::Auto,
             allow_onchain: true,
+            require_onchain_confirmation: false,
             require_onchain_dry_run: true,
             max_policy_commands: 10,
         });
@@ -264,10 +297,30 @@ mod tests {
     }
 
     #[test]
+    fn onchain_requires_confirmation_when_configured() {
+        let mut machine = AutopilotGuardMachine::new(AutopilotGuardConfig {
+            mode: AutopilotMode::Auto,
+            allow_onchain: true,
+            require_onchain_confirmation: true,
+            require_onchain_dry_run: false,
+            max_policy_commands: 10,
+        });
+        let denied = machine.step(AutopilotGuardInput::Evaluate {
+            action: AutopilotActionClass::OnchainBroadcast { dry_run: true },
+            confirmed_by_human: false,
+        });
+        assert!(matches!(
+            denied,
+            AutopilotGuardDecision::Deny { reason } if reason == "onchain_requires_confirmation"
+        ));
+    }
+
+    #[test]
     fn policy_command_count_boundary_checks() {
         let mut machine = AutopilotGuardMachine::new(AutopilotGuardConfig {
             mode: AutopilotMode::Auto,
             allow_onchain: false,
+            require_onchain_confirmation: true,
             require_onchain_dry_run: true,
             max_policy_commands: 3,
         });

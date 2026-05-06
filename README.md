@@ -197,6 +197,7 @@ emitted events, state snapshots, status, and errors when Postgres is enabled.
 - `GET /api/v1/sources`
 - `POST /api/v1/sources`
 - `POST /api/v1/sources/:source_id/collect`
+- `POST /api/v1/sources/:source_id/webhook`
 - `GET /api/v1/watchlists`
 - `POST /api/v1/watchlists`
 - `GET /api/v1/evidence`
@@ -245,6 +246,8 @@ The corroboration axis now comes from a bounded evidence-fusion model instead of
 `GET /api/v1/autopilot/review-queue/export` and `GET /api/v1/market-intel/cases/:case_id/export` return deterministic JSON packets for review items and market briefs. The packets are replayable exports built from ranked state, linked claims, linked evidence, and stable IDs.
 
 `POST /api/v1/sources/:source_id/collect` fetches a configured RSS, JSON API, or website source, normalizes it into evidence, runs watchlist matching, and persists resulting claims/case updates. The request supplies an explicit `observed_at` fallback so collection does not depend on hidden server time. Sources can reference a vaulted `credential_id` plus an explicit HTTP header mapping; collection decrypts the credential just in time and never returns the secret in API responses or audit records.
+
+`POST /api/v1/sources/:source_id/webhook` gives `webhook_ingest` sources a push adapter. It accepts one item, an array, or an envelope with explicit `observed_at` plus `items`, caps each payload at 50 items, and runs the same normalization, watchlist, case, persistence, and audit path as pull collection.
 
 `GET /api/v1/audit` returns the latest durable audit events for policy, autopilot, source, evidence, claim, case, automation, and credential mutations when Postgres persistence is enabled.
 

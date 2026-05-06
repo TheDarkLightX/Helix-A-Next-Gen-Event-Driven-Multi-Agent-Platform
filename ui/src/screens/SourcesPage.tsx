@@ -11,6 +11,10 @@ const SOURCE_KIND_OPTIONS: { value: SourceKind; label: string }[] = [
 ];
 const DEFAULT_PROFILE_ID = "50000000-0000-0000-0000-000000000010";
 
+function supportsPullCollection(source: SourceDefinition): boolean {
+  return source.kind === "rss_feed" || source.kind === "website_diff" || source.kind === "json_api";
+}
+
 function parseCsv(value: string): string[] {
   return value
     .split(",")
@@ -231,6 +235,9 @@ export function SourcesPage() {
               <p className="mono-detail">{source.id}</p>
               <p className="mono-detail">profile: {source.profile_id}</p>
               {source.endpoint_url ? <p className="mono-detail">{source.endpoint_url}</p> : null}
+              {source.kind === "webhook_ingest" ? (
+                <p className="mono-detail">webhook: /api/v1/sources/{source.id}/webhook</p>
+              ) : null}
               <div className="pill-row">
                 <span className="info-pill">kind: {source.kind}</span>
                 <span className="info-pill">cadence: {source.cadence_minutes}m</span>
@@ -251,10 +258,18 @@ export function SourcesPage() {
               <button
                 className="btn-secondary"
                 type="button"
-                disabled={!source.endpoint_url || collectingSourceId === source.id}
+                disabled={
+                  !supportsPullCollection(source) ||
+                  !source.endpoint_url ||
+                  collectingSourceId === source.id
+                }
                 onClick={() => void onCollect(source)}
               >
-                {collectingSourceId === source.id ? "Collecting" : "Collect Now"}
+                {supportsPullCollection(source)
+                  ? collectingSourceId === source.id
+                    ? "Collecting"
+                    : "Collect Now"
+                  : "Push Ingest"}
               </button>
             </div>
           ))}

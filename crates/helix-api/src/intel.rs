@@ -173,6 +173,14 @@ pub(crate) struct CollectSourceResponse {
     pub(crate) results: Vec<IngestEvidenceResponse>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct WebhookIngestResponse {
+    pub(crate) source: SourceDefinition,
+    pub(crate) accepted_count: usize,
+    pub(crate) duplicate_count: usize,
+    pub(crate) results: Vec<IngestEvidenceResponse>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum JsonCollectionPayload {
@@ -183,8 +191,19 @@ enum JsonCollectionPayload {
     Single(CollectedEvidencePayload),
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum WebhookIngestPayload {
+    Envelope {
+        observed_at: Option<String>,
+        items: Vec<CollectedEvidencePayload>,
+    },
+    Array(Vec<CollectedEvidencePayload>),
+    Single(CollectedEvidencePayload),
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
-struct CollectedEvidencePayload {
+pub(crate) struct CollectedEvidencePayload {
     title: String,
     #[serde(default)]
     summary: Option<String>,
@@ -2521,6 +2540,48 @@ fn collected_item_to_request(
     })
 }
 
+fn webhook_ingest_requests(
+    source: &SourceDefinition,
+    payload: WebhookIngestPayload,
+) -> Result<Vec<IngestEvidenceRequest>, HelixError> {
+    let (fallback_observed_at, items) = match payload {
+        WebhookIngestPayload::Envelope { observed_at, items } => (observed_at, items),
+        WebhookIngestPayload::Array(items) => (None, items),
+        WebhookIngestPayload::Single(item) => (None, vec![item]),
+    };
+    if items.is_empty() {
+        return Err(HelixError::validation_error(
+            "webhook.items",
+            "at least one item is required",
+        ));
+    }
+    if items.len() > MAX_COLLECT_ITEMS {
+        return Err(HelixError::validation_error(
+            "webhook.items",
+            &format!("must contain at most {MAX_COLLECT_ITEMS} items"),
+        ));
+    }
+
+    let fallback_observed_at = fallback_observed_at.unwrap_or_default();
+    items
+        .into_iter()
+        .map(|item| {
+            if first_non_empty([
+                item.observed_at.as_deref(),
+                Some(fallback_observed_at.as_str()),
+            ])
+            .is_none()
+            {
+                return Err(HelixError::validation_error(
+                    "webhook.observed_at",
+                    "observed_at is required on each item or on the envelope",
+                ));
+            }
+            collected_item_to_request(source, item, &fallback_observed_at)
+        })
+        .collect()
+}
+
 fn rss_collection_requests(
     source: &SourceDefinition,
     payload: &str,
@@ -3416,6 +3477,81 @@ pub(crate) async fn collect_source_handler(
                     source,
                     fetched_url: endpoint_url,
                     collected_count,
+                    duplicate_count,
+                    results,
+                }),
+            )
+                .into_response()
+        }
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn webhook_ingest_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    Json(payload): Json<WebhookIngestPayload>,
+) -> Response {
+    let source = {
+        let store = state.intel_desk.read().await;
+        match store.sources.get(&source_id).cloned() {
+            Some(source) => source,
+            None => {
+                return api_error_response(HelixError::not_found(format!("source {source_id}")))
+            }
+        }
+    };
+    if !source.enabled {
+        return api_error_response(HelixError::validation_error("source", "source is disabled"));
+    }
+    if source.kind != SourceKind::WebhookIngest {
+        return api_error_response(HelixError::validation_error(
+            "source.kind",
+            "source must be webhook_ingest",
+        ));
+    }
+
+    let requests = match webhook_ingest_requests(&source, payload) {
+        Ok(requests) => requests,
+        Err(error) => return api_error_response(error),
+    };
+    let result = mutate_intel_desk(&state, |store| {
+        requests
+            .into_iter()
+            .map(|request| store.ingest_evidence(request))
+            .collect::<Result<Vec<_>, _>>()
+    })
+    .await;
+
+    match result {
+        Ok(results) => {
+            let duplicate_count = results.iter().filter(|result| result.duplicate).count();
+            let accepted_count = results.len();
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.source.webhook_ingest",
+                    format!("sources/{}/webhook", source.id),
+                    serde_json::json!({
+                        "source_id": source.id,
+                        "accepted_count": accepted_count,
+                        "duplicate_count": duplicate_count,
+                        "case_update_count": results
+                            .iter()
+                            .map(|result| result.case_updates.len())
+                            .sum::<usize>(),
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (
+                StatusCode::CREATED,
+                Json(WebhookIngestResponse {
+                    source,
+                    accepted_count,
                     duplicate_count,
                     results,
                 }),

@@ -70,11 +70,18 @@ The corroboration component of that ranking is no longer a raw count bucket. It 
 - `GET /api/v1/sources`
 - `POST /api/v1/sources`
 - `POST /api/v1/sources/:source_id/collect`
+- `POST /api/v1/sources/:source_id/webhook`
 
 Pull-collection sources support `credential_id`, `credential_header_name`, and
 `credential_header_prefix`. When configured, collection resolves the credential
 inside the source's profile, decrypts it just in time, sends it as the configured
 HTTP header, and records only redacted credential metadata in audit events.
+
+Webhook sources are push-only. `POST /api/v1/sources/:source_id/webhook` accepts
+a single evidence item, an array, or an envelope with explicit `observed_at` and
+`items`. The endpoint requires `source.kind = webhook_ingest`, never reads server
+time, caps one payload at 50 items, then runs the same evidence normalization,
+watchlist matching, case update, persistence, and audit path as pull collection.
 
 ### Watchlists
 - `GET /api/v1/watchlists`

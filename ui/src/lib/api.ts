@@ -720,10 +720,36 @@ export type CollectSourceRequest = {
   max_items?: number;
 };
 
+export type SourceWebhookItem = {
+  title: string;
+  summary?: string | null;
+  content?: string | null;
+  url?: string | null;
+  observed_at?: string | null;
+  tags?: string[];
+  entity_labels?: string[];
+  proposed_claims?: ProposedClaim[];
+};
+
+export type SourceWebhookIngestRequest =
+  | SourceWebhookItem
+  | SourceWebhookItem[]
+  | {
+      observed_at?: string | null;
+      items: SourceWebhookItem[];
+    };
+
 export type CollectSourceResponse = {
   source: SourceDefinition;
   fetched_url: string;
   collected_count: number;
+  duplicate_count: number;
+  results: IngestEvidenceResponse[];
+};
+
+export type WebhookIngestResponse = {
+  source: SourceDefinition;
+  accepted_count: number;
   duplicate_count: number;
   results: IngestEvidenceResponse[];
 };
@@ -1116,6 +1142,22 @@ export async function collectSource(
   return requestJson<CollectSourceResponse>(
     API_BASE,
     `/api/v1/sources/${encodeURIComponent(sourceId)}/collect`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+}
+
+export async function ingestSourceWebhook(
+  sourceId: string,
+  request: SourceWebhookIngestRequest
+): Promise<WebhookIngestResponse> {
+  return requestJson<WebhookIngestResponse>(
+    API_BASE,
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/webhook`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

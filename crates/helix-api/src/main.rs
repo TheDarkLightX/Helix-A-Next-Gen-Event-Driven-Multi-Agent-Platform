@@ -21,8 +21,8 @@ use crate::intel::{
     export_market_brief_packet_handler, generate_market_intel_brief_handler,
     get_autopilot_review_queue, get_intel_overview, get_market_intel_overview, ingest_evidence,
     list_cases, list_claims, list_evidence, list_sources, list_watchlists, review_claim_handler,
-    transition_case_handler, AutopilotReviewKind, AutopilotReviewQueueEntry,
-    IntelDeskPostgresStore, IntelDeskStore,
+    transition_case_handler, webhook_ingest_handler, AutopilotReviewKind,
+    AutopilotReviewQueueEntry, IntelDeskPostgresStore, IntelDeskStore,
 };
 use axum::{
     extract::{Path, Query, Request, State},
@@ -3268,6 +3268,10 @@ fn api_router() -> Router<AppState> {
             post(collect_source_handler),
         )
         .route(
+            "/api/v1/sources/:source_id/webhook",
+            post(webhook_ingest_handler),
+        )
+        .route(
             "/api/v1/watchlists",
             get(list_watchlists).post(create_watchlist),
         )
@@ -3339,6 +3343,7 @@ mod tests {
         GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse, IngestEvidenceRequest,
         IngestEvidenceResponse, IntelDeskOverviewResponse, MarketIntelBriefExportPacketResponse,
         MarketIntelOverviewResponse, SourceCatalogResponse, SourceResponse, WatchlistResponse,
+        WebhookIngestResponse,
     };
     use async_trait::async_trait;
     use axum::{
@@ -5422,6 +5427,186 @@ mod tests {
             .cases
             .iter()
             .any(|entry| entry.case.primary_entity.as_deref() == Some("boreal cloud")));
+    }
+
+    #[tokio::test]
+    async fn source_webhook_endpoint_ingests_payload_and_opens_case() {
+        let app = test_app();
+        let create = CreateSourceRequest {
+            profile_id: None,
+            name: "Boreal Webhook".to_string(),
+            description: "Inbound partner intelligence webhook".to_string(),
+            kind: helix_core::intel_desk::SourceKind::WebhookIngest,
+            endpoint_url: None,
+            credential_id: None,
+            credential_header_name: None,
+            credential_header_prefix: None,
+            cadence_minutes: 15,
+            trust_score: 88,
+            enabled: true,
+            tags: vec!["market-intel".to_string(), "webhook".to_string()],
+        };
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = to_bytes(create_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let created: SourceResponse = serde_json::from_slice(&body).unwrap();
+
+        let webhook_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/sources/{}/webhook", created.source.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                          "observed_at": "2026-04-02T10:00:00Z",
+                          "items": [
+                            {
+                              "title": "Boreal Cloud webhook reports a bundle discount",
+                              "summary": "Inbound partner webhook says Boreal Cloud is discounting an enterprise bundle.",
+                              "content": "Boreal Cloud pricing changed after a new enterprise bundle discount was pushed to partners.",
+                              "url": "https://example.org/webhook/boreal-bundle",
+                              "tags": ["pricing"],
+                              "entity_labels": ["boreal cloud"],
+                              "proposed_claims": [
+                                {
+                                  "subject": "boreal cloud",
+                                  "predicate": "discounted",
+                                  "object": "enterprise bundle",
+                                  "confidence_bps": 9000,
+                                  "rationale": "The webhook payload states the partner discount."
+                                }
+                              ]
+                            }
+                          ]
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(webhook_response.status(), StatusCode::CREATED);
+        let body = to_bytes(webhook_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let payload: WebhookIngestResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.accepted_count, 1);
+        assert_eq!(payload.duplicate_count, 0);
+        assert_eq!(payload.results[0].claims.len(), 1);
+        assert!(!payload.results[0].hits.is_empty());
+        assert!(!payload.results[0].case_updates.is_empty());
+        assert!(payload.results[0]
+            .evidence
+            .tags
+            .contains(&"webhook".to_string()));
+    }
+
+    #[tokio::test]
+    async fn source_webhook_endpoint_rejects_non_webhook_source() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources/rss_national_security/webhook")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"observed_at":"2026-04-02T10:00:00Z","items":[{"title":"Denied","summary":"Denied","content":"Denied"}]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn source_webhook_endpoint_rejects_payload_boundaries() {
+        let app = test_app();
+        let create = CreateSourceRequest {
+            profile_id: None,
+            name: "Boundary Webhook".to_string(),
+            description: "Webhook boundary source".to_string(),
+            kind: helix_core::intel_desk::SourceKind::WebhookIngest,
+            endpoint_url: None,
+            credential_id: None,
+            credential_header_name: None,
+            credential_header_prefix: None,
+            cadence_minutes: 15,
+            trust_score: 88,
+            enabled: true,
+            tags: vec!["boundary".to_string()],
+        };
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = to_bytes(create_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let created: SourceResponse = serde_json::from_slice(&body).unwrap();
+
+        let empty_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/sources/{}/webhook", created.source.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"observed_at":"2026-04-02T10:00:00Z","items":[]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(empty_response.status(), StatusCode::BAD_REQUEST);
+
+        let too_many_items = serde_json::json!({
+            "observed_at": "2026-04-02T10:00:00Z",
+            "items": (0..=50)
+                .map(|index| serde_json::json!({
+                    "title": format!("Webhook item {index}"),
+                    "summary": "summary",
+                    "content": "content"
+                }))
+                .collect::<Vec<_>>()
+        });
+        let too_many_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/sources/{}/webhook", created.source.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&too_many_items).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(too_many_response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

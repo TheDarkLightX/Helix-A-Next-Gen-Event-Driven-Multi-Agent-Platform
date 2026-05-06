@@ -720,6 +720,30 @@ export type CollectSourceRequest = {
   max_items?: number;
 };
 
+export type CollectDueSourcesRequest = {
+  observed_at: string;
+  tick_minute: number;
+  max_items_per_source?: number;
+  source_ids?: string[];
+};
+
+export type ScheduledSourceCollection = {
+  source: SourceDefinition;
+  fetched_url: string;
+  schedule_phase_minute: number;
+  collected_count: number;
+  duplicate_count: number;
+  results: IngestEvidenceResponse[];
+};
+
+export type CollectDueSourcesResponse = {
+  observed_at: string;
+  tick_minute: number;
+  due_count: number;
+  skipped_count: number;
+  collections: ScheduledSourceCollection[];
+};
+
 export type SourceWebhookItem = {
   title: string;
   summary?: string | null;
@@ -1159,6 +1183,21 @@ export async function collectSource(
   return requestJson<CollectSourceResponse>(
     API_BASE,
     `/api/v1/sources/${encodeURIComponent(sourceId)}/collect`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+}
+
+export async function collectDueSources(
+  request: CollectDueSourcesRequest
+): Promise<CollectDueSourcesResponse> {
+  return requestJson<CollectDueSourcesResponse>(
+    API_BASE,
+    "/api/v1/sources/collect-due",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

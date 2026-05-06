@@ -17,12 +17,13 @@ mod evm_rpc;
 mod intel;
 
 use crate::intel::{
-    collect_source_handler, create_source, create_watchlist, export_autopilot_review_packet,
-    export_market_brief_packet_handler, file_import_handler, generate_market_intel_brief_handler,
-    get_autopilot_review_queue, get_intel_overview, get_market_intel_overview, ingest_evidence,
-    list_cases, list_claims, list_evidence, list_sources, list_watchlists, review_claim_handler,
-    transition_case_handler, webhook_ingest_handler, AutopilotReviewKind,
-    AutopilotReviewQueueEntry, IntelDeskPostgresStore, IntelDeskStore,
+    collect_due_sources_handler, collect_source_handler, create_source, create_watchlist,
+    export_autopilot_review_packet, export_market_brief_packet_handler, file_import_handler,
+    generate_market_intel_brief_handler, get_autopilot_review_queue, get_intel_overview,
+    get_market_intel_overview, ingest_evidence, list_cases, list_claims, list_evidence,
+    list_sources, list_watchlists, review_claim_handler, transition_case_handler,
+    webhook_ingest_handler, AutopilotReviewKind, AutopilotReviewQueueEntry, IntelDeskPostgresStore,
+    IntelDeskStore,
 };
 use axum::{
     extract::{Path, Query, Request, State},
@@ -3264,6 +3265,10 @@ fn api_router() -> Router<AppState> {
         )
         .route("/api/v1/sources", get(list_sources).post(create_source))
         .route(
+            "/api/v1/sources/collect-due",
+            post(collect_due_sources_handler),
+        )
+        .route(
             "/api/v1/sources/:source_id/collect",
             post(collect_source_handler),
         )
@@ -3343,11 +3348,12 @@ mod tests {
     use crate::intel::{
         AutopilotReviewExportPacketResponse, AutopilotReviewQueueResponse, CaseCatalogResponse,
         CaseTransitionRequest, CaseTransitionResponse, ClaimCatalogResponse, ClaimResponse,
-        ClaimReviewRequest, CollectSourceResponse, CreateSourceRequest, CreateWatchlistRequest,
-        FileImportResponse, GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse,
-        IngestEvidenceRequest, IngestEvidenceResponse, IntelDeskOverviewResponse,
-        MarketIntelBriefExportPacketResponse, MarketIntelOverviewResponse, SourceCatalogResponse,
-        SourceResponse, WatchlistResponse, WebhookIngestResponse,
+        ClaimReviewRequest, CollectDueSourcesResponse, CollectSourceResponse, CreateSourceRequest,
+        CreateWatchlistRequest, FileImportResponse, GenerateMarketIntelBriefRequest,
+        GenerateMarketIntelBriefResponse, IngestEvidenceRequest, IngestEvidenceResponse,
+        IntelDeskOverviewResponse, MarketIntelBriefExportPacketResponse,
+        MarketIntelOverviewResponse, SourceCatalogResponse, SourceResponse, WatchlistResponse,
+        WebhookIngestResponse,
     };
     use async_trait::async_trait;
     use axum::{
@@ -5431,6 +5437,134 @@ mod tests {
             .cases
             .iter()
             .any(|entry| entry.case.primary_entity.as_deref() == Some("boreal cloud")));
+    }
+
+    #[tokio::test]
+    async fn source_collect_due_endpoint_collects_due_pull_sources() {
+        let feed_url = spawn_text_server(
+            "/scheduled-pricing.json",
+            r#"{
+              "items": [
+                {
+                  "title": "Boreal Cloud scheduled pricing bundle changed",
+                  "summary": "Scheduled collector saw Boreal Cloud add an enterprise bundle discount.",
+                  "content": "Boreal Cloud pricing changed with a scheduled enterprise bundle discount signal.",
+                  "url": "https://example.org/boreal/scheduled-pricing",
+                  "tags": ["pricing"],
+                  "entity_labels": ["boreal cloud"],
+                  "proposed_claims": [
+                    {
+                      "subject": "boreal cloud",
+                      "predicate": "discounted",
+                      "object": "enterprise bundle",
+                      "confidence_bps": 8900,
+                      "rationale": "The scheduled feed states a bundle discount."
+                    }
+                  ]
+                }
+              ]
+            }"#,
+        )
+        .await;
+        let app = test_app();
+        let create = CreateSourceRequest {
+            profile_id: None,
+            name: "Boreal Scheduled Pricing Feed".to_string(),
+            description: "Scheduled JSON pricing changes".to_string(),
+            kind: helix_core::intel_desk::SourceKind::JsonApi,
+            endpoint_url: Some(feed_url),
+            credential_id: None,
+            credential_header_name: None,
+            credential_header_prefix: None,
+            cadence_minutes: 1,
+            trust_score: 90,
+            enabled: true,
+            tags: vec!["market-intel".to_string(), "scheduled".to_string()],
+        };
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = to_bytes(create_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let created: SourceResponse = serde_json::from_slice(&body).unwrap();
+
+        let collect_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources/collect-due")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "observed_at": "2026-04-04T10:00:00Z",
+                            "tick_minute": 42,
+                            "max_items_per_source": 5,
+                            "source_ids": [created.source.id]
+                        }))
+                        .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(collect_response.status(), StatusCode::CREATED);
+        let body = to_bytes(collect_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let payload: CollectDueSourcesResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.due_count, 1);
+        assert_eq!(payload.skipped_count, 0);
+        assert_eq!(payload.collections.len(), 1);
+        assert_eq!(payload.collections[0].collected_count, 1);
+        assert_eq!(payload.collections[0].duplicate_count, 0);
+        assert_eq!(payload.collections[0].schedule_phase_minute, 0);
+        assert!(!payload.collections[0].results[0].hits.is_empty());
+        assert!(!payload.collections[0].results[0].case_updates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn source_collect_due_endpoint_rejects_boundaries() {
+        let zero_limit_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources/collect-due")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"observed_at":"2026-04-04T10:00:00Z","tick_minute":42,"max_items_per_source":0}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(zero_limit_response.status(), StatusCode::BAD_REQUEST);
+
+        let missing_source_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources/collect-due")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"observed_at":"2026-04-04T10:00:00Z","tick_minute":42,"source_ids":["missing_source"]}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing_source_response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

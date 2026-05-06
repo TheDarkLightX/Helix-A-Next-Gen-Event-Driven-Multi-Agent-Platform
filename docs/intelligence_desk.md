@@ -69,6 +69,7 @@ The corroboration component of that ranking is no longer a raw count bucket. It 
 ### Sources
 - `GET /api/v1/sources`
 - `POST /api/v1/sources`
+- `POST /api/v1/sources/collect-due`
 - `POST /api/v1/sources/:source_id/collect`
 - `POST /api/v1/sources/:source_id/webhook`
 - `POST /api/v1/sources/:source_id/import`
@@ -77,6 +78,12 @@ Pull-collection sources support `credential_id`, `credential_header_name`, and
 `credential_header_prefix`. When configured, collection resolves the credential
 inside the source's profile, decrypts it just in time, sends it as the configured
 HTTP header, and records only redacted credential metadata in audit events.
+
+Scheduled collection is explicit and replayable. `POST /api/v1/sources/collect-due`
+accepts `observed_at`, `tick_minute`, optional `max_items_per_source`, and optional
+`source_ids`; Helix derives a stable phase from each source and its cadence, then
+collects only due RSS, JSON API, and website sources. No hidden server clock is
+consulted.
 
 Webhook sources are push-only. `POST /api/v1/sources/:source_id/webhook` accepts
 a single evidence item, an array, or an envelope with explicit `observed_at` and

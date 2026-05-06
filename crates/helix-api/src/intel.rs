@@ -44,6 +44,14 @@ struct SourceFetchAuth {
     header_value: HeaderValue,
 }
 
+#[derive(Debug, Clone)]
+struct PendingScheduledCollection {
+    source: SourceDefinition,
+    fetched_url: String,
+    schedule_phase_minute: u16,
+    requests: Vec<IngestEvidenceRequest>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct IntelDeskOverviewResponse {
     pub(crate) source_count: usize,
@@ -172,6 +180,35 @@ pub(crate) struct CollectSourceResponse {
     pub(crate) collected_count: usize,
     pub(crate) duplicate_count: usize,
     pub(crate) results: Vec<IngestEvidenceResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CollectDueSourcesRequest {
+    pub(crate) observed_at: String,
+    pub(crate) tick_minute: u64,
+    #[serde(default)]
+    pub(crate) max_items_per_source: Option<usize>,
+    #[serde(default)]
+    pub(crate) source_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ScheduledSourceCollection {
+    pub(crate) source: SourceDefinition,
+    pub(crate) fetched_url: String,
+    pub(crate) schedule_phase_minute: u16,
+    pub(crate) collected_count: usize,
+    pub(crate) duplicate_count: usize,
+    pub(crate) results: Vec<IngestEvidenceResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct CollectDueSourcesResponse {
+    pub(crate) observed_at: String,
+    pub(crate) tick_minute: u64,
+    pub(crate) due_count: usize,
+    pub(crate) skipped_count: usize,
+    pub(crate) collections: Vec<ScheduledSourceCollection>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2500,6 +2537,51 @@ fn collect_requests_from_payload(
     Ok(requests)
 }
 
+fn source_supports_pull_collection(source: &SourceDefinition) -> bool {
+    matches!(
+        source.kind,
+        SourceKind::JsonApi | SourceKind::RssFeed | SourceKind::WebsiteDiff
+    )
+}
+
+fn source_schedule_phase_minute(source: &SourceDefinition) -> u16 {
+    let cadence = source.cadence_minutes.max(1);
+    let mut hasher = Sha256::new();
+    hasher.update(source.id.as_bytes());
+    hasher.update(source.profile_id.as_bytes());
+    hasher.update(source.kind_string().as_bytes());
+    hasher.update(cadence.to_be_bytes());
+    let digest = hasher.finalize();
+    let value = u64::from_be_bytes(
+        digest[..8]
+            .try_into()
+            .expect("sha256 digest has at least eight bytes"),
+    );
+    (value % u64::from(cadence)) as u16
+}
+
+fn source_is_due_at_tick(source: &SourceDefinition, tick_minute: u64) -> bool {
+    let cadence = u64::from(source.cadence_minutes.max(1));
+    tick_minute % cadence == u64::from(source_schedule_phase_minute(source))
+}
+
+trait SourceKindName {
+    fn kind_string(&self) -> &'static str;
+}
+
+impl SourceKindName for SourceDefinition {
+    fn kind_string(&self) -> &'static str {
+        match self.kind {
+            SourceKind::RssFeed => "rss_feed",
+            SourceKind::WebsiteDiff => "website_diff",
+            SourceKind::JsonApi => "json_api",
+            SourceKind::WebhookIngest => "webhook_ingest",
+            SourceKind::EmailDigest => "email_digest",
+            SourceKind::FileImport => "file_import",
+        }
+    }
+}
+
 fn normalize_collect_limit(limit: Option<usize>) -> Result<usize, HelixError> {
     let limit = limit.unwrap_or(10);
     if limit == 0 || limit > MAX_COLLECT_ITEMS {
@@ -3560,6 +3642,161 @@ pub(crate) async fn collect_source_handler(
                     collected_count,
                     duplicate_count,
                     results,
+                }),
+            )
+                .into_response()
+        }
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn collect_due_sources_handler(
+    State(state): State<AppState>,
+    Json(request): Json<CollectDueSourcesRequest>,
+) -> Response {
+    if request.observed_at.trim().is_empty() {
+        return api_error_response(HelixError::validation_error(
+            "observed_at",
+            "observed_at is required",
+        ));
+    }
+    let limit = match normalize_collect_limit(request.max_items_per_source) {
+        Ok(limit) => limit,
+        Err(error) => return api_error_response(error),
+    };
+
+    let requested_ids = request
+        .source_ids
+        .iter()
+        .map(|source_id| source_id.trim().to_string())
+        .filter(|source_id| !source_id.is_empty())
+        .collect::<BTreeSet<_>>();
+    let sources = {
+        let store = state.intel_desk.read().await;
+        for source_id in &requested_ids {
+            if !store.sources.contains_key(source_id) {
+                return api_error_response(HelixError::not_found(format!("source {source_id}")));
+            }
+        }
+        store.sources.values().cloned().collect::<Vec<_>>()
+    };
+
+    let mut skipped_count = 0usize;
+    let mut due_sources = Vec::new();
+    for source in sources {
+        if !requested_ids.is_empty() && !requested_ids.contains(&source.id) {
+            continue;
+        }
+        if !source.enabled
+            || !source_supports_pull_collection(&source)
+            || source.endpoint_url.is_none()
+            || !source_is_due_at_tick(&source, request.tick_minute)
+        {
+            skipped_count += 1;
+            continue;
+        }
+        due_sources.push(source);
+    }
+
+    let mut pending = Vec::new();
+    for source in due_sources {
+        let endpoint_url = source
+            .endpoint_url
+            .clone()
+            .expect("due pull source has endpoint_url");
+        let fetch_auth = match source_fetch_auth(&state, &source).await {
+            Ok(fetch_auth) => fetch_auth,
+            Err(error) => return api_error_response(error),
+        };
+        let payload = match fetch_source_body(&endpoint_url, fetch_auth.as_ref()).await {
+            Ok(payload) => payload,
+            Err(error) => return api_error_response(error),
+        };
+        let requests =
+            match collect_requests_from_payload(&source, &payload, &request.observed_at, limit) {
+                Ok(requests) if requests.is_empty() => {
+                    return api_error_response(HelixError::validation_error(
+                        "source.payload",
+                        "source payload produced no evidence",
+                    ))
+                }
+                Ok(requests) => requests,
+                Err(error) => return api_error_response(error),
+            };
+        pending.push(PendingScheduledCollection {
+            schedule_phase_minute: source_schedule_phase_minute(&source),
+            source,
+            fetched_url: endpoint_url,
+            requests,
+        });
+    }
+
+    let due_count = pending.len();
+    let result = mutate_intel_desk(&state, |store| {
+        pending
+            .into_iter()
+            .map(|pending| {
+                let results = pending
+                    .requests
+                    .into_iter()
+                    .map(|request| store.ingest_evidence(request))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let duplicate_count = results.iter().filter(|result| result.duplicate).count();
+                Ok(ScheduledSourceCollection {
+                    source: pending.source,
+                    fetched_url: pending.fetched_url,
+                    schedule_phase_minute: pending.schedule_phase_minute,
+                    collected_count: results.len(),
+                    duplicate_count,
+                    results,
+                })
+            })
+            .collect::<Result<Vec<_>, HelixError>>()
+    })
+    .await;
+
+    match result {
+        Ok(collections) => {
+            let collected_count = collections
+                .iter()
+                .map(|collection| collection.collected_count)
+                .sum::<usize>();
+            let duplicate_count = collections
+                .iter()
+                .map(|collection| collection.duplicate_count)
+                .sum::<usize>();
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.source.collect_due",
+                    "sources/collect-due",
+                    serde_json::json!({
+                        "observed_at": request.observed_at.clone(),
+                        "tick_minute": request.tick_minute,
+                        "due_count": due_count,
+                        "skipped_count": skipped_count,
+                        "collected_count": collected_count,
+                        "duplicate_count": duplicate_count,
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            let status = if collections.is_empty() {
+                StatusCode::OK
+            } else {
+                StatusCode::CREATED
+            };
+            (
+                status,
+                Json(CollectDueSourcesResponse {
+                    observed_at: request.observed_at.trim().to_string(),
+                    tick_minute: request.tick_minute,
+                    due_count,
+                    skipped_count,
+                    collections,
                 }),
             )
                 .into_response()

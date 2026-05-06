@@ -12,7 +12,7 @@ repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Mul
 helix-core = { path = "../helix-core" }
 helix-agent-sdk = { path = "../helix-agent-sdk" }
 helix-wasm = { path = "../helix-wasm" } # Added helix-wasm
-async-nats = "0.35.0"
+async-nats = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }

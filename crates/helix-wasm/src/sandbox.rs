@@ -15,7 +15,6 @@
 
 use crate::WasmRuntimeConfig;
 use anyhow::Result;
-use std::collections::HashMap;
 
 /// Configures a `wasmtime::Engine` with resource limits based on `WasmRuntimeConfig`.
 ///

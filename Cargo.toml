@@ -31,8 +31,8 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 thiserror = "1.0"
 async-trait = "0.1"
-async-nats = { version = "0.38.0" }
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "json", "uuid", "chrono"] }
+async-nats = { version = "0.47.0" }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "uuid", "chrono", "macros"] }
 axum = { version = "0.7", features = ["json"] }
 
 # LLM and AI dependencies
@@ -56,8 +56,8 @@ anyhow = "1.0"
 # fastembed = "3.0"      # Commented out for now
 
 # WASM runtime
-wasmtime = "24.0"
-wasmtime-wasi = "24.0"
+wasmtime = { version = "36.0.7", default-features = false, features = ["async", "cranelift", "runtime", "std", "wat"] }
+wasmtime-wasi = "36.0.7"
 
 # Security and encryption
 # age = "0.10"           # Commented out for now

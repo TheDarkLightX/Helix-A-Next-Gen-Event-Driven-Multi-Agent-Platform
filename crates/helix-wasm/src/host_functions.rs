@@ -21,7 +21,7 @@ use std::time::SystemTime;
 
 use helix_agent_sdk::EventPublisher;
 use helix_core::agent::AgentConfig;
-use helix_core::credential::{Credential, CredentialProvider};
+use helix_core::credential::CredentialProvider;
 use helix_core::state::StateStore;
 use helix_core::types::{AgentId, CredentialId, ProfileId};
 use serde_json::Value as JsonValue;

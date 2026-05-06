@@ -148,11 +148,17 @@ impl WasmRuntime {
         credential_provider: Arc<dyn CredentialProvider>,
         state_store: Arc<dyn StateStore>,
     ) -> Result<InstanceId, WasmError> {
+        let max_table_size =
+            usize::try_from(self.config.resource_limits.max_table_size).map_err(|_| {
+                WasmError::ConfigurationError(
+                    "max_table_size exceeds platform limits".to_string(),
+                )
+            })?;
         let store_limits = StoreLimitsBuilder::new()
             .memory_size(self.config.max_memory as usize)
             .instances(1)
             .tables(self.config.resource_limits.max_tables as usize)
-            .table_elements(self.config.resource_limits.max_table_size)
+            .table_elements(max_table_size)
             .build();
 
         let host_state = HostState {

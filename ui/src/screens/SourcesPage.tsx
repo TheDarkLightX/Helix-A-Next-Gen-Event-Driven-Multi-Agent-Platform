@@ -238,6 +238,9 @@ export function SourcesPage() {
               {source.kind === "webhook_ingest" ? (
                 <p className="mono-detail">webhook: /api/v1/sources/{source.id}/webhook</p>
               ) : null}
+              {source.kind === "file_import" ? (
+                <p className="mono-detail">file import: /api/v1/sources/{source.id}/import</p>
+              ) : null}
               <div className="pill-row">
                 <span className="info-pill">kind: {source.kind}</span>
                 <span className="info-pill">cadence: {source.cadence_minutes}m</span>

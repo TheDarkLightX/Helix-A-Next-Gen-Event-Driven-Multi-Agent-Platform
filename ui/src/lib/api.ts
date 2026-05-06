@@ -754,6 +754,23 @@ export type WebhookIngestResponse = {
   results: IngestEvidenceResponse[];
 };
 
+export type FileImportRequest = {
+  file_name: string;
+  content: string;
+  observed_at: string;
+  title?: string | null;
+  summary?: string | null;
+  url?: string | null;
+  tags?: string[];
+  entity_labels?: string[];
+  proposed_claims?: ProposedClaim[];
+};
+
+export type FileImportResponse = {
+  source: SourceDefinition;
+  result: IngestEvidenceResponse;
+};
+
 export type CreateWatchlistRequest = {
   name: string;
   description: string;
@@ -1158,6 +1175,22 @@ export async function ingestSourceWebhook(
   return requestJson<WebhookIngestResponse>(
     API_BASE,
     `/api/v1/sources/${encodeURIComponent(sourceId)}/webhook`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+}
+
+export async function importSourceFile(
+  sourceId: string,
+  request: FileImportRequest
+): Promise<FileImportResponse> {
+  return requestJson<FileImportResponse>(
+    API_BASE,
+    `/api/v1/sources/${encodeURIComponent(sourceId)}/import`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

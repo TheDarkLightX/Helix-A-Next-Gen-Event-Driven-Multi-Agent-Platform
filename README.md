@@ -198,6 +198,7 @@ emitted events, state snapshots, status, and errors when Postgres is enabled.
 - `POST /api/v1/sources`
 - `POST /api/v1/sources/:source_id/collect`
 - `POST /api/v1/sources/:source_id/webhook`
+- `POST /api/v1/sources/:source_id/import`
 - `GET /api/v1/watchlists`
 - `POST /api/v1/watchlists`
 - `GET /api/v1/evidence`
@@ -248,6 +249,8 @@ The corroboration axis now comes from a bounded evidence-fusion model instead of
 `POST /api/v1/sources/:source_id/collect` fetches a configured RSS, JSON API, or website source, normalizes it into evidence, runs watchlist matching, and persists resulting claims/case updates. The request supplies an explicit `observed_at` fallback so collection does not depend on hidden server time. Sources can reference a vaulted `credential_id` plus an explicit HTTP header mapping; collection decrypts the credential just in time and never returns the secret in API responses or audit records.
 
 `POST /api/v1/sources/:source_id/webhook` gives `webhook_ingest` sources a push adapter. It accepts one item, an array, or an envelope with explicit `observed_at` plus `items`, caps each payload at 50 items, and runs the same normalization, watchlist, case, persistence, and audit path as pull collection.
+
+`POST /api/v1/sources/:source_id/import` gives `file_import` sources a deterministic operator upload path. It accepts UTF-8 content with explicit `file_name` and `observed_at`, rejects empty or oversized content, and persists the resulting evidence, claims, hits, and case updates through the same desk kernel.
 
 `GET /api/v1/audit` returns the latest durable audit events for policy, autopilot, source, evidence, claim, case, automation, and credential mutations when Postgres persistence is enabled.
 

@@ -18,7 +18,7 @@ mod intel;
 
 use crate::intel::{
     collect_source_handler, create_source, create_watchlist, export_autopilot_review_packet,
-    export_market_brief_packet_handler, generate_market_intel_brief_handler,
+    export_market_brief_packet_handler, file_import_handler, generate_market_intel_brief_handler,
     get_autopilot_review_queue, get_intel_overview, get_market_intel_overview, ingest_evidence,
     list_cases, list_claims, list_evidence, list_sources, list_watchlists, review_claim_handler,
     transition_case_handler, webhook_ingest_handler, AutopilotReviewKind,
@@ -3272,6 +3272,10 @@ fn api_router() -> Router<AppState> {
             post(webhook_ingest_handler),
         )
         .route(
+            "/api/v1/sources/:source_id/import",
+            post(file_import_handler),
+        )
+        .route(
             "/api/v1/watchlists",
             get(list_watchlists).post(create_watchlist),
         )
@@ -3340,10 +3344,10 @@ mod tests {
         AutopilotReviewExportPacketResponse, AutopilotReviewQueueResponse, CaseCatalogResponse,
         CaseTransitionRequest, CaseTransitionResponse, ClaimCatalogResponse, ClaimResponse,
         ClaimReviewRequest, CollectSourceResponse, CreateSourceRequest, CreateWatchlistRequest,
-        GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse, IngestEvidenceRequest,
-        IngestEvidenceResponse, IntelDeskOverviewResponse, MarketIntelBriefExportPacketResponse,
-        MarketIntelOverviewResponse, SourceCatalogResponse, SourceResponse, WatchlistResponse,
-        WebhookIngestResponse,
+        FileImportResponse, GenerateMarketIntelBriefRequest, GenerateMarketIntelBriefResponse,
+        IngestEvidenceRequest, IngestEvidenceResponse, IntelDeskOverviewResponse,
+        MarketIntelBriefExportPacketResponse, MarketIntelOverviewResponse, SourceCatalogResponse,
+        SourceResponse, WatchlistResponse, WebhookIngestResponse,
     };
     use async_trait::async_trait;
     use axum::{
@@ -5607,6 +5611,168 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(too_many_response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn source_file_import_endpoint_ingests_file_and_opens_case() {
+        let app = test_app();
+        let create = CreateSourceRequest {
+            profile_id: None,
+            name: "Boreal File Drop".to_string(),
+            description: "Operator-uploaded competitive intelligence files".to_string(),
+            kind: helix_core::intel_desk::SourceKind::FileImport,
+            endpoint_url: None,
+            credential_id: None,
+            credential_header_name: None,
+            credential_header_prefix: None,
+            cadence_minutes: 60,
+            trust_score: 86,
+            enabled: true,
+            tags: vec!["market-intel".to_string(), "file".to_string()],
+        };
+
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = to_bytes(create_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let created: SourceResponse = serde_json::from_slice(&body).unwrap();
+
+        let import_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/sources/{}/import", created.source.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{
+                          "file_name": "boreal-pricing-note.md",
+                          "title": "Boreal Cloud file note reports a bundle discount",
+                          "content": "Boreal Cloud pricing changed after an enterprise bundle discount was distributed in a partner note.",
+                          "observed_at": "2026-04-03T10:00:00Z",
+                          "tags": ["pricing"],
+                          "entity_labels": ["boreal cloud"],
+                          "proposed_claims": [
+                            {
+                              "subject": "boreal cloud",
+                              "predicate": "discounted",
+                              "object": "enterprise bundle",
+                              "confidence_bps": 8700,
+                              "rationale": "The imported note states the bundle discount."
+                            }
+                          ]
+                        }"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(import_response.status(), StatusCode::CREATED);
+        let body = to_bytes(import_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let payload: FileImportResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(payload.result.claims.len(), 1);
+        assert!(!payload.result.hits.is_empty());
+        assert!(!payload.result.case_updates.is_empty());
+        assert!(payload.result.evidence.tags.contains(&"file".to_string()));
+    }
+
+    #[tokio::test]
+    async fn source_file_import_endpoint_rejects_kind_and_content_boundaries() {
+        let wrong_kind_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources/rss_national_security/import")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"file_name":"note.txt","content":"content","observed_at":"2026-04-03T10:00:00Z"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(wrong_kind_response.status(), StatusCode::BAD_REQUEST);
+
+        let app = test_app();
+        let create = CreateSourceRequest {
+            profile_id: None,
+            name: "Boundary File Drop".to_string(),
+            description: "File boundary source".to_string(),
+            kind: helix_core::intel_desk::SourceKind::FileImport,
+            endpoint_url: None,
+            credential_id: None,
+            credential_header_name: None,
+            credential_header_prefix: None,
+            cadence_minutes: 60,
+            trust_score: 86,
+            enabled: true,
+            tags: vec!["boundary".to_string()],
+        };
+        let create_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/sources")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&create).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(create_response.status(), StatusCode::CREATED);
+        let body = to_bytes(create_response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let created: SourceResponse = serde_json::from_slice(&body).unwrap();
+
+        let empty_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/sources/{}/import", created.source.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"file_name":"empty.txt","content":"","observed_at":"2026-04-03T10:00:00Z"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(empty_response.status(), StatusCode::BAD_REQUEST);
+
+        let oversized = serde_json::json!({
+            "file_name": "large.txt",
+            "content": "x".repeat(16_385),
+            "observed_at": "2026-04-03T10:00:00Z"
+        });
+        let oversized_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/v1/sources/{}/import", created.source.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&oversized).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(oversized_response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

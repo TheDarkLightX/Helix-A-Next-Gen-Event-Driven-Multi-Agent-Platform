@@ -34,6 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_COLLECT_ITEMS: usize = 50;
 const MAX_SOURCE_FETCH_BYTES: usize = 1_048_576;
 const MAX_COLLECT_CONTENT_LEN: usize = 16_384;
+const MAX_FILE_IMPORT_CONTENT_LEN: usize = MAX_COLLECT_CONTENT_LEN;
 const MAX_SEMANTIC_QUERY_LEN: usize = 512;
 
 #[derive(Debug, Clone)]
@@ -179,6 +180,31 @@ pub(crate) struct WebhookIngestResponse {
     pub(crate) accepted_count: usize,
     pub(crate) duplicate_count: usize,
     pub(crate) results: Vec<IngestEvidenceResponse>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct FileImportRequest {
+    pub(crate) file_name: String,
+    pub(crate) content: String,
+    pub(crate) observed_at: String,
+    #[serde(default)]
+    pub(crate) title: Option<String>,
+    #[serde(default)]
+    pub(crate) summary: Option<String>,
+    #[serde(default)]
+    pub(crate) url: Option<String>,
+    #[serde(default)]
+    pub(crate) tags: Vec<String>,
+    #[serde(default)]
+    pub(crate) entity_labels: Vec<String>,
+    #[serde(default)]
+    pub(crate) proposed_claims: Vec<ProposedClaim>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct FileImportResponse {
+    pub(crate) source: SourceDefinition,
+    pub(crate) result: IngestEvidenceResponse,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2582,6 +2608,61 @@ fn webhook_ingest_requests(
         .collect()
 }
 
+fn file_import_request(
+    source: &SourceDefinition,
+    request: FileImportRequest,
+) -> Result<IngestEvidenceRequest, HelixError> {
+    let file_name = request.file_name.trim();
+    if file_name.is_empty() {
+        return Err(HelixError::validation_error(
+            "file_name",
+            "file_name is required",
+        ));
+    }
+    if file_name.len() > 240 {
+        return Err(HelixError::validation_error(
+            "file_name",
+            "must be at most 240 characters",
+        ));
+    }
+    if request.observed_at.trim().is_empty() {
+        return Err(HelixError::validation_error(
+            "observed_at",
+            "observed_at is required",
+        ));
+    }
+    let content = request.content.trim();
+    if content.is_empty() {
+        return Err(HelixError::validation_error(
+            "content",
+            "content is required",
+        ));
+    }
+    if content.len() > MAX_FILE_IMPORT_CONTENT_LEN {
+        return Err(HelixError::validation_error(
+            "content",
+            &format!("must be at most {MAX_FILE_IMPORT_CONTENT_LEN} bytes"),
+        ));
+    }
+
+    let title = first_non_empty([request.title.as_deref(), Some(file_name)]).unwrap_or(file_name);
+    let summary_fallback = summarize_text(content);
+    let summary = first_non_empty([request.summary.as_deref(), Some(summary_fallback.as_str())])
+        .unwrap_or(summary_fallback.as_str());
+
+    Ok(IngestEvidenceRequest {
+        source_id: source.id.clone(),
+        title: truncate_text(title, 240),
+        summary: truncate_text(summary, 1_024),
+        content: content.to_string(),
+        url: request.url,
+        observed_at: request.observed_at.trim().to_string(),
+        tags: merge_source_tags(source, request.tags),
+        entity_labels: request.entity_labels,
+        proposed_claims: request.proposed_claims,
+    })
+}
+
 fn rss_collection_requests(
     source: &SourceDefinition,
     payload: &str,
@@ -3555,6 +3636,67 @@ pub(crate) async fn webhook_ingest_handler(
                     duplicate_count,
                     results,
                 }),
+            )
+                .into_response()
+        }
+        Err(error) => api_error_response(error),
+    }
+}
+
+pub(crate) async fn file_import_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    Json(request): Json<FileImportRequest>,
+) -> Response {
+    let source = {
+        let store = state.intel_desk.read().await;
+        match store.sources.get(&source_id).cloned() {
+            Some(source) => source,
+            None => {
+                return api_error_response(HelixError::not_found(format!("source {source_id}")))
+            }
+        }
+    };
+    if !source.enabled {
+        return api_error_response(HelixError::validation_error("source", "source is disabled"));
+    }
+    if source.kind != SourceKind::FileImport {
+        return api_error_response(HelixError::validation_error(
+            "source.kind",
+            "source must be file_import",
+        ));
+    }
+
+    let ingest_request = match file_import_request(&source, request) {
+        Ok(request) => request,
+        Err(error) => return api_error_response(error),
+    };
+    let result = mutate_intel_desk(&state, |store| store.ingest_evidence(ingest_request)).await;
+
+    match result {
+        Ok(result) => {
+            if let Err(error) = record_audit_event(
+                &state,
+                AuditEvent::allow(
+                    "intel.source.file_import",
+                    format!("sources/{}/import", source.id),
+                    serde_json::json!({
+                        "source_id": source.id,
+                        "evidence_id": result.evidence.id,
+                        "duplicate": result.duplicate,
+                        "claim_count": result.claims.len(),
+                        "hit_count": result.hits.len(),
+                        "case_update_count": result.case_updates.len(),
+                    }),
+                ),
+            )
+            .await
+            {
+                return api_error_response(error);
+            }
+            (
+                StatusCode::CREATED,
+                Json(FileImportResponse { source, result }),
             )
                 .into_response()
         }

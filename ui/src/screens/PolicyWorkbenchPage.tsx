@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   DeterministicPolicyConfig,
   PolicyCommand,
@@ -7,6 +7,16 @@ import {
   simulatePolicy,
   updatePolicyConfig,
 } from "../lib/api";
+import {
+  Panel,
+  FormField,
+  Input,
+  Textarea,
+  Button,
+  StatusLine,
+  DataTable,
+  LoadingState,
+} from "../components";
 
 const DEFAULT_COMMANDS: PolicyCommand[] = [
   { type: "nonce_reserve" },
@@ -59,6 +69,111 @@ function prettyCommand(c: PolicyCommand): string {
   }
 }
 
+type StepRow = { idx: number; step: PolicyStepResult };
+
+type StepColumn = {
+  key: string;
+  header: string;
+  render: (row: StepRow) => ReactNode;
+  width?: string;
+};
+
+const OUTPUT_COLUMNS: StepColumn[] = [
+  { key: "index", header: "#", render: (row) => row.idx + 1 },
+  { key: "command", header: "Command", render: (row) => prettyCommand(row.step.command) },
+  {
+    key: "decision",
+    header: "Decision",
+    render: (row) => {
+      const d = row.step.decision;
+      return (
+        <>
+          {d.kind}
+          {d.reason ? ` (${d.reason})` : ""}
+          {d.decision ? ` (${d.decision})` : ""}
+          {d.status ? ` (${d.status})` : ""}
+          {d.route ? ` (${d.route})` : ""}
+          {d.outcome ? ` (${d.outcome})` : ""}
+          {d.quoted !== undefined ? ` (quoted=${d.quoted})` : ""}
+          {d.state ? ` (${d.state})` : ""}
+          {d.remaining_depth !== undefined ? ` (remaining_depth=${d.remaining_depth})` : ""}
+          {d.nonce !== undefined ? ` (nonce=${d.nonce})` : ""}
+          {d.next_nonce !== undefined ? ` (next_nonce=${d.next_nonce})` : ""}
+          {d.max_fee !== undefined
+            ? ` (max_fee=${d.max_fee}, priority=${d.max_priority_fee}, rejects=${d.rejection_count})`
+            : ""}
+        </>
+      );
+    },
+  },
+  { key: "rate_tokens", header: "Rate Tokens", render: (row) => row.step.snapshot.rate_tokens },
+  { key: "queue_depth", header: "Queue Depth", render: (row) => row.step.snapshot.queue_depth },
+  { key: "breaker", header: "Breaker", render: (row) => row.step.snapshot.breaker_phase },
+  { key: "retry", header: "Retry Left", render: (row) => row.step.snapshot.retry_remaining },
+  {
+    key: "dlq",
+    header: "DLQ Failures",
+    render: (row) => row.step.snapshot.dlq_consecutive_failures,
+  },
+  {
+    key: "sla",
+    header: "SLA",
+    render: (row) =>
+      row.step.snapshot.sla_active
+        ? `${row.step.snapshot.sla_expired ? "expired" : "active"}:${row.step.snapshot.sla_remaining_ticks}`
+        : "idle",
+  },
+  {
+    key: "nonce",
+    header: "Nonce",
+    render: (row) =>
+      `next=${row.step.snapshot.nonce_next}, in_flight=${row.step.snapshot.nonce_in_flight}`,
+  },
+  {
+    key: "fee",
+    header: "Fee",
+    render: (row) => `rejections=${row.step.snapshot.fee_rejection_count}`,
+  },
+  {
+    key: "finality",
+    header: "Finality",
+    render: (row) =>
+      `depth=${row.step.snapshot.finality_observed_depth}, finalized=${String(
+        row.step.snapshot.finality_finalized
+      )}, reorg=${String(row.step.snapshot.finality_reorg_detected)}`,
+  },
+  {
+    key: "allowlist",
+    header: "Allowlist",
+    render: (row) => `paused=${String(row.step.snapshot.allowlist_paused)}`,
+  },
+];
+
+const CONFIG_KEYS = [
+  "dedup_window_ticks",
+  "rate_max_tokens",
+  "rate_refill_per_tick",
+  "breaker_failure_threshold",
+  "breaker_open_duration_ticks",
+  "retry_budget",
+  "approval_quorum",
+  "approval_reviewers",
+  "backpressure_soft_limit",
+  "backpressure_hard_limit",
+  "sla_deadline_ticks",
+  "dlq_max_consecutive_failures",
+  "nonce_start",
+  "nonce_max_in_flight",
+  "fee_base_fee",
+  "fee_priority_fee",
+  "fee_bump_bps",
+  "fee_max_fee_cap",
+  "finality_required_depth",
+  "allowlist_chain_id",
+  "allowlist_contract_tag",
+  "allowlist_method_tag",
+] as const;
+
 export function PolicyWorkbenchPage() {
   const [config, setConfig] = useState<DeterministicPolicyConfig | null>(null);
   const [configStatus, setConfigStatus] = useState<string>("Loading config...");
@@ -105,170 +220,80 @@ export function PolicyWorkbenchPage() {
     }
   }
 
-  const finalSnapshot = useMemo(() => (steps.length > 0 ? steps[steps.length - 1].snapshot : null), [steps]);
+  const finalSnapshot = useMemo(
+    () => (steps.length > 0 ? steps[steps.length - 1].snapshot : null),
+    [steps]
+  );
+
+  const stepRows: StepRow[] = useMemo(
+    () => steps.map((step, idx) => ({ idx, step })),
+    [steps]
+  );
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Policy Workbench</p>
-        <h2>Deterministic Controls + Replayable Simulation</h2>
-        <p>
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Policy Workbench" title="Deterministic Controls + Replayable Simulation">
+        <p className="hx-description">
           Edit policy parameters, run deterministic command sequences, and inspect final snapshots.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Policy Config</p>
-        <form onSubmit={onSaveConfig} className="form-grid">
-          {config ? (
-            <>
-              {(
-                [
-                  "dedup_window_ticks",
-                  "rate_max_tokens",
-                  "rate_refill_per_tick",
-                  "breaker_failure_threshold",
-                  "breaker_open_duration_ticks",
-                  "retry_budget",
-                  "approval_quorum",
-                  "approval_reviewers",
-                  "backpressure_soft_limit",
-                  "backpressure_hard_limit",
-                  "sla_deadline_ticks",
-                  "dlq_max_consecutive_failures",
-                  "nonce_start",
-                  "nonce_max_in_flight",
-                  "fee_base_fee",
-                  "fee_priority_fee",
-                  "fee_bump_bps",
-                  "fee_max_fee_cap",
-                  "finality_required_depth",
-                  "allowlist_chain_id",
-                  "allowlist_contract_tag",
-                  "allowlist_method_tag",
-                ] as const
-              ).map((key) => (
-                <label key={key} className="field">
-                  <span>{key}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={config[key]}
-                    onChange={(e) =>
-                      setConfig({
-                        ...config,
-                        [key]: Number(e.target.value),
-                      })
-                    }
-                  />
-                </label>
-              ))}
-              <button type="submit" className="btn-primary">
-                Save Config
-              </button>
-            </>
-          ) : (
-            <p>Loading...</p>
-          )}
-        </form>
-        <p className="status-line">{configStatus}</p>
-      </article>
+      <Panel span={6} eyebrow="Policy Config" title="Parameters">
+        {config ? (
+          <form className="hx-form-grid" onSubmit={onSaveConfig}>
+            {CONFIG_KEYS.map((key) => (
+              <FormField key={key} label={key}>
+                <Input
+                  type="number"
+                  min={0}
+                  value={config[key]}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      [key]: Number(e.target.value),
+                    })
+                  }
+                />
+              </FormField>
+            ))}
+            <div className="hx-cluster" style={{ gridColumn: "1 / -1" }}>
+              <Button type="submit">Save Config</Button>
+            </div>
+          </form>
+        ) : (
+          <LoadingState title="Loading config..." />
+        )}
+        <StatusLine>{configStatus}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Simulation Commands</p>
-        <textarea
-          className="command-editor"
-          value={commandsText}
-          onChange={(e) => setCommandsText(e.target.value)}
-          rows={14}
-        />
-        <div className="button-row">
-          <button className="btn-primary" onClick={onSimulate}>
+      <Panel span={6} eyebrow="Simulation Commands" title="Replay Sequence">
+        <FormField label="Command JSON" full>
+          <Textarea rows={14} value={commandsText} onChange={(e) => setCommandsText(e.target.value)} />
+        </FormField>
+        <div className="hx-cluster">
+          <Button type="button" onClick={onSimulate}>
             Run Simulation
-          </button>
-          <button
-            className="btn-secondary"
+          </Button>
+          <Button
+            variant="secondary"
+            type="button"
             onClick={() => setCommandsText(JSON.stringify(DEFAULT_COMMANDS, null, 2))}
           >
             Reset Example
-          </button>
+          </Button>
         </div>
-        <p className="status-line">{simulateStatus}</p>
-      </article>
+        <StatusLine>{simulateStatus}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Simulation Output</p>
-        <div className="table-wrap">
-          <table className="result-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Command</th>
-                <th>Decision</th>
-                <th>Rate Tokens</th>
-                <th>Queue Depth</th>
-                <th>Breaker</th>
-                <th>Retry Left</th>
-                <th>DLQ Failures</th>
-                <th>SLA</th>
-                <th>Nonce</th>
-                <th>Fee</th>
-                <th>Finality</th>
-                <th>Allowlist</th>
-              </tr>
-            </thead>
-            <tbody>
-              {steps.map((step, idx) => (
-                <tr key={`${idx}-${step.decision.kind}`}>
-                  <td>{idx + 1}</td>
-                  <td>{prettyCommand(step.command)}</td>
-                  <td>
-                    {step.decision.kind}
-                    {step.decision.reason ? ` (${step.decision.reason})` : ""}
-                    {step.decision.decision ? ` (${step.decision.decision})` : ""}
-                    {step.decision.status ? ` (${step.decision.status})` : ""}
-                    {step.decision.route ? ` (${step.decision.route})` : ""}
-                    {step.decision.outcome ? ` (${step.decision.outcome})` : ""}
-                    {step.decision.quoted !== undefined ? ` (quoted=${step.decision.quoted})` : ""}
-                    {step.decision.state ? ` (${step.decision.state})` : ""}
-                    {step.decision.remaining_depth !== undefined
-                      ? ` (remaining_depth=${step.decision.remaining_depth})`
-                      : ""}
-                    {step.decision.nonce !== undefined ? ` (nonce=${step.decision.nonce})` : ""}
-                    {step.decision.next_nonce !== undefined
-                      ? ` (next_nonce=${step.decision.next_nonce})`
-                      : ""}
-                    {step.decision.max_fee !== undefined
-                      ? ` (max_fee=${step.decision.max_fee}, priority=${step.decision.max_priority_fee}, rejects=${step.decision.rejection_count})`
-                      : ""}
-                  </td>
-                  <td>{step.snapshot.rate_tokens}</td>
-                  <td>{step.snapshot.queue_depth}</td>
-                  <td>{step.snapshot.breaker_phase}</td>
-                  <td>{step.snapshot.retry_remaining}</td>
-                  <td>{step.snapshot.dlq_consecutive_failures}</td>
-                  <td>
-                    {step.snapshot.sla_active
-                      ? `${step.snapshot.sla_expired ? "expired" : "active"}:${step.snapshot.sla_remaining_ticks}`
-                      : "idle"}
-                  </td>
-                  <td>
-                    next={step.snapshot.nonce_next}, in_flight={step.snapshot.nonce_in_flight}
-                  </td>
-                  <td>rejections={step.snapshot.fee_rejection_count}</td>
-                  <td>
-                    depth={step.snapshot.finality_observed_depth}, finalized=
-                    {String(step.snapshot.finality_finalized)}, reorg=
-                    {String(step.snapshot.finality_reorg_detected)}
-                  </td>
-                  <td>paused={String(step.snapshot.allowlist_paused)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <Panel span={12} eyebrow="Simulation Output" title="Step Trace">
+        <DataTable
+          columns={OUTPUT_COLUMNS}
+          rows={stepRows}
+          rowKey={(row) => `${row.idx}-${row.step.decision.kind}`}
+          emptyMessage="Run a simulation to inspect the deterministic step trace."
+        />
         {finalSnapshot && (
-          <p className="status-line">
+          <StatusLine>
             Final snapshot: tokens={finalSnapshot.rate_tokens}, queue={finalSnapshot.queue_depth},
             breaker={finalSnapshot.breaker_phase}, retry={finalSnapshot.retry_remaining},
             dlq_failures={finalSnapshot.dlq_consecutive_failures}, sla=
@@ -281,9 +306,9 @@ export function PolicyWorkbenchPage() {
             {String(finalSnapshot.finality_finalized)}, reorg=
             {String(finalSnapshot.finality_reorg_detected)}, allowlist_paused=
             {String(finalSnapshot.allowlist_paused)}
-          </p>
+          </StatusLine>
         )}
-      </article>
+      </Panel>
     </section>
   );
 }

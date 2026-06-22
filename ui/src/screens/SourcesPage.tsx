@@ -1,5 +1,17 @@
 import { FormEvent, useEffect, useState } from "react";
 import { SourceDefinition, SourceKind, collectSource, createSource, fetchSources } from "../lib/api";
+import {
+  Panel,
+  FormField,
+  Input,
+  Textarea,
+  Select,
+  CheckboxField,
+  Button,
+  Badge,
+  Tag,
+  StatusLine,
+} from "../components";
 
 const SOURCE_KIND_OPTIONS: { value: SourceKind; label: string }[] = [
   { value: "rss_feed", label: "RSS Feed" },
@@ -112,172 +124,130 @@ export function SourcesPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Source Registry</p>
-        <h2>Self-Hosted Collection With Explicit Trust Boundaries</h2>
-        <p>
-          Register collection adapters, bound their cadence, and assign deterministic trust scores
-          before evidence enters the desk.
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Source Registry" title="Self-Hosted Collection With Explicit Trust Boundaries">
+        <p className="hx-description">
+          Register collection adapters, bound their cadence, and assign deterministic
+          trust scores before evidence enters the desk.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <p className="mono-label">Create Source</p>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label className="field field-full">
-            <span>profile_id</span>
-            <input value={profileId} onChange={(e) => setProfileId(e.target.value)} />
-          </label>
+      <Panel span={5} eyebrow="Create" title="Register Source">
+        <form className="hx-form-grid" onSubmit={onSubmit}>
+          <FormField label="Profile ID" full>
+            <Input value={profileId} onChange={(e) => setProfileId(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+          <FormField label="Name" full>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. TechCrunch RSS" />
+          </FormField>
 
-          <label className="field field-full">
-            <span>description</span>
-            <textarea
-              rows={4}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </label>
+          <FormField label="Description" full>
+            <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this source collects" />
+          </FormField>
 
-          <label className="field">
-            <span>kind</span>
-            <select value={kind} onChange={(e) => setKind(e.target.value as SourceKind)}>
+          <FormField label="Kind">
+            <Select value={kind} onChange={(e) => setKind(e.target.value as SourceKind)}>
               {SOURCE_KIND_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </FormField>
 
-          <label className="field field-full">
-            <span>endpoint_url</span>
-            <input value={endpointUrl} onChange={(e) => setEndpointUrl(e.target.value)} />
-          </label>
+          <FormField label="Cadence (min)" hint="1–1440">
+            <Input type="number" min={1} max={1440} value={cadence} onChange={(e) => setCadence(Number(e.target.value))} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>credential_id</span>
-            <input value={credentialId} onChange={(e) => setCredentialId(e.target.value)} />
-          </label>
+          <FormField label="Endpoint URL" full>
+            <Input value={endpointUrl} onChange={(e) => setEndpointUrl(e.target.value)} placeholder="https://..." />
+          </FormField>
 
-          <label className="field">
-            <span>credential_header_name</span>
-            <input
-              value={credentialHeaderName}
-              onChange={(e) => setCredentialHeaderName(e.target.value)}
-            />
-          </label>
+          <FormField label="Credential ID" full>
+            <Input value={credentialId} onChange={(e) => setCredentialId(e.target.value)} placeholder="optional" />
+          </FormField>
 
-          <label className="field">
-            <span>credential_header_prefix</span>
-            <input
-              value={credentialHeaderPrefix}
-              onChange={(e) => setCredentialHeaderPrefix(e.target.value)}
-            />
-          </label>
+          <FormField label="Header name">
+            <Input value={credentialHeaderName} onChange={(e) => setCredentialHeaderName(e.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>cadence_minutes</span>
-            <input
-              type="number"
-              min={1}
-              max={1440}
-              value={cadence}
-              onChange={(e) => setCadence(Number(e.target.value))}
-            />
-          </label>
+          <FormField label="Header prefix">
+            <Input value={credentialHeaderPrefix} onChange={(e) => setCredentialHeaderPrefix(e.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>trust_score</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={trustScore}
-              onChange={(e) => setTrustScore(Number(e.target.value))}
-            />
-          </label>
+          <FormField label="Trust score" hint="0–100">
+            <Input type="number" min={0} max={100} value={trustScore} onChange={(e) => setTrustScore(Number(e.target.value))} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>tags</span>
-            <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
-          </label>
+          <FormField label="Tags" full hint="Comma-separated">
+            <Input value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
+          </FormField>
 
-          <label className="field checkbox-field field-full">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            <span>enabled</span>
-          </label>
+          <CheckboxField label="Enabled" checked={enabled} onChange={setEnabled} full />
 
-          <button className="btn-primary" type="submit">
-            Register Source
-          </button>
+          <FormField label="" full>
+            <Button type="submit">Register Source</Button>
+          </FormField>
         </form>
-        <p className="status-line">{status}</p>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-7">
-        <p className="mono-label">Active Sources</p>
-        <div className="agent-grid">
-          {sources.map((source) => (
-            <div key={source.id} className="agent-card">
-              <div className="agent-card-head">
-                <h3>{source.name}</h3>
-                <span className={`status-pill ${source.enabled ? "ok" : "warn"}`}>
-                  {source.enabled ? "enabled" : "paused"}
-                </span>
+      <Panel span={7} eyebrow="Active" title="Sources" actions={<Badge tone="accent">{sources.length}</Badge>}>
+        {sources.length === 0 ? (
+          <div className="hx-table-empty"><p>No sources registered yet.</p></div>
+        ) : (
+          <div className="hx-card-grid">
+            {sources.map((source) => (
+              <div key={source.id} className="hx-card">
+                <div className="hx-card-head">
+                  <h3>{source.name}</h3>
+                  <Badge tone={source.enabled ? "ok" : "warn"}>
+                    {source.enabled ? "enabled" : "paused"}
+                  </Badge>
+                </div>
+                <p className="hx-row-secondary">{source.description}</p>
+                <p className="hx-mono-detail">{source.id}</p>
+                <p className="hx-mono-detail">profile: {source.profile_id}</p>
+                {source.endpoint_url && <p className="hx-mono-detail">{source.endpoint_url}</p>}
+                {source.kind === "webhook_ingest" && (
+                  <p className="hx-mono-detail">webhook: /api/v1/sources/{source.id}/webhook</p>
+                )}
+                {source.kind === "file_import" && (
+                  <p className="hx-mono-detail">file import: /api/v1/sources/{source.id}/import</p>
+                )}
+                <div className="hx-tag-row">
+                  <Tag>kind: {source.kind}</Tag>
+                  <Tag>cadence: {source.cadence_minutes}m</Tag>
+                  <Tag>trust: {source.trust_score}</Tag>
+                  {source.credential_id && (
+                    <Tag>credential: {source.credential_id}</Tag>
+                  )}
+                </div>
+                <div className="hx-tag-row">
+                  {source.tags.map((tag) => (
+                    <Tag key={tag}>{tag}</Tag>
+                  ))}
+                </div>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={
+                    !supportsPullCollection(source) ||
+                    !source.endpoint_url ||
+                    collectingSourceId === source.id
+                  }
+                  onClick={() => void onCollect(source)}
+                >
+                  {supportsPullCollection(source)
+                    ? collectingSourceId === source.id
+                      ? "Collecting..."
+                      : "Collect Now"
+                    : "Push Ingest"}
+                </Button>
               </div>
-              <p>{source.description}</p>
-              <p className="mono-detail">{source.id}</p>
-              <p className="mono-detail">profile: {source.profile_id}</p>
-              {source.endpoint_url ? <p className="mono-detail">{source.endpoint_url}</p> : null}
-              {source.kind === "webhook_ingest" ? (
-                <p className="mono-detail">webhook: /api/v1/sources/{source.id}/webhook</p>
-              ) : null}
-              {source.kind === "file_import" ? (
-                <p className="mono-detail">file import: /api/v1/sources/{source.id}/import</p>
-              ) : null}
-              <div className="pill-row">
-                <span className="info-pill">kind: {source.kind}</span>
-                <span className="info-pill">cadence: {source.cadence_minutes}m</span>
-                <span className="info-pill">trust: {source.trust_score}</span>
-                {source.credential_id ? (
-                  <span className="info-pill">
-                    credential: {source.credential_id} via {source.credential_header_name}
-                  </span>
-                ) : null}
-              </div>
-              <div className="pill-row">
-                {source.tags.map((tag) => (
-                  <span key={tag} className="tag-chip">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-              <button
-                className="btn-secondary"
-                type="button"
-                disabled={
-                  !supportsPullCollection(source) ||
-                  !source.endpoint_url ||
-                  collectingSourceId === source.id
-                }
-                onClick={() => void onCollect(source)}
-              >
-                {supportsPullCollection(source)
-                  ? collectingSourceId === source.id
-                    ? "Collecting"
-                    : "Collect Now"
-                  : "Push Ingest"}
-              </button>
-            </div>
-          ))}
-        </div>
-      </article>
+            ))}
+          </div>
+        )}
+      </Panel>
     </section>
   );
 }

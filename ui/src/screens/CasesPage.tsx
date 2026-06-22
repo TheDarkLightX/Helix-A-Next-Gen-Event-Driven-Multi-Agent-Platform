@@ -18,6 +18,19 @@ import {
   makeSavedViewId,
   saveCasesWorkspaceState,
 } from "../lib/intelDeskWorkspace";
+import {
+  Badge,
+  Button,
+  FormField,
+  FormGrid,
+  Input,
+  Panel,
+  Select,
+  StatCard,
+  StatGrid,
+  StatusLine,
+  Tag,
+} from "../components";
 
 const DEFAULT_CASE_LIMIT = "25";
 type CaseStatusSelection = CaseStatus | "all";
@@ -193,64 +206,40 @@ export function CasesPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Cases</p>
-        <h2>Dossiers and Escalations</h2>
-        <p>
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Cases" title="Dossiers and Escalations">
+        <p className="hx-description">
           Cases are deterministic dossiers created by watchlist hits. Operators can move them
           through monitoring, brief-ready, escalated, closed, and reopened states without bypassing
           the lifecycle kernel. Queue order is now a deterministic mixed-radix priority, not
           incidental insertion order.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Case Metrics</p>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <p className="metric-label">Sources</p>
-            <p className="metric-value">{overview?.source_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Watchlists</p>
-            <p className="metric-value">{overview?.watchlist_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Evidence</p>
-            <p className="metric-value">{overview?.evidence_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Claims</p>
-            <p className="metric-value">{overview?.claim_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Open Cases</p>
-            <p className="metric-value">{overview?.open_case_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Escalated</p>
-            <p className="metric-value">{overview?.escalated_case_count ?? 0}</p>
-          </div>
+      <Panel span={12} eyebrow="Case Metrics">
+        <StatGrid>
+          <StatCard label="Sources" value={overview?.source_count ?? 0} />
+          <StatCard label="Watchlists" value={overview?.watchlist_count ?? 0} />
+          <StatCard label="Evidence" value={overview?.evidence_count ?? 0} />
+          <StatCard label="Claims" value={overview?.claim_count ?? 0} />
+          <StatCard label="Open Cases" value={overview?.open_case_count ?? 0} tone="info" />
+          <StatCard label="Escalated" value={overview?.escalated_case_count ?? 0} tone="danger" />
+        </StatGrid>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
+
+      <Panel span={12} eyebrow="Queue Discipline">
+        <div className="hx-tag-row">
+          <Tag>priority = attention &gt; severity &gt; corroboration &gt; freshness &gt; trust &gt; density</Tag>
+          <Tag>ties break on latest signal, then case id</Tag>
+          <Tag>top case: {cases[0]?.case.id ?? "none"}</Tag>
         </div>
-        <p className="status-line">{status}</p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Queue Discipline</p>
-        <div className="pill-row">
-          <span className="info-pill">priority = attention &gt; severity &gt; corroboration &gt; freshness &gt; trust &gt; density</span>
-          <span className="info-pill">ties break on latest signal, then case id</span>
-          <span className="info-pill">top case: {cases[0]?.case.id ?? "none"}</span>
-        </div>
-      </article>
-
-      <article className="panel panel-span-12">
-        <p className="mono-label">Queue Filters</p>
-        <div className="form-grid">
-          <label className="field">
-            <span>Status</span>
-            <select
+      <Panel span={12} eyebrow="Queue Filters">
+        <FormGrid>
+          <FormField label="Status">
+            <Select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as CaseStatus | "all")}
             >
@@ -260,11 +249,10 @@ export function CasesPage() {
               <option value="brief_ready">brief_ready</option>
               <option value="escalated">escalated</option>
               <option value="closed">closed</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Severity</span>
-            <select
+            </Select>
+          </FormField>
+          <FormField label="Severity">
+            <Select
               value={severityFilter}
               onChange={(event) =>
                 setSeverityFilter(event.target.value as WatchlistSeverity | "all")
@@ -275,27 +263,24 @@ export function CasesPage() {
               <option value="high">high</option>
               <option value="medium">medium</option>
               <option value="low">low</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Watchlist Id</span>
-            <input
+            </Select>
+          </FormField>
+          <FormField label="Watchlist Id">
+            <Input
               value={watchlistFilter}
               onChange={(event) => setWatchlistFilter(event.target.value)}
               placeholder="watch_pricing_competitors"
             />
-          </label>
-          <label className="field">
-            <span>Primary Entity</span>
-            <input
+          </FormField>
+          <FormField label="Primary Entity">
+            <Input
               value={entityFilter}
               onChange={(event) => setEntityFilter(event.target.value)}
               placeholder="orion dynamics"
             />
-          </label>
-          <label className="field">
-            <span>Limit</span>
-            <select
+          </FormField>
+          <FormField label="Limit">
+            <Select
               value={limitFilter}
               onChange={(event) => setLimitFilter(event.target.value)}
             >
@@ -304,113 +289,114 @@ export function CasesPage() {
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="all">all</option>
-            </select>
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={applyFilters}>
+            </Select>
+          </FormField>
+        </FormGrid>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={applyFilters}>
             Apply Filters
-          </button>
-          <button className="btn-secondary" type="button" onClick={resetFilters}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={resetFilters}>
             Reset
-          </button>
+          </Button>
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Saved Views</p>
-        <div className="form-grid">
-          <label className="field field-full">
-            <span>view_name</span>
-            <input
+      <Panel span={12} eyebrow="Saved Views">
+        <FormGrid>
+          <FormField label="view_name" full>
+            <Input
               value={savedViewName}
               onChange={(event) => setSavedViewName(event.target.value)}
               placeholder="critical-watchlists"
             />
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={saveCurrentView}>
+          </FormField>
+        </FormGrid>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={saveCurrentView}>
             Save Current View
-          </button>
-          <button className="btn-secondary" type="button" onClick={clearWorkspace}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={clearWorkspace}>
             Clear Local Workspace
-          </button>
+          </Button>
         </div>
         {savedViews.length === 0 ? (
-          <p className="panel-note">No saved case views yet.</p>
+          <p className="hx-table-empty">No saved case views yet.</p>
         ) : (
-          <div className="command-stack">
+          <div className="hx-list">
             {savedViews.map((view) => (
-              <div key={view.id} className="command-row">
-                <div className="agent-card-head">
+              <div key={view.id} className="hx-row">
+                <div className="hx-card-head">
                   <h3>{view.name}</h3>
-                  <span className={`status-pill ${activeViewId === view.id ? "ok" : "info"}`}>
+                  <Badge tone={activeViewId === view.id ? "ok" : "info"}>
                     {activeViewId === view.id ? "active" : "saved"}
-                  </span>
+                  </Badge>
                 </div>
-                <code>{describeFilters(view.filters)}</code>
-                <div className="button-row">
-                  <button
-                    className="btn-secondary"
+                <code className="hx-mono-detail">{describeFilters(view.filters)}</code>
+                <div className="hx-cluster">
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={() => applySavedView(view)}
                   >
                     Apply
-                  </button>
-                  <button
-                    className="btn-secondary"
+                  </Button>
+                  <Button
+                    variant="secondary"
                     type="button"
                     onClick={() => deleteSavedView(view)}
                   >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Case Files</p>
-        <div className="agent-grid">
+      <Panel span={12} eyebrow="Case Files">
+        <div className="hx-card-grid">
           {cases.map((entry, index) => (
-            <div key={entry.case.id} className="agent-card">
-              <div className="agent-card-head">
+            <div key={entry.case.id} className="hx-card">
+              <div className="hx-card-head">
                 <h3>
                   #{index + 1} {entry.case.title}
                 </h3>
-                <span className={`status-pill ${statusClass(entry.case.status)}`}>{entry.case.status}</span>
+                <Badge tone={statusClass(entry.case.status) as "ok" | "warn" | "danger"}>
+                  {entry.case.status}
+                </Badge>
               </div>
-              <p>{entry.case.latest_reason}</p>
-              <div className="pill-row">
-                <span className="info-pill">{priorityLabel(entry.priority)}</span>
-                <span className={`status-pill ${severityClass(entry.severity)}`}>{entry.severity}</span>
-                <span className="info-pill">{entry.watchlist_name}</span>
-                <span className="info-pill">latest: {entry.latest_signal_at ?? "unknown"}</span>
+              <p className="hx-description">{entry.case.latest_reason}</p>
+              <div className="hx-tag-row">
+                <Tag>{priorityLabel(entry.priority)}</Tag>
+                <Badge tone={severityClass(entry.severity) as "ok" | "warn" | "danger" | "info"}>
+                  {entry.severity}
+                </Badge>
+                <Tag>{entry.watchlist_name}</Tag>
+                <Tag>latest: {entry.latest_signal_at ?? "unknown"}</Tag>
               </div>
-              <p className="mono-detail">{entry.case.id}</p>
-              <div className="command-stack">
-                <code className="command-inline">watchlist_id: {entry.case.watchlist_id}</code>
-                <code className="command-inline">primary_entity: {entry.case.primary_entity ?? "none"}</code>
-                <code className="command-inline">evidence_ids: {entry.case.evidence_ids.join(", ")}</code>
-                <code className="command-inline">claim_ids: {entry.case.claim_ids.join(", ")}</code>
-                <code className="command-inline">
+              <p className="hx-mono-detail">{entry.case.id}</p>
+              <div className="hx-stack">
+                <code className="hx-mono-detail">watchlist_id: {entry.case.watchlist_id}</code>
+                <code className="hx-mono-detail">primary_entity: {entry.case.primary_entity ?? "none"}</code>
+                <code className="hx-mono-detail">evidence_ids: {entry.case.evidence_ids.join(", ")}</code>
+                <code className="hx-mono-detail">claim_ids: {entry.case.claim_ids.join(", ")}</code>
+                <code className="hx-mono-detail">
                   briefing_summary: {entry.case.briefing_summary ?? "not attached"}
                 </code>
               </div>
-              <div className="button-row">
-                <button
-                  className="btn-secondary"
+              <div className="hx-cluster">
+                <Button
+                  variant="secondary"
                   onClick={() =>
                     void applyTransition(entry.case.id, { type: "mark_monitoring" }, "Marking")
                   }
                 >
                   Monitoring
-                </button>
-                <button
-                  className="btn-secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() =>
                     void applyTransition(
                       entry.case.id,
@@ -420,9 +406,9 @@ export function CasesPage() {
                   }
                 >
                   Attach Brief
-                </button>
-                <button
-                  className="btn-secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() =>
                     void applyTransition(
                       entry.case.id,
@@ -432,15 +418,15 @@ export function CasesPage() {
                   }
                 >
                   Escalate
-                </button>
-                <button
-                  className="btn-secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() => void applyTransition(entry.case.id, { type: "close" }, "Closing")}
                 >
                   Close
-                </button>
-                <button
-                  className="btn-secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() =>
                     void applyTransition(
                       entry.case.id,
@@ -450,12 +436,12 @@ export function CasesPage() {
                   }
                 >
                   Reopen
-                </button>
+                </Button>
               </div>
             </div>
           ))}
         </div>
-      </article>
+      </Panel>
     </section>
   );
 }

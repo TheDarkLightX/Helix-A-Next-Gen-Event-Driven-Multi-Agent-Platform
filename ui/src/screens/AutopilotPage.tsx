@@ -20,6 +20,21 @@ import {
   loadAutopilotWorkspaceState,
   saveAutopilotWorkspaceState,
 } from "../lib/autopilotWorkspace";
+import {
+  Badge,
+  Button,
+  CheckboxField,
+  CodeBlock,
+  EmptyState,
+  FormField,
+  FormGrid,
+  Input,
+  Panel,
+  Select,
+  StatusLine,
+  Tag,
+  Textarea,
+} from "../components";
 
 const DEFAULT_POLICY_ACTION = JSON.stringify(
   {
@@ -413,25 +428,21 @@ export function AutopilotPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Autopilot</p>
-        <h2>LLM-Operable Helix With Deterministic Guardrails</h2>
-        <p>
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Autopilot" title="LLM-Operable Helix With Deterministic Guardrails">
+        <p className="hx-description">
           Use assist or auto mode to let an LLM operate Helix through bounded actions, while policy
           and on-chain commands remain fail-closed. The review queue below is deterministic: cases,
           claims, and evidence are merged into one guarded worklist before any proposal is drafted.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-4">
-        <p className="mono-label">Autopilot Config</p>
-        <form className="form-grid" onSubmit={onSaveConfig}>
+      <Panel span={4} eyebrow="Autopilot Config">
+        <form className="hx-form-grid" onSubmit={onSaveConfig}>
           {config ? (
             <>
-              <label className="field">
-                <span>mode</span>
-                <select
+              <FormField label="mode">
+                <Select
                   value={config.mode}
                   onChange={(e) =>
                     setConfig({
@@ -443,43 +454,33 @@ export function AutopilotPage() {
                   <option value="off">off</option>
                   <option value="assist">assist</option>
                   <option value="auto">auto</option>
-                </select>
-              </label>
+                </Select>
+              </FormField>
 
-              <label className="field checkbox-field">
-                <input
-                  type="checkbox"
-                  checked={config.allow_onchain}
-                  onChange={(e) => setConfig({ ...config, allow_onchain: e.target.checked })}
-                />
-                <span>allow_onchain</span>
-              </label>
+              <CheckboxField
+                label="allow_onchain"
+                checked={config.allow_onchain}
+                onChange={(checked) => setConfig({ ...config, allow_onchain: checked })}
+              />
 
-              <label className="field checkbox-field">
-                <input
-                  type="checkbox"
-                  checked={config.require_onchain_confirmation}
-                  onChange={(e) =>
-                    setConfig({ ...config, require_onchain_confirmation: e.target.checked })
-                  }
-                />
-                <span>require_onchain_confirmation</span>
-              </label>
+              <CheckboxField
+                label="require_onchain_confirmation"
+                checked={config.require_onchain_confirmation}
+                onChange={(checked) =>
+                  setConfig({ ...config, require_onchain_confirmation: checked })
+                }
+              />
 
-              <label className="field checkbox-field">
-                <input
-                  type="checkbox"
-                  checked={config.require_onchain_dry_run}
-                  onChange={(e) =>
-                    setConfig({ ...config, require_onchain_dry_run: e.target.checked })
-                  }
-                />
-                <span>require_onchain_dry_run</span>
-              </label>
+              <CheckboxField
+                label="require_onchain_dry_run"
+                checked={config.require_onchain_dry_run}
+                onChange={(checked) =>
+                  setConfig({ ...config, require_onchain_dry_run: checked })
+                }
+              />
 
-              <label className="field">
-                <span>max_policy_commands</span>
-                <input
+              <FormField label="max_policy_commands">
+                <Input
                   type="number"
                   min={1}
                   value={config.max_policy_commands}
@@ -487,100 +488,92 @@ export function AutopilotPage() {
                     setConfig({ ...config, max_policy_commands: Number(e.target.value) })
                   }
                 />
-              </label>
+              </FormField>
 
-              <button className="btn-primary" type="submit">
+              <Button variant="primary" type="submit">
                 Save Autopilot Config
-              </button>
+              </Button>
             </>
           ) : (
-            <p>Loading...</p>
+            <p className="hx-description">Loading...</p>
           )}
         </form>
-        <p className="status-line">{statusLine}</p>
-        <p className="status-line">{statsLine}</p>
-      </article>
+        <StatusLine>{statusLine}</StatusLine>
+        <StatusLine>{statsLine}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-4">
-        <p className="mono-label">Policy Action</p>
-        <label className="field">
-          <span>proposal_goal</span>
-          <input
+      <Panel span={4} eyebrow="Policy Action">
+        <FormField label="proposal_goal">
+          <Input
             type="text"
             value={policyGoal}
             onChange={(e) => setPolicyGoal(e.target.value)}
             placeholder="e.g. simulate allowlist and fee quote before broadcast"
           />
-        </label>
-        <div className="button-row">
-          <button className="btn-secondary" onClick={onProposePolicyAction}>
+        </FormField>
+        <div className="hx-cluster">
+          <Button variant="secondary" onClick={onProposePolicyAction}>
             Propose Policy Action
-          </button>
+          </Button>
         </div>
-        <textarea
-          className="command-editor"
+        <Textarea
           rows={16}
           value={policyActionText}
           onChange={(e) => setPolicyActionText(e.target.value)}
         />
-        <div className="button-row">
-          <button className="btn-primary" onClick={onRunPolicyAction}>
+        <div className="hx-cluster">
+          <Button variant="primary" onClick={onRunPolicyAction}>
             Run Policy Action
-          </button>
-          <button className="btn-secondary" onClick={() => setPolicyActionText(DEFAULT_POLICY_ACTION)}>
+          </Button>
+          <Button variant="secondary" onClick={() => setPolicyActionText(DEFAULT_POLICY_ACTION)}>
             Reset Example
-          </button>
+          </Button>
         </div>
-        <pre className="json-output">{policyResult}</pre>
-      </article>
+        <CodeBlock label="result">{policyResult}</CodeBlock>
+      </Panel>
 
-      <article className="panel panel-span-4">
-        <p className="mono-label">Onchain Action</p>
-        <label className="field">
-          <span>proposal_goal</span>
-          <input
+      <Panel span={4} eyebrow="Onchain Action">
+        <FormField label="proposal_goal">
+          <Input
             type="text"
             value={onchainGoal}
             onChange={(e) => setOnchainGoal(e.target.value)}
             placeholder="e.g. propose a safe dry-run broadcast payload"
           />
-        </label>
-        <div className="button-row">
-          <button className="btn-secondary" onClick={onProposeOnchainAction}>
+        </FormField>
+        <div className="hx-cluster">
+          <Button variant="secondary" onClick={onProposeOnchainAction}>
             Propose Onchain Action
-          </button>
+          </Button>
         </div>
-        <textarea
-          className="command-editor"
+        <Textarea
           rows={16}
           value={onchainActionText}
           onChange={(e) => setOnchainActionText(e.target.value)}
         />
-        <div className="button-row">
-          <button className="btn-primary" onClick={onRunOnchainAction}>
+        <div className="hx-cluster">
+          <Button variant="primary" onClick={onRunOnchainAction}>
             Run Onchain Action
-          </button>
-          <button className="btn-secondary" onClick={() => setOnchainActionText(DEFAULT_ONCHAIN_ACTION)}>
+          </Button>
+          <Button variant="secondary" onClick={() => setOnchainActionText(DEFAULT_ONCHAIN_ACTION)}>
             Reset Example
-          </button>
+          </Button>
         </div>
-        <pre className="json-output">{onchainResult}</pre>
-      </article>
+        <CodeBlock label="result">{onchainResult}</CodeBlock>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <p className="mono-label">Review Filters</p>
-        <div className="pill-row">
-          <span className="info-pill">
+      <Panel span={5} eyebrow="Review Filters">
+        <div className="hx-tag-row">
+          <Tag>
             priority = attention &gt; severity &gt; corroboration &gt; freshness &gt; trust &gt;
             density
-          </span>
-          <span className="info-pill">ties break on latest signal, then kind, then item id</span>
-          <span className="info-pill">active_view: {activeView?.name ?? "none"}</span>
+          </Tag>
+          <Tag>ties break on latest signal, then kind, then item id</Tag>
+          <Tag>active_view: {activeView?.name ?? "none"}</Tag>
         </div>
-        <div className="form-grid">
-          <label className="field">
-            <span>kind</span>
-            <select
+        <FormGrid>
+          <FormField label="kind">
+            <Select
               value={reviewKindFilter}
               onChange={(event) => {
                 setActiveViewId(null);
@@ -591,11 +584,10 @@ export function AutopilotPage() {
               <option value="case">case</option>
               <option value="claim">claim</option>
               <option value="evidence">evidence</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>limit</span>
-            <select
+            </Select>
+          </FormField>
+          <FormField label="limit">
+            <Select
               value={reviewLimitFilter}
               onChange={(event) => {
                 setActiveViewId(null);
@@ -608,150 +600,150 @@ export function AutopilotPage() {
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="all">all</option>
-            </select>
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={applyReviewFilters}>
+            </Select>
+          </FormField>
+        </FormGrid>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={applyReviewFilters}>
             Apply Filters
-          </button>
-          <button className="btn-secondary" type="button" onClick={resetReviewFilters}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={resetReviewFilters}>
             Reset
-          </button>
+          </Button>
         </div>
-        <p className="status-line">{reviewStatus}</p>
-      </article>
+        <StatusLine>{reviewStatus}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-7">
-        <p className="mono-label">Saved Views</p>
-        <label className="field">
-          <span>view_name</span>
-          <input
+      <Panel span={7} eyebrow="Saved Views">
+        <FormField label="view_name">
+          <Input
             type="text"
             value={savedViewName}
             onChange={(event) => setSavedViewName(event.target.value)}
             placeholder="e.g. claim-review-focus"
           />
-        </label>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={saveCurrentView}>
+        </FormField>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={saveCurrentView}>
             Save Current View
-          </button>
-          <button className="btn-secondary" type="button" onClick={clearWorkspace}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={clearWorkspace}>
             Clear Workspace
-          </button>
+          </Button>
         </div>
-        <div className="agent-grid">
+        <div className="hx-card-grid">
           {savedViews.length > 0 ? (
             savedViews.map((view) => (
-              <div key={view.id} className="agent-card">
-                <div className="agent-card-head">
+              <div key={view.id} className="hx-card">
+                <div className="hx-card-head">
                   <h3>{view.name}</h3>
-                  <span className={`status-pill ${activeViewId === view.id ? "ok" : "info"}`}>
+                  <Badge tone={activeViewId === view.id ? "ok" : "info"}>
                     {activeViewId === view.id ? "active" : "saved"}
-                  </span>
+                  </Badge>
                 </div>
-                <div className="pill-row">
-                  <span className="info-pill">{describeReviewFilters(view.filters)}</span>
-                  <span className="info-pill">view_id: {view.id}</span>
+                <div className="hx-tag-row">
+                  <Tag>{describeReviewFilters(view.filters)}</Tag>
+                  <Tag>view_id: {view.id}</Tag>
                 </div>
-                <div className="button-row">
-                  <button
-                    className="btn-primary"
-                    type="button"
-                    onClick={() => applySavedView(view)}
-                  >
+                <div className="hx-cluster">
+                  <Button variant="primary" type="button" onClick={() => applySavedView(view)}>
                     Apply View
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => deleteSavedView(view)}
-                  >
+                  </Button>
+                  <Button variant="secondary" type="button" onClick={() => deleteSavedView(view)}>
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))
           ) : (
-            <div className="agent-card">
-              <div className="agent-card-head">
+            <div className="hx-card">
+              <div className="hx-card-head">
                 <h3>No Saved Views</h3>
-                <span className="status-pill info">local</span>
+                <Badge tone="info">local</Badge>
               </div>
-              <p>
+              <p className="hx-description">
                 Save the current review filters to return to the same ranked autopilot worklist
                 after a reload.
               </p>
             </div>
           )}
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Review Queue</p>
-        <div className="pill-row">
-          <span className="info-pill">top item: {reviewQueue[0]?.item_id ?? "none"}</span>
-          <span className="info-pill">filters: {describeReviewFilters(currentReviewFilters())}</span>
+      <Panel span={12} eyebrow="Review Queue">
+        <div className="hx-tag-row">
+          <Tag>top item: {reviewQueue[0]?.item_id ?? "none"}</Tag>
+          <Tag>filters: {describeReviewFilters(currentReviewFilters())}</Tag>
         </div>
-        <div className="agent-grid">
-          {reviewQueue.map((item, index) => (
-            <div key={`${item.kind}:${item.item_id}`} className="agent-card">
-              <div className="agent-card-head">
-                <h3>
-                  #{index + 1} {item.title}
-                </h3>
-                <span className={`status-pill ${reviewStateClass(item)}`}>
-                  {reviewStateLabel(item)}
-                </span>
+        {reviewQueue.length > 0 ? (
+          <div className="hx-card-grid">
+            {reviewQueue.map((item, index) => (
+              <div key={`${item.kind}:${item.item_id}`} className="hx-card">
+                <div className="hx-card-head">
+                  <h3>
+                    #{index + 1} {item.title}
+                  </h3>
+                  <Badge tone={reviewStateClass(item) as "ok" | "warn" | "danger" | "info"}>
+                    {reviewStateLabel(item)}
+                  </Badge>
+                </div>
+                <p className="hx-description">{item.summary}</p>
+                <div className="hx-tag-row">
+                  <Tag>{item.kind}</Tag>
+                  <Tag>{priorityLabel(item.priority)}</Tag>
+                  <Tag>context: {item.context_label}</Tag>
+                  <Tag>route: {item.route}</Tag>
+                </div>
+                <div className="hx-tag-row">
+                  <Tag>latest: {item.latest_signal_at ?? "unknown"}</Tag>
+                  <Tag>item_id: {item.item_id}</Tag>
+                  {item.severity ? (
+                    <Badge tone={reviewStateClass(item) as "ok" | "warn" | "danger" | "info"}>
+                      {item.severity}
+                    </Badge>
+                  ) : null}
+                </div>
+                <code className="hx-mono-detail">{item.goal_hint}</code>
+                <div className="hx-cluster">
+                  <Button
+                    variant="primary"
+                    type="button"
+                    onClick={() => void draftPolicyFromReviewItem(item)}
+                  >
+                    Draft Policy Proposal
+                  </Button>
+                  <Button variant="secondary" type="button" onClick={() => useGoalHint(item)}>
+                    Use Goal Hint
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => void exportReviewPacket(item)}
+                  >
+                    Export Packet
+                  </Button>
+                </div>
               </div>
-              <p>{item.summary}</p>
-              <div className="pill-row">
-                <span className="info-pill">{item.kind}</span>
-                <span className="info-pill">{priorityLabel(item.priority)}</span>
-                <span className="info-pill">context: {item.context_label}</span>
-                <span className="info-pill">route: {item.route}</span>
-              </div>
-              <div className="pill-row">
-                <span className="info-pill">latest: {item.latest_signal_at ?? "unknown"}</span>
-                <span className="info-pill">item_id: {item.item_id}</span>
-                {item.severity ? (
-                  <span className={`status-pill ${reviewStateClass(item)}`}>{item.severity}</span>
-                ) : null}
-              </div>
-              <code className="command-inline">{item.goal_hint}</code>
-              <div className="button-row">
-                <button
-                  className="btn-primary"
-                  type="button"
-                  onClick={() => void draftPolicyFromReviewItem(item)}
-                >
-                  Draft Policy Proposal
-                </button>
-                <button className="btn-secondary" type="button" onClick={() => useGoalHint(item)}>
-                  Use Goal Hint
-                </button>
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={() => void exportReviewPacket(item)}
-                >
-                  Export Packet
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </article>
-
-      <article className="panel panel-span-12">
-        <p className="mono-label">Latest Review Export</p>
-        {lastReviewExport ? (
-          <pre className="json-output">{JSON.stringify(lastReviewExport, null, 2)}</pre>
+            ))}
+          </div>
         ) : (
-          <p>No review export packet has been generated in this session.</p>
+          <EmptyState
+            title="No Review Items"
+            description="The review queue is empty for the current filters."
+          />
         )}
-      </article>
+      </Panel>
+
+      <Panel span={12} eyebrow="Latest Review Export">
+        {lastReviewExport ? (
+          <CodeBlock label="export packet">{JSON.stringify(lastReviewExport, null, 2)}</CodeBlock>
+        ) : (
+          <EmptyState
+            title="No Export Packet"
+            description="No review export packet has been generated in this session."
+          />
+        )}
+      </Panel>
     </section>
   );
 }

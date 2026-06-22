@@ -24,6 +24,19 @@ import {
   makeSavedViewId,
   saveEvidenceDeskWorkspaceState,
 } from "../lib/intelDeskWorkspace";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  FormField,
+  FormGrid,
+  Input,
+  Panel,
+  Select,
+  StatusLine,
+  Tag,
+  Textarea,
+} from "../components";
 
 const DEFAULT_CLAIMS: ProposedClaim[] = [
   {
@@ -421,128 +434,121 @@ export function EvidencePage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Evidence Pipeline</p>
-        <h2>Ingest Signals, Rank Evidence, Triage Claims</h2>
-        <p>
+    <section className="hx-page-grid">
+      <Panel
+        hero
+        span={12}
+        eyebrow="Evidence Pipeline"
+        title="Ingest Signals, Rank Evidence, Triage Claims"
+      >
+        <p className="hx-description">
           Manual ingest stands in for collection jobs in this slice. Every submission becomes
           normalized evidence with provenance, bounded claims, watchlist hits, and case updates.
           Evidence and claims are now ranked through deterministic queue math instead of raw
           reverse-chronological lists.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Ingest Evidence</p>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label className="field field-full">
-            <span>source_id</span>
-            <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
+      <Panel span={6} eyebrow="Ingest Evidence">
+        <form className="hx-form-grid" onSubmit={onSubmit}>
+          <FormField label="source_id" full>
+            <Select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
               {sources.map((source) => (
                 <option key={source.id} value={source.id}>
                   {source.name}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </FormField>
 
-          <label className="field field-full">
-            <span>title</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </label>
+          <FormField label="title" full>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>summary</span>
-            <textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} />
-          </label>
+          <FormField label="summary" full>
+            <Textarea rows={3} value={summary} onChange={(e) => setSummary(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>content</span>
-            <textarea rows={6} value={content} onChange={(e) => setContent(e.target.value)} />
-          </label>
+          <FormField label="content" full>
+            <Textarea rows={6} value={content} onChange={(e) => setContent(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>url</span>
-            <input value={url} onChange={(e) => setUrl(e.target.value)} />
-          </label>
+          <FormField label="url" full>
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>observed_at</span>
-            <input value={observedAt} onChange={(e) => setObservedAt(e.target.value)} />
-          </label>
+          <FormField label="observed_at">
+            <Input value={observedAt} onChange={(e) => setObservedAt(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>tags</span>
-            <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
-          </label>
+          <FormField label="tags" full>
+            <Input value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>entity_labels</span>
-            <input value={entitiesText} onChange={(e) => setEntitiesText(e.target.value)} />
-          </label>
+          <FormField label="entity_labels" full>
+            <Input value={entitiesText} onChange={(e) => setEntitiesText(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>proposed_claims</span>
-            <textarea
-              className="command-editor"
-              rows={8}
-              value={claimsText}
-              onChange={(e) => setClaimsText(e.target.value)}
-            />
-          </label>
+          <FormField label="proposed_claims" full>
+            <Textarea rows={8} value={claimsText} onChange={(e) => setClaimsText(e.target.value)} />
+          </FormField>
 
-          <button className="btn-primary" type="submit">
+          <Button variant="primary" type="submit">
             Ingest Evidence
-          </button>
+          </Button>
         </form>
-        <p className="status-line">{status}</p>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Latest Ingest Result</p>
+      <Panel span={6} eyebrow="Latest Ingest Result">
         {lastResult ? (
-          <div className="stack-list">
-            <div>
-              <p className="panel-note">
+          <div className="hx-stack">
+            <div className="hx-card-section">
+              <p className="hx-mono-detail">
                 Evidence: <code>{lastResult.evidence.id}</code>
               </p>
-              <p className="panel-note">
+              <p className="hx-mono-detail">
                 Provenance hash: <code>{lastResult.evidence.provenance_hash}</code>
               </p>
             </div>
 
-            <div>
-              <p className="mono-label">Watchlist Hits</p>
+            <div className="hx-card-section">
+              <p className="hx-eyebrow">Watchlist Hits</p>
               {lastResult.hits.length === 0 ? (
-                <p className="panel-note">No watchlist conditions matched.</p>
+                <p className="hx-description">No watchlist conditions matched.</p>
               ) : (
-                <div className="command-stack">
+                <div className="hx-list">
                   {lastResult.hits.map((hit) => (
-                    <div key={`${hit.watchlist_id}-${hit.evidence_id}`} className="command-row">
+                    <div key={`${hit.watchlist_id}-${hit.evidence_id}`} className="hx-row">
                       <h3>{hit.watchlist_name}</h3>
-                      <code>severity: {hit.severity}</code>
-                      <code>reason: {hit.reason}</code>
-                      <code>keywords: {hit.matched_keywords.join(", ") || "none"}</code>
-                      <code>entities: {hit.matched_entities.join(", ") || "none"}</code>
+                      <code className="hx-mono-detail">severity: {hit.severity}</code>
+                      <code className="hx-mono-detail">reason: {hit.reason}</code>
+                      <code className="hx-mono-detail">
+                        keywords: {hit.matched_keywords.join(", ") || "none"}
+                      </code>
+                      <code className="hx-mono-detail">
+                        entities: {hit.matched_entities.join(", ") || "none"}
+                      </code>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div>
-              <p className="mono-label">Case Updates</p>
+            <div className="hx-card-section">
+              <p className="hx-eyebrow">Case Updates</p>
               {lastResult.case_updates.length === 0 ? (
-                <p className="panel-note">No case lifecycle changes were required.</p>
+                <p className="hx-description">No case lifecycle changes were required.</p>
               ) : (
-                <div className="command-stack">
+                <div className="hx-list">
                   {lastResult.case_updates.map((transition) => (
-                    <div key={transition.case.id} className="command-row">
+                    <div key={transition.case.id} className="hx-row">
                       <h3>{transition.case.title}</h3>
-                      <code>case_id: {transition.case.id}</code>
-                      <code>status: {transition.case.status}</code>
-                      <code>decision: {JSON.stringify(transition.decision)}</code>
+                      <code className="hx-mono-detail">case_id: {transition.case.id}</code>
+                      <code className="hx-mono-detail">status: {transition.case.status}</code>
+                      <code className="hx-mono-detail">
+                        decision: {JSON.stringify(transition.decision)}
+                      </code>
                     </div>
                   ))}
                 </div>
@@ -550,40 +556,35 @@ export function EvidencePage() {
             </div>
           </div>
         ) : (
-          <p>No ingest run yet.</p>
+          <EmptyState title="No ingest run yet." />
         )}
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Evidence Filters</p>
-        <div className="form-grid">
-          <label className="field">
-            <span>source_id</span>
-            <input
+      <Panel span={6} eyebrow="Evidence Filters">
+        <FormGrid>
+          <FormField label="source_id">
+            <Input
               value={evidenceSourceFilter}
               onChange={(e) => setEvidenceSourceFilter(e.target.value)}
               placeholder="rss_national_security"
             />
-          </label>
-          <label className="field">
-            <span>tag</span>
-            <input
+          </FormField>
+          <FormField label="tag">
+            <Input
               value={evidenceTagFilter}
               onChange={(e) => setEvidenceTagFilter(e.target.value)}
               placeholder="security"
             />
-          </label>
-          <label className="field">
-            <span>entity</span>
-            <input
+          </FormField>
+          <FormField label="entity">
+            <Input
               value={evidenceEntityFilter}
               onChange={(e) => setEvidenceEntityFilter(e.target.value)}
               placeholder="alice north"
             />
-          </label>
-          <label className="field">
-            <span>linked_status</span>
-            <select
+          </FormField>
+          <FormField label="linked_status">
+            <Select
               value={evidenceLinkedStatusFilter}
               onChange={(e) =>
                 setEvidenceLinkedStatusFilter(e.target.value as CaseStatus | "all")
@@ -595,27 +596,24 @@ export function EvidencePage() {
               <option value="brief_ready">brief_ready</option>
               <option value="escalated">escalated</option>
               <option value="closed">closed</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>min_trust</span>
-            <input
+            </Select>
+          </FormField>
+          <FormField label="min_trust">
+            <Input
               value={evidenceMinTrustFilter}
               onChange={(e) => setEvidenceMinTrustFilter(e.target.value)}
               placeholder="80"
             />
-          </label>
-          <label className="field field-full">
-            <span>q</span>
-            <input
+          </FormField>
+          <FormField label="q" full>
+            <Input
               value={evidenceQueryFilter}
               onChange={(e) => setEvidenceQueryFilter(e.target.value)}
               placeholder="orion leadership resignation"
             />
-          </label>
-          <label className="field">
-            <span>limit</span>
-            <select
+          </FormField>
+          <FormField label="limit">
+            <Select
               value={evidenceLimitFilter}
               onChange={(e) => setEvidenceLimitFilter(e.target.value)}
             >
@@ -625,25 +623,23 @@ export function EvidencePage() {
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="all">all</option>
-            </select>
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={applyEvidenceFilters}>
+            </Select>
+          </FormField>
+        </FormGrid>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={applyEvidenceFilters}>
             Apply Evidence Filters
-          </button>
-          <button className="btn-secondary" type="button" onClick={resetEvidenceFilters}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={resetEvidenceFilters}>
             Reset
-          </button>
+          </Button>
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Claim Filters</p>
-        <div className="form-grid">
-          <label className="field">
-            <span>review_status</span>
-            <select
+      <Panel span={6} eyebrow="Claim Filters">
+        <FormGrid>
+          <FormField label="review_status">
+            <Select
               value={claimReviewFilter}
               onChange={(e) =>
                 setClaimReviewFilter(e.target.value as ClaimReviewStatus | "all")
@@ -653,27 +649,24 @@ export function EvidencePage() {
               <option value="needs_review">needs_review</option>
               <option value="corroborated">corroborated</option>
               <option value="rejected">rejected</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>subject</span>
-            <input
+            </Select>
+          </FormField>
+          <FormField label="subject">
+            <Input
               value={claimSubjectFilter}
               onChange={(e) => setClaimSubjectFilter(e.target.value)}
               placeholder="alice north"
             />
-          </label>
-          <label className="field">
-            <span>predicate</span>
-            <input
+          </FormField>
+          <FormField label="predicate">
+            <Input
               value={claimPredicateFilter}
               onChange={(e) => setClaimPredicateFilter(e.target.value)}
               placeholder="resigned_from"
             />
-          </label>
-          <label className="field">
-            <span>linked_status</span>
-            <select
+          </FormField>
+          <FormField label="linked_status">
+            <Select
               value={claimLinkedStatusFilter}
               onChange={(e) =>
                 setClaimLinkedStatusFilter(e.target.value as CaseStatus | "all")
@@ -685,27 +678,24 @@ export function EvidencePage() {
               <option value="brief_ready">brief_ready</option>
               <option value="escalated">escalated</option>
               <option value="closed">closed</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>min_confidence_bps</span>
-            <input
+            </Select>
+          </FormField>
+          <FormField label="min_confidence_bps">
+            <Input
               value={claimMinConfidenceFilter}
               onChange={(e) => setClaimMinConfidenceFilter(e.target.value)}
               placeholder="8500"
             />
-          </label>
-          <label className="field field-full">
-            <span>q</span>
-            <input
+          </FormField>
+          <FormField label="q" full>
+            <Input
               value={claimQueryFilter}
               onChange={(e) => setClaimQueryFilter(e.target.value)}
               placeholder="leadership appointment"
             />
-          </label>
-          <label className="field">
-            <span>limit</span>
-            <select
+          </FormField>
+          <FormField label="limit">
+            <Select
               value={claimLimitFilter}
               onChange={(e) => setClaimLimitFilter(e.target.value)}
             >
@@ -715,172 +705,164 @@ export function EvidencePage() {
               <option value="50">50</option>
               <option value="100">100</option>
               <option value="all">all</option>
-            </select>
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={applyClaimFilters}>
+            </Select>
+          </FormField>
+        </FormGrid>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={applyClaimFilters}>
             Apply Claim Filters
-          </button>
-          <button className="btn-secondary" type="button" onClick={resetClaimFilters}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={resetClaimFilters}>
             Reset
-          </button>
+          </Button>
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Saved Views</p>
-        <div className="form-grid">
-          <label className="field field-full">
-            <span>view_name</span>
-            <input
+      <Panel span={12} eyebrow="Saved Views">
+        <FormGrid>
+          <FormField label="view_name" full>
+            <Input
               value={savedViewName}
               onChange={(e) => setSavedViewName(e.target.value)}
               placeholder="high-trust-needs-review"
             />
-          </label>
-        </div>
-        <div className="button-row">
-          <button className="btn-secondary" type="button" onClick={saveCurrentView}>
+          </FormField>
+        </FormGrid>
+        <div className="hx-cluster">
+          <Button variant="secondary" type="button" onClick={saveCurrentView}>
             Save Current View
-          </button>
-          <button className="btn-secondary" type="button" onClick={clearWorkspace}>
+          </Button>
+          <Button variant="secondary" type="button" onClick={clearWorkspace}>
             Clear Local Workspace
-          </button>
+          </Button>
         </div>
         {savedViews.length === 0 ? (
-          <p className="panel-note">No saved evidence desk views yet.</p>
+          <p className="hx-description">No saved evidence desk views yet.</p>
         ) : (
-          <div className="command-stack">
+          <div className="hx-list">
             {savedViews.map((view) => (
-              <div key={view.id} className="command-row">
-                <div className="agent-card-head">
+              <div key={view.id} className="hx-card">
+                <div className="hx-card-head">
                   <h3>{view.name}</h3>
-                  <span className={`status-pill ${activeViewId === view.id ? "ok" : "info"}`}>
+                  <Badge tone={activeViewId === view.id ? "ok" : "info"}>
                     {activeViewId === view.id ? "active" : "saved"}
-                  </span>
+                  </Badge>
                 </div>
-                <code>evidence: {evidenceFilterSummary(view.evidenceFilters)}</code>
-                <code>claims: {claimFilterSummary(view.claimFilters)}</code>
-                <div className="button-row">
-                  <button
-                    className="btn-secondary"
-                    onClick={() => applySavedView(view)}
-                    type="button"
-                  >
+                <code className="hx-mono-detail">
+                  evidence: {evidenceFilterSummary(view.evidenceFilters)}
+                </code>
+                <code className="hx-mono-detail">
+                  claims: {claimFilterSummary(view.claimFilters)}
+                </code>
+                <div className="hx-cluster">
+                  <Button variant="secondary" onClick={() => applySavedView(view)} type="button">
                     Apply
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    onClick={() => deleteSavedView(view)}
-                    type="button"
-                  >
+                  </Button>
+                  <Button variant="secondary" onClick={() => deleteSavedView(view)} type="button">
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-7">
-        <p className="mono-label">Ranked Evidence Queue</p>
-        <div className="agent-grid">
+      <Panel span={7} eyebrow="Ranked Evidence Queue">
+        <div className="hx-card-grid">
           {evidence.map((entry, index) => (
-            <div key={entry.evidence.id} className="agent-card">
-              <div className="agent-card-head">
+            <div key={entry.evidence.id} className="hx-card">
+              <div className="hx-card-head">
                 <h3>
                   #{index + 1} {entry.evidence.title}
                 </h3>
-                <span className={`status-pill ${severityClass(entry.max_linked_severity)}`}>
+                <Badge tone={severityClass(entry.max_linked_severity) as "ok" | "warn" | "danger" | "info"}>
                   {entry.max_linked_severity ?? "unlinked"}
-                </span>
+                </Badge>
               </div>
-              <p>{entry.evidence.summary || entry.evidence.content.slice(0, 140)}</p>
-              <div className="pill-row">
-                <span className="info-pill">{priorityLabel(entry.priority)}</span>
-                <span className="info-pill">{entry.source_name}</span>
-                <span className="info-pill">trust: {entry.source_trust_score}</span>
-                <span className="info-pill">observed: {entry.evidence.observed_at}</span>
+              <p className="hx-description">
+                {entry.evidence.summary || entry.evidence.content.slice(0, 140)}
+              </p>
+              <div className="hx-tag-row">
+                <Tag>{priorityLabel(entry.priority)}</Tag>
+                <Tag>{entry.source_name}</Tag>
+                <Tag>trust: {entry.source_trust_score}</Tag>
+                <Tag>observed: {entry.evidence.observed_at}</Tag>
                 {entry.semantic_score_bps != null ? (
-                  <span className="info-pill">semantic: {entry.semantic_score_bps}</span>
+                  <Tag>semantic: {entry.semantic_score_bps}</Tag>
                 ) : null}
               </div>
-              <div className="pill-row">
-                <span className="info-pill">linked_cases: {entry.linked_case_count}</span>
-                <span className="info-pill">linked_claims: {entry.linked_claim_count}</span>
-                <span className="info-pill">provenance: {entry.evidence.provenance_hash}</span>
+              <div className="hx-tag-row">
+                <Tag>linked_cases: {entry.linked_case_count}</Tag>
+                <Tag>linked_claims: {entry.linked_claim_count}</Tag>
+                <Tag>provenance: {entry.evidence.provenance_hash}</Tag>
               </div>
-              <div className="pill-row">
+              <div className="hx-tag-row">
                 {entry.evidence.tags.map((tag) => (
-                  <span key={tag} className="tag-chip">
-                    {tag}
-                  </span>
+                  <Tag key={tag}>{tag}</Tag>
                 ))}
               </div>
             </div>
           ))}
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <p className="mono-label">Ranked Claim Queue</p>
-        <div className="command-stack">
+      <Panel span={5} eyebrow="Ranked Claim Queue">
+        <div className="hx-list">
           {claims.map((entry) => (
-            <div key={entry.claim.id} className="command-row">
-              <div className="agent-card-head">
+            <div key={entry.claim.id} className="hx-row">
+              <div className="hx-card-head">
                 <h3>
                   {entry.claim.subject} {entry.claim.predicate} {entry.claim.object}
                 </h3>
-                <span className={`status-pill ${reviewStatusClass(entry.claim.review_status)}`}>
+                <Badge tone={reviewStatusClass(entry.claim.review_status) as "ok" | "warn" | "danger"}>
                   {entry.claim.review_status}
-                </span>
+                </Badge>
               </div>
-              <div className="pill-row">
-                <span className="info-pill">{priorityLabel(entry.priority)}</span>
-                <span className={`status-pill ${severityClass(entry.max_linked_severity)}`}>
+              <div className="hx-tag-row">
+                <Tag>{priorityLabel(entry.priority)}</Tag>
+                <Badge tone={severityClass(entry.max_linked_severity) as "ok" | "warn" | "danger" | "info"}>
                   {entry.max_linked_severity ?? "unlinked"}
-                </span>
-                <span className="info-pill">{entry.source_name}</span>
-                <span className="info-pill">trust: {entry.source_trust_score}</span>
+                </Badge>
+                <Tag>{entry.source_name}</Tag>
+                <Tag>trust: {entry.source_trust_score}</Tag>
                 {entry.semantic_score_bps != null ? (
-                  <span className="info-pill">semantic: {entry.semantic_score_bps}</span>
+                  <Tag>semantic: {entry.semantic_score_bps}</Tag>
                 ) : null}
               </div>
-              <code>{entry.claim.id}</code>
-              <code>confidence_bps: {entry.claim.confidence_bps}</code>
-              <code>evidence: {entry.evidence_title}</code>
-              <code>observed_at: {entry.evidence_observed_at}</code>
-              <code>linked_case_count: {entry.linked_case_count}</code>
-              <code>rationale: {entry.claim.rationale}</code>
-              <div className="button-row">
-                <button
-                  className="btn-secondary"
+              <code className="hx-mono-detail">{entry.claim.id}</code>
+              <code className="hx-mono-detail">confidence_bps: {entry.claim.confidence_bps}</code>
+              <code className="hx-mono-detail">evidence: {entry.evidence_title}</code>
+              <code className="hx-mono-detail">observed_at: {entry.evidence_observed_at}</code>
+              <code className="hx-mono-detail">linked_case_count: {entry.linked_case_count}</code>
+              <code className="hx-mono-detail">rationale: {entry.claim.rationale}</code>
+              <div className="hx-cluster">
+                <Button
+                  variant="secondary"
                   onClick={() => void applyReviewStatus(entry.claim.id, "corroborated")}
                   type="button"
                 >
                   Corroborate
-                </button>
-                <button
-                  className="btn-secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() => void applyReviewStatus(entry.claim.id, "rejected")}
                   type="button"
                 >
                   Reject
-                </button>
-                <button
-                  className="btn-secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={() => void applyReviewStatus(entry.claim.id, "needs_review")}
                   type="button"
                 >
                   Reset
-                </button>
+                </Button>
               </div>
             </div>
           ))}
         </div>
-      </article>
+      </Panel>
     </section>
   );
 }

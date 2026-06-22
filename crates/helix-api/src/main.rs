@@ -16,10 +16,16 @@
 mod evm_rpc;
 mod federation;
 mod intel;
+mod operator;
 
 use crate::federation::{
     delete_peer, get_dispatch_log, get_federation_overview, get_peer, list_peers,
     manual_broadcast, receive_federation_event, upsert_peer,
+};
+use crate::operator::{
+    clear_operator_activity, get_operator_activity, get_operator_config,
+    get_operator_status, pause_operator, start_operator, stop_operator,
+    update_operator_config,
 };
 use crate::intel::{
     collect_due_sources_handler, collect_source_handler, create_source, create_watchlist,
@@ -111,6 +117,7 @@ pub(crate) struct AppState {
     federation_registry: PeerRegistry,
     federation_log: DispatchLog,
     federation_desk_id: String,
+    operator_loop: Arc<helix_operator::OperatorLoop>,
 }
 
 const SYMBOLIC_PROGRAM_CACHE_CAPACITY: usize = 128;
@@ -815,6 +822,9 @@ async fn main() {
         federation_registry: PeerRegistry::new(),
         federation_log: DispatchLog::new(500),
         federation_desk_id: helix_federation::desk_id_from_env(),
+        operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
+            helix_operator::DeskOperatorConfig::default(),
+        )),
     };
     let app = app_with_optional_static_ui(state);
 
@@ -3340,6 +3350,16 @@ fn api_router() -> Router<AppState> {
         .route("/api/v1/federation/dispatch-log", get(get_dispatch_log))
         .route("/api/v1/federation/broadcast", post(manual_broadcast))
         .route("/api/v1/federation/receive", post(receive_federation_event))
+        // Operator: LLM-driven desk operator
+        .route("/api/v1/operator/status", get(get_operator_status))
+        .route("/api/v1/operator/config", get(get_operator_config).put(update_operator_config))
+        .route("/api/v1/operator/start", post(start_operator))
+        .route("/api/v1/operator/stop", post(stop_operator))
+        .route("/api/v1/operator/pause", post(pause_operator))
+        .route(
+            "/api/v1/operator/activity",
+            get(get_operator_activity).delete(clear_operator_activity),
+        )
 }
 
 async fn require_api_auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -3409,6 +3429,9 @@ mod tests {
             federation_registry: helix_federation::PeerRegistry::new(),
             federation_log: helix_federation::DispatchLog::new(100),
             federation_desk_id: "test-desk".to_string(),
+            operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
+                helix_operator::DeskOperatorConfig::default(),
+            )),
         }
     }
 
@@ -6818,5 +6841,225 @@ mod tests {
         let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
         let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(result["dispatch_count"], 0);
+    }
+
+    // ---- Operator integration tests ----
+
+    #[tokio::test]
+    async fn operator_status_returns_stopped_by_default() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "stopped");
+        assert_eq!(result["cycle_count"], 0);
+        assert_eq!(result["activity_log_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn operator_config_returns_default() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/config")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["config"]["model"], "gpt-4o-mini");
+        assert_eq!(result["config"]["autopilot_mode"], "assist");
+        assert_eq!(result["config"]["action_scope"], "intelligence");
+    }
+
+    #[tokio::test]
+    async fn operator_update_config_changes_model() {
+        let app = test_app();
+        let req_body = serde_json::json!({
+            "model": "claude-opus-4",
+            "loop_interval_secs": 30
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/operator/config")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["config"]["model"], "claude-opus-4");
+        assert_eq!(result["config"]["loop_interval_secs"], 30);
+    }
+
+    #[tokio::test]
+    async fn operator_update_config_rejects_invalid_interval() {
+        let app = test_app();
+        let req_body = serde_json::json!({"loop_interval_secs": 1});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/operator/config")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn operator_start_then_stop_changes_status() {
+        let app = test_app();
+
+        // Start
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "running");
+
+        // Stop
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/stop")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "stopped");
+    }
+
+    #[tokio::test]
+    async fn operator_pause_changes_status_to_paused() {
+        let app = test_app();
+
+        // Start first
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Pause
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/pause")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "paused");
+    }
+
+    #[tokio::test]
+    async fn operator_activity_returns_empty_by_default() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/activity")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["entries"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn operator_activity_with_limit_query_param() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/activity?limit=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn operator_double_start_returns_bad_request() {
+        let app = test_app();
+        // First start
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Second start should fail
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }

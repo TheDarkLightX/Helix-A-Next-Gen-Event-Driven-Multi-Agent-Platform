@@ -1564,3 +1564,147 @@ export async function manualBroadcast(
     { retry: false }
   );
 }
+
+// ---- Operator API ----
+
+export type OperatorStatus = "stopped" | "running" | "paused";
+export type OperatorActionScope =
+  | "observe_only"
+  | "intelligence"
+  | "policy"
+  | "full";
+
+export type DeskOperatorConfig = {
+  enabled: boolean;
+  autopilot_mode: AutopilotMode;
+  action_scope: OperatorActionScope;
+  loop_interval_secs: number;
+  max_actions_per_cycle: number;
+  max_context_items: number;
+  model: string;
+  rules_text: string;
+  dispatch_to_peers: boolean;
+  log_denied_proposals: boolean;
+};
+
+export type OperatorStatusResponse = {
+  status: OperatorStatus;
+  enabled: boolean;
+  autopilot_mode: AutopilotMode;
+  action_scope: OperatorActionScope;
+  loop_interval_secs: number;
+  model: string;
+  cycle_count: number;
+  activity_log_count: number;
+};
+
+export type OperatorConfigResponse = {
+  config: DeskOperatorConfig;
+};
+
+export type UpdateOperatorConfigRequest = {
+  enabled?: boolean;
+  autopilot_mode?: AutopilotMode;
+  action_scope?: OperatorActionScope;
+  loop_interval_secs?: number;
+  max_actions_per_cycle?: number;
+  max_context_items?: number;
+  model?: string;
+  rules_text?: string;
+  dispatch_to_peers?: boolean;
+  log_denied_proposals?: boolean;
+};
+
+export type OperatorControlResponse = {
+  status: OperatorStatus;
+};
+
+export type OperatorActivityEntry = {
+  id: string;
+  cycle: number;
+  action_type: string;
+  rationale: string;
+  allowed: boolean;
+  denial_reason: string | null;
+  requires_confirmation: boolean;
+  timestamp: string;
+};
+
+export type OperatorActivityResponse = {
+  entries: OperatorActivityEntry[];
+};
+
+export async function fetchOperatorStatus(): Promise<OperatorStatusResponse> {
+  return requestJson<OperatorStatusResponse>(
+    API_BASE,
+    "/api/v1/operator/status",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function fetchOperatorConfig(): Promise<DeskOperatorConfig> {
+  const payload = await requestJson<OperatorConfigResponse>(
+    API_BASE,
+    "/api/v1/operator/config",
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.config;
+}
+
+export async function updateOperatorConfig(
+  request: UpdateOperatorConfigRequest
+): Promise<DeskOperatorConfig> {
+  const payload = await requestJson<OperatorConfigResponse>(
+    API_BASE,
+    "/api/v1/operator/config",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.config;
+}
+
+export async function startOperator(): Promise<OperatorControlResponse> {
+  return requestJson<OperatorControlResponse>(
+    API_BASE,
+    "/api/v1/operator/start",
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function stopOperator(): Promise<OperatorControlResponse> {
+  return requestJson<OperatorControlResponse>(
+    API_BASE,
+    "/api/v1/operator/stop",
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function pauseOperator(): Promise<OperatorControlResponse> {
+  return requestJson<OperatorControlResponse>(
+    API_BASE,
+    "/api/v1/operator/pause",
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function fetchOperatorActivity(
+  limit?: number
+): Promise<OperatorActivityEntry[]> {
+  const query = limit ? `?limit=${limit}` : "";
+  const payload = await requestJson<OperatorActivityResponse>(
+    API_BASE,
+    `/api/v1/operator/activity${query}`,
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.entries;
+}

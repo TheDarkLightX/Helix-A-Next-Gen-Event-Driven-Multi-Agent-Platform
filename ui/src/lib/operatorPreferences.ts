@@ -15,6 +15,7 @@ const VALID_LANDING_ROUTES = [
   "/audit",
   "/onchain",
   "/federation",
+  "/operator",
 ] as const;
 
 export type OperatorLandingRoute = (typeof VALID_LANDING_ROUTES)[number];

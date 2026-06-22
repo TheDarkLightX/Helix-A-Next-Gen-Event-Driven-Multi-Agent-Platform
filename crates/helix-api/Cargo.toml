@@ -15,6 +15,7 @@ helix-rule-engine = { path = "../helix-rule-engine" }
 helix-runtime = { path = "../helix-runtime" }
 helix-security = { path = "../helix-security" }
 helix-federation = { path = "../helix-federation" }
+helix-operator = { path = "../helix-operator" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.7"
 hyper = { version = "1", features = ["full"] }

@@ -1,0 +1,22 @@
+[package]
+name = "helix-operator"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "LLM desk operator loop — autonomous intelligence desk operation within deterministic guardrails"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+helix-llm = { path = "../helix-llm" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }

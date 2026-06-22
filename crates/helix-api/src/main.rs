@@ -14,8 +14,13 @@
 //! Helix REST API.
 
 mod evm_rpc;
+mod federation;
 mod intel;
 
+use crate::federation::{
+    delete_peer, get_dispatch_log, get_federation_overview, get_peer, list_peers,
+    manual_broadcast, receive_federation_event, upsert_peer,
+};
 use crate::intel::{
     collect_due_sources_handler, collect_source_handler, create_source, create_watchlist,
     export_autopilot_review_packet, export_market_brief_packet_handler, file_import_handler,
@@ -64,6 +69,7 @@ use helix_core::recipe::Recipe;
 use helix_core::state::{InMemoryStateStore, StateStore};
 use helix_core::types::{AgentId, CredentialId, ProfileId};
 use helix_core::HelixError;
+use helix_federation::{DispatchLog, PeerRegistry};
 use helix_llm::providers::{LlmProvider, LlmRequest, Message, MessageRole, OpenAiProvider};
 use helix_rule_engine::event_listener::RuleEngineEventListener;
 use helix_rule_engine::rules::{ParameterValue, RecipeTriggerPlan, Rule};
@@ -102,6 +108,9 @@ pub(crate) struct AppState {
     llm_provider: Option<Arc<dyn LlmProvider>>,
     llm_model: Option<String>,
     auth_service: Arc<AuthService>,
+    federation_registry: PeerRegistry,
+    federation_log: DispatchLog,
+    federation_desk_id: String,
 }
 
 const SYMBOLIC_PROGRAM_CACHE_CAPACITY: usize = 128;
@@ -803,6 +812,9 @@ async fn main() {
         llm_provider,
         llm_model,
         auth_service: Arc::new(api_auth_from_env()),
+        federation_registry: PeerRegistry::new(),
+        federation_log: DispatchLog::new(500),
+        federation_desk_id: helix_federation::desk_id_from_env(),
     };
     let app = app_with_optional_static_ui(state);
 
@@ -1872,7 +1884,7 @@ async fn onchain_get_receipt(Json(req): Json<OnchainReceiptRequest>) -> Response
     }
 }
 
-fn api_error_response(error: HelixError) -> Response {
+pub(crate) fn api_error_response(error: HelixError) -> Response {
     let status = match error {
         HelixError::NotFound(_) => StatusCode::NOT_FOUND,
         HelixError::ValidationError { .. } => StatusCode::BAD_REQUEST,
@@ -3318,6 +3330,16 @@ fn api_router() -> Router<AppState> {
         .route("/api/v1/autopilot/execute", post(post_autopilot_execute))
         .route("/api/v1/onchain/send_raw", post(onchain_send_raw))
         .route("/api/v1/onchain/receipt", post(onchain_get_receipt))
+        // Federation: peer desk networking
+        .route("/api/v1/federation/overview", get(get_federation_overview))
+        .route("/api/v1/federation/peers", get(list_peers).post(upsert_peer))
+        .route(
+            "/api/v1/federation/peers/:peer_id",
+            get(get_peer).delete(delete_peer),
+        )
+        .route("/api/v1/federation/dispatch-log", get(get_dispatch_log))
+        .route("/api/v1/federation/broadcast", post(manual_broadcast))
+        .route("/api/v1/federation/receive", post(receive_federation_event))
 }
 
 async fn require_api_auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -3384,6 +3406,9 @@ mod tests {
             llm_provider,
             llm_model,
             auth_service: Arc::new(AuthService::disabled()),
+            federation_registry: helix_federation::PeerRegistry::new(),
+            federation_log: helix_federation::DispatchLog::new(100),
+            federation_desk_id: "test-desk".to_string(),
         }
     }
 
@@ -6591,5 +6616,207 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn federation_overview_returns_empty_state() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/overview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let overview: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(overview["status"]["peer_count"], 0);
+        assert_eq!(overview["status"]["federation_enabled"], false);
+    }
+
+    #[tokio::test]
+    async fn federation_peer_crud_roundtrip() {
+        let app = test_app();
+
+        // Create a peer
+        let peer_json = serde_json::json!({
+            "id": "desk-beta",
+            "name": "Beta Desk",
+            "endpoint_url": "https://beta.helix.io",
+            "auth_token": "secret-token-abc",
+            "trust_score": 80,
+            "enabled": true,
+            "tags": ["osint"],
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/peers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(peer_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // List peers
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/peers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let list: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list["peers"].as_array().unwrap().len(), 1);
+        assert_eq!(list["peers"][0]["id"], "desk-beta");
+
+        // Get single peer
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/peers/desk-beta")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Delete peer
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/api/v1/federation/peers/desk-beta")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn federation_peer_validation_rejects_bad_url() {
+        let app = test_app();
+        let peer_json = serde_json::json!({
+            "id": "desk-bad",
+            "name": "Bad Desk",
+            "endpoint_url": "not-a-url",
+            "auth_token": "secret-token-abc",
+            "trust_score": 80,
+            "enabled": true,
+            "tags": [],
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/peers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(peer_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn federation_dispatch_log_is_empty_initially() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/dispatch-log")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let log: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(log["entries"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn federation_receive_ingests_evidence() {
+        let app = test_app();
+        let event_json = serde_json::json!({
+            "specversion": "1.0",
+            "id": "fed-test-001",
+            "type": "helix.case.escalated",
+            "source_desk_id": "desk-remote",
+            "target_desk_id": "*",
+            "title": "Remote case escalation",
+            "summary": "Executive departure at target company",
+            "content": "Full details of the escalation",
+            "url": null,
+            "observed_at": "2026-01-01T00:00:00Z",
+            "kind": "case_escalated",
+            "trust_score": 85,
+            "entity_labels": ["alice"],
+            "tags": ["osint"],
+            "case_id": null,
+            "watchlist_id": null,
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/receive")
+                    .header("content-type", "application/json")
+                    .body(Body::from(event_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["accepted"], true);
+        assert!(result["evidence_id"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn federation_manual_broadcast_with_no_peers() {
+        let app = test_app();
+        let broadcast_json = serde_json::json!({
+            "title": "Manual broadcast",
+            "summary": "Test broadcast",
+            "content": "Content",
+            "url": null,
+            "entity_labels": [],
+            "tags": [],
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/broadcast")
+                    .header("content-type", "application/json")
+                    .body(Body::from(broadcast_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["dispatch_count"], 0);
     }
 }

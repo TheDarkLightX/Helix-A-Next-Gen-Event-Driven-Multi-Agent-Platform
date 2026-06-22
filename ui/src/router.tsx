@@ -14,6 +14,7 @@ import { CasesPage } from "./screens/CasesPage";
 import { CredentialsPage } from "./screens/CredentialsPage";
 import { DashboardPage } from "./screens/DashboardPage";
 import { EvidencePage } from "./screens/EvidencePage";
+import { FederationPage } from "./screens/FederationPage";
 import { MarketIntelPage } from "./screens/MarketIntelPage";
 import { OnchainPage } from "./screens/OnchainPage";
 import { PolicyWorkbenchPage } from "./screens/PolicyWorkbenchPage";
@@ -54,6 +55,12 @@ const NAV_GROUPS = [
       { to: "/rules" as const, label: "Automation", icon: "⟲" },
       { to: "/audit" as const, label: "Audit Log", icon: "≡" },
       { to: "/onchain" as const, label: "Onchain", icon: "⟡" },
+    ],
+  },
+  {
+    name: "Network",
+    items: [
+      { to: "/federation" as const, label: "Federation", icon: "⬡" },
     ],
   },
 ];
@@ -330,6 +337,12 @@ const autopilotRoute = createRoute({
   component: AutopilotPage,
 });
 
+const federationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/federation",
+  component: FederationPage,
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   marketIntelRoute,
@@ -344,6 +357,7 @@ const routeTree = rootRoute.addChildren([
   auditRoute,
   onchainRoute,
   autopilotRoute,
+  federationRoute,
 ]);
 
 export const router = createRouter({

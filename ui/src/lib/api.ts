@@ -1401,3 +1401,166 @@ export async function deleteCredential(
     { retry: false }
   );
 }
+
+// --- Federation ---
+
+export type FederationEventKind =
+  | "case_escalated"
+  | "case_opened"
+  | "watchlist_hit"
+  | "evidence_ingested"
+  | "claim_reviewed"
+  | "autopilot_proposal"
+  | "manual_broadcast";
+
+export type DispatchStatus = "delivered" | "failed" | "unreachable";
+
+export type PeerDesk = {
+  id: string;
+  name: string;
+  endpoint_url: string;
+  auth_token: string;
+  trust_score: number;
+  enabled: boolean;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type FederationStatus = {
+  desk_id: string;
+  peer_count: number;
+  enabled_peer_count: number;
+  total_dispatches: number;
+  successful_dispatches: number;
+  failed_dispatches: number;
+  federation_enabled: boolean;
+};
+
+export type FederationOverview = {
+  desk_id: string;
+  peers: PeerDesk[];
+  status: FederationStatus;
+};
+
+export type DispatchLogEntry = {
+  id: string;
+  event_id: string;
+  peer_id: string;
+  peer_endpoint: string;
+  event_kind: string;
+  event_title: string;
+  status: DispatchStatus;
+  http_status: number | null;
+  error_message: string | null;
+  latency_ms: number;
+  dispatched_at: string;
+};
+
+export type DispatchLogResponse = {
+  entries: DispatchLogEntry[];
+};
+
+export type PeerListResponse = {
+  peers: PeerDesk[];
+};
+
+export type UpsertPeerRequest = {
+  id: string;
+  name: string;
+  endpoint_url: string;
+  auth_token: string;
+  trust_score: number;
+  enabled: boolean;
+  tags: string[];
+};
+
+export type ManualBroadcastRequest = {
+  title: string;
+  summary: string;
+  content: string;
+  url?: string | null;
+  entity_labels?: string[];
+  tags?: string[];
+};
+
+export type ManualBroadcastResponse = {
+  event_id: string;
+  dispatch_count: number;
+  results: DispatchLogEntry[];
+};
+
+export type FederationReceiveResponse = {
+  accepted: boolean;
+  evidence_id: string | null;
+  message: string;
+};
+
+export async function fetchFederationOverview(): Promise<FederationOverview> {
+  return requestJson<FederationOverview>(
+    API_BASE,
+    "/api/v1/federation/overview",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function fetchPeers(): Promise<PeerDesk[]> {
+  const payload = await requestJson<PeerListResponse>(
+    API_BASE,
+    "/api/v1/federation/peers",
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.peers;
+}
+
+export async function upsertPeer(request: UpsertPeerRequest): Promise<PeerDesk> {
+  const payload = await requestJson<{ peer: PeerDesk }>(
+    API_BASE,
+    "/api/v1/federation/peers",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.peer;
+}
+
+export async function deletePeer(peerId: string): Promise<PeerDesk> {
+  const payload = await requestJson<{ peer: PeerDesk }>(
+    API_BASE,
+    `/api/v1/federation/peers/${encodeURIComponent(peerId)}`,
+    { method: "DELETE" },
+    { retry: false }
+  );
+  return payload.peer;
+}
+
+export async function fetchDispatchLog(limit?: number): Promise<DispatchLogEntry[]> {
+  const query = limit ? `?limit=${limit}` : "";
+  const payload = await requestJson<DispatchLogResponse>(
+    API_BASE,
+    `/api/v1/federation/dispatch-log${query}`,
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.entries;
+}
+
+export async function manualBroadcast(
+  request: ManualBroadcastRequest
+): Promise<ManualBroadcastResponse> {
+  return requestJson<ManualBroadcastResponse>(
+    API_BASE,
+    "/api/v1/federation/broadcast",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+}

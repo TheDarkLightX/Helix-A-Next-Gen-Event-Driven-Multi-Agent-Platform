@@ -12,7 +12,8 @@
 // limitations under the License.
 
 //! LLM desk operator: autonomous intelligence desk operation within
-//! deterministic guardrails.
+//! deterministic guardrails, with CoPilot mode for multi-participant
+//! collaboration.
 //!
 //! The operator runs an observe-think-act loop:
 //!
@@ -29,20 +30,38 @@
 //! The LLM never bypasses the guard. The user defines the rules (via
 //! [`DeskOperatorConfig`] and [`AutopilotGuardConfig`]); the guard enforces
 //! them deterministically; the LLM operates freely within those bounds.
+//!
+//! ## CoPilot Mode
+//!
+//! In CoPilot mode, multiple humans and AI copilots can co-operate the same
+//! desk together. The [`OperatorRegistry`] tracks who's connected, the
+//! [`ConfirmationQueue`] holds AI proposals awaiting human review (in assist
+//! mode), and the [`CollaborationBroadcaster`] pushes real-time events to all
+//! connected participants via Server-Sent Events.
 
+pub mod collaboration;
 pub mod config;
+pub mod confirmation;
 pub mod context;
 pub mod errors;
 pub mod loop_runner;
 pub mod proposals;
+pub mod registry;
+pub mod session;
 
+pub use collaboration::{CollaborationBroadcaster, CollaborationEvent};
 pub use config::{DeskOperatorConfig, OperatorActionScope, OperatorStatus};
+pub use confirmation::{ConfirmationQueue, ConfirmationRequest, ConfirmationStatus};
 pub use context::{DeskContext, DeskContextSnapshot, DeskContextSummary};
 pub use errors::OperatorError;
-pub use loop_runner::{OperatorActivityLog, OperatorActivityEntry, OperatorLoop};
+pub use loop_runner::{OperatorActivityEntry, OperatorActivityLog, OperatorLoop};
 pub use proposals::{
     OperatorAction, OperatorDecision, OperatorProposal, OperatorProposalResponse,
     parse_operator_proposals,
+};
+pub use registry::OperatorRegistry;
+pub use session::{
+    JoinSessionRequest, OperatorSession, SessionKind, SessionRole, SessionStatus,
 };
 
 #[cfg(test)]

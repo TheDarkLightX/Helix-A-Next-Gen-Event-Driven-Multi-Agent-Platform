@@ -1708,3 +1708,169 @@ export async function fetchOperatorActivity(
   );
   return payload.entries;
 }
+
+// ---- CoPilot mode API ----
+
+export type SessionKind = "human" | "ai";
+export type SessionRole = "viewer" | "operator" | "admin";
+export type SessionStatus = "active" | "idle" | "disconnected";
+
+export type OperatorSession = {
+  id: string;
+  display_name: string;
+  kind: SessionKind;
+  role: SessionRole;
+  status: SessionStatus;
+  joined_at: string;
+  last_heartbeat: string;
+  location: string | null;
+};
+
+export type JoinSessionRequest = {
+  display_name: string;
+  kind?: SessionKind;
+  role?: SessionRole;
+  location?: string;
+};
+
+export type JoinSessionResponse = {
+  session: OperatorSession;
+};
+
+export type SessionListResponse = {
+  sessions: OperatorSession[];
+  human_count: number;
+  ai_count: number;
+};
+
+export type ConfirmationStatus = "pending" | "confirmed" | "denied" | "expired";
+
+export type OperatorProposal = {
+  type: string;
+  target_id: string | null;
+  rationale: string;
+  parameters: unknown;
+};
+
+export type ConfirmationRequest = {
+  id: string;
+  cycle: number;
+  proposal: OperatorProposal;
+  rationale: string;
+  requested_at: string;
+  status: ConfirmationStatus;
+  resolved_by: string | null;
+  resolved_by_name: string | null;
+  resolved_at: string | null;
+  denial_reason: string | null;
+};
+
+export type ConfirmationListResponse = {
+  pending: ConfirmationRequest[];
+  recent: ConfirmationRequest[];
+};
+
+export type ResolveConfirmationRequest = {
+  session_id: string;
+  denial_reason?: string;
+};
+
+export type ResolveConfirmationResponse = {
+  request: ConfirmationRequest;
+};
+
+export async function joinSession(
+  request: JoinSessionRequest
+): Promise<OperatorSession> {
+  const payload = await requestJson<JoinSessionResponse>(
+    API_BASE,
+    "/api/v1/operator/sessions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.session;
+}
+
+export async function leaveSession(sessionId: string): Promise<void> {
+  await requestJson(
+    API_BASE,
+    `/api/v1/operator/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+    { retry: false }
+  );
+}
+
+export async function listSessions(): Promise<SessionListResponse> {
+  return requestJson<SessionListResponse>(
+    API_BASE,
+    "/api/v1/operator/sessions",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function sessionHeartbeat(sessionId: string): Promise<void> {
+  await requestJson(
+    API_BASE,
+    `/api/v1/operator/sessions/${encodeURIComponent(sessionId)}/heartbeat`,
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function listConfirmations(): Promise<ConfirmationListResponse> {
+  return requestJson<ConfirmationListResponse>(
+    API_BASE,
+    "/api/v1/operator/confirmations",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function confirmProposal(
+  confirmationId: string,
+  sessionId: string
+): Promise<ConfirmationRequest> {
+  const payload = await requestJson<ResolveConfirmationResponse>(
+    API_BASE,
+    `/api/v1/operator/confirmations/${encodeURIComponent(confirmationId)}/confirm`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    },
+    { retry: false }
+  );
+  return payload.request;
+}
+
+export async function denyProposal(
+  confirmationId: string,
+  sessionId: string,
+  denialReason?: string
+): Promise<ConfirmationRequest> {
+  const payload = await requestJson<ResolveConfirmationResponse>(
+    API_BASE,
+    `/api/v1/operator/confirmations/${encodeURIComponent(confirmationId)}/deny`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        denial_reason: denialReason,
+      }),
+    },
+    { retry: false }
+  );
+  return payload.request;
+}
+
+/// Creates an SSE connection to the operator event stream.
+/// Returns the EventSource (caller is responsible for closing it).
+export function operatorEventStreamUrl(): string {
+  return `${API_BASE}/api/v1/operator/stream`;
+}

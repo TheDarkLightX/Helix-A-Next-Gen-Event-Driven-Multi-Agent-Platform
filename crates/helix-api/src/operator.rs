@@ -15,7 +15,7 @@
 //! and manual cycle trigger.
 
 use crate::{api_error_response, AppState, HelixError};
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -250,6 +250,269 @@ pub async fn clear_operator_activity(State(state): State<AppState>) -> Response 
         })),
     )
         .into_response()
+}
+
+// ---- CoPilot mode: sessions, confirmations, SSE stream ----
+
+use helix_operator::{
+    CollaborationEvent, ConfirmationRequest, JoinSessionRequest,
+    OperatorSession, SessionKind, SessionRole,
+};
+
+/// Response for `POST /api/v1/operator/sessions` (join).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinSessionResponse {
+    pub session: OperatorSession,
+}
+
+/// Response for `GET /api/v1/operator/sessions`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionListResponse {
+    pub sessions: Vec<OperatorSession>,
+    pub human_count: usize,
+    pub ai_count: usize,
+}
+
+/// Response for `GET /api/v1/operator/confirmations`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfirmationListResponse {
+    pub pending: Vec<ConfirmationRequest>,
+    pub recent: Vec<ConfirmationRequest>,
+}
+
+/// Request body for confirming/denying a confirmation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResolveConfirmationRequest {
+    /// Session id of the human resolving this request.
+    pub session_id: String,
+    /// Denial reason (only used for deny).
+    #[serde(default)]
+    pub denial_reason: Option<String>,
+}
+
+/// Response for confirm/deny endpoints.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolveConfirmationResponse {
+    pub request: ConfirmationRequest,
+}
+
+/// `POST /api/v1/operator/sessions` — join the desk as a CoPilot participant.
+pub async fn join_session(
+    State(state): State<AppState>,
+    Json(req): Json<JoinSessionRequest>,
+) -> Response {
+    if req.display_name.trim().is_empty() {
+        return api_error_response(HelixError::ValidationError {
+            context: "display_name".to_string(),
+            message: "display_name must not be empty".to_string(),
+        });
+    }
+    let session = OperatorSession::new(
+        req.display_name,
+        req.kind,
+        req.role,
+        req.location,
+    );
+    let _id = state.operator_registry.add(session.clone()).await;
+    state.operator_loop.broadcaster().broadcast(
+        CollaborationEvent::session_joined(session.clone()),
+    );
+    Json(JoinSessionResponse { session }).into_response()
+}
+
+/// `DELETE /api/v1/operator/sessions/:session_id` — leave the desk.
+pub async fn leave_session(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Response {
+    let removed = state.operator_registry.remove(&session_id).await;
+    if let Some(ref session) = removed {
+        state.operator_loop.broadcaster().broadcast(
+            CollaborationEvent::session_left(session.id.clone(), session.display_name.clone()),
+        );
+        Json(serde_json::json!({ "removed": true, "session_id": session_id }))
+            .into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "session not found" })),
+        )
+            .into_response()
+    }
+}
+
+/// `GET /api/v1/operator/sessions` — list all active CoPilot participants.
+pub async fn list_sessions(State(state): State<AppState>) -> Response {
+    let sessions = state.operator_registry.list().await;
+    let (human_count, ai_count) = state.operator_registry.counts_by_kind().await;
+    Json(SessionListResponse {
+        sessions,
+        human_count,
+        ai_count,
+    })
+    .into_response()
+}
+
+/// `POST /api/v1/operator/sessions/:session_id/heartbeat` — keep session alive.
+pub async fn session_heartbeat(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Response {
+    if state.operator_registry.heartbeat(&session_id).await {
+        state.operator_loop.broadcaster().broadcast(
+            CollaborationEvent::heartbeat(session_id),
+        );
+        Json(serde_json::json!({ "ok": true })).into_response()
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "session not found" })),
+        )
+            .into_response()
+    }
+}
+
+/// `GET /api/v1/operator/confirmations` — list pending and recent confirmations.
+pub async fn list_confirmations(State(state): State<AppState>) -> Response {
+    let pending = state.operator_loop.confirmation_queue().pending().await;
+    let recent = state.operator_loop.confirmation_queue().all().await;
+    Json(ConfirmationListResponse { pending, recent }).into_response()
+}
+
+/// `POST /api/v1/operator/confirmations/:id/confirm` — confirm a pending AI proposal.
+pub async fn confirm_proposal(
+    State(state): State<AppState>,
+    Path(confirmation_id): Path<String>,
+    Json(req): Json<ResolveConfirmationRequest>,
+) -> Response {
+    // Look up the session to get the resolver's name and verify permissions
+    let session = state.operator_registry.get(&req.session_id).await;
+    let session = match session {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "session not found" })),
+            )
+                .into_response();
+        }
+    };
+    if !session.role.can_confirm() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "insufficient permissions" })),
+        )
+            .into_response();
+    }
+    let resolved = state
+        .operator_loop
+        .confirmation_queue()
+        .confirm(&confirmation_id, &session.id, &session.display_name)
+        .await;
+    match resolved {
+        Some(request) => {
+            state.operator_loop.broadcaster().broadcast(
+                CollaborationEvent::confirmation_resolved(request.clone()),
+            );
+            Json(ResolveConfirmationResponse { request }).into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "confirmation not found or already resolved" })),
+        )
+            .into_response(),
+    }
+}
+
+/// `POST /api/v1/operator/confirmations/:id/deny` — deny a pending AI proposal.
+pub async fn deny_proposal(
+    State(state): State<AppState>,
+    Path(confirmation_id): Path<String>,
+    Json(req): Json<ResolveConfirmationRequest>,
+) -> Response {
+    let session = state.operator_registry.get(&req.session_id).await;
+    let session = match session {
+        Some(s) => s,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "session not found" })),
+            )
+                .into_response();
+        }
+    };
+    if !session.role.can_confirm() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "insufficient permissions" })),
+        )
+            .into_response();
+    }
+    let resolved = state
+        .operator_loop
+        .confirmation_queue()
+        .deny(&confirmation_id, &session.id, &session.display_name, req.denial_reason)
+        .await;
+    match resolved {
+        Some(request) => {
+            state.operator_loop.broadcaster().broadcast(
+                CollaborationEvent::confirmation_resolved(request.clone()),
+            );
+            Json(ResolveConfirmationResponse { request }).into_response()
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "confirmation not found or already resolved" })),
+        )
+            .into_response(),
+    }
+}
+
+/// `GET /api/v1/operator/stream` — SSE stream of collaboration events.
+pub async fn operator_stream(State(state): State<AppState>) -> Response {
+    use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
+
+    let rx = state.operator_loop.broadcaster().subscribe();
+    let stream = futures::stream::unfold(rx, |mut rx| async move {
+        match rx.recv().await {
+            Ok(event) => {
+                let json = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+                let kind = match &event {
+                    CollaborationEvent::SessionJoined { .. } => "session_joined",
+                    CollaborationEvent::SessionLeft { .. } => "session_left",
+                    CollaborationEvent::Heartbeat { .. } => "heartbeat",
+                    CollaborationEvent::LoopStarted { .. } => "loop_started",
+                    CollaborationEvent::LoopStopped { .. } => "loop_stopped",
+                    CollaborationEvent::LoopPaused { .. } => "loop_paused",
+                    CollaborationEvent::CycleCompleted { .. } => "cycle_completed",
+                    CollaborationEvent::ConfirmationRequested { .. } => "confirmation_requested",
+                    CollaborationEvent::ConfirmationResolved { .. } => "confirmation_resolved",
+                    CollaborationEvent::OperatorDecision { .. } => "operator_decision",
+                    CollaborationEvent::ConfigChanged { .. } => "config_changed",
+                    CollaborationEvent::SessionPruned { .. } => "session_pruned",
+                };
+                Some((
+                    Ok::<SseEvent, std::convert::Infallible>(SseEvent::default().event(kind).data(json)),
+                    rx,
+                ))
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                // Skip missed events and continue
+                Some((
+                    Ok::<SseEvent, std::convert::Infallible>(SseEvent::default().comment("missed events")),
+                    rx,
+                ))
+            }
+        }
+    });
+
+    Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(std::time::Duration::from_secs(15))
+            .text("keep-alive"),
+    )
+    .into_response()
 }
 
 #[cfg(test)]

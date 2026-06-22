@@ -23,9 +23,10 @@ use crate::federation::{
     manual_broadcast, receive_federation_event, upsert_peer,
 };
 use crate::operator::{
-    clear_operator_activity, get_operator_activity, get_operator_config,
-    get_operator_status, pause_operator, start_operator, stop_operator,
-    update_operator_config,
+    clear_operator_activity, confirm_proposal, deny_proposal, get_operator_activity,
+    get_operator_config, get_operator_status, join_session, leave_session,
+    list_confirmations, list_sessions, operator_stream, pause_operator, session_heartbeat,
+    start_operator, stop_operator, update_operator_config,
 };
 use crate::intel::{
     collect_due_sources_handler, collect_source_handler, create_source, create_watchlist,
@@ -118,6 +119,7 @@ pub(crate) struct AppState {
     federation_log: DispatchLog,
     federation_desk_id: String,
     operator_loop: Arc<helix_operator::OperatorLoop>,
+    operator_registry: helix_operator::OperatorRegistry,
 }
 
 const SYMBOLIC_PROGRAM_CACHE_CAPACITY: usize = 128;
@@ -825,6 +827,7 @@ async fn main() {
         operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
             helix_operator::DeskOperatorConfig::default(),
         )),
+        operator_registry: helix_operator::OperatorRegistry::new(),
     };
     let app = app_with_optional_static_ui(state);
 
@@ -3360,6 +3363,26 @@ fn api_router() -> Router<AppState> {
             "/api/v1/operator/activity",
             get(get_operator_activity).delete(clear_operator_activity),
         )
+        // CoPilot mode: multi-participant collaboration
+        .route("/api/v1/operator/sessions", post(join_session).get(list_sessions))
+        .route(
+            "/api/v1/operator/sessions/:session_id",
+            delete(leave_session),
+        )
+        .route(
+            "/api/v1/operator/sessions/:session_id/heartbeat",
+            post(session_heartbeat),
+        )
+        .route("/api/v1/operator/confirmations", get(list_confirmations))
+        .route(
+            "/api/v1/operator/confirmations/:confirmation_id/confirm",
+            post(confirm_proposal),
+        )
+        .route(
+            "/api/v1/operator/confirmations/:confirmation_id/deny",
+            post(deny_proposal),
+        )
+        .route("/api/v1/operator/stream", get(operator_stream))
 }
 
 async fn require_api_auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -3432,6 +3455,7 @@ mod tests {
             operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
                 helix_operator::DeskOperatorConfig::default(),
             )),
+            operator_registry: helix_operator::OperatorRegistry::new(),
         }
     }
 
@@ -7061,5 +7085,309 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ---- CoPilot integration tests ----
+
+    #[tokio::test]
+    async fn copilot_join_creates_session() {
+        let app = test_app();
+        let req_body = serde_json::json!({
+            "display_name": "Alice",
+            "kind": "human",
+            "role": "operator"
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["session"]["display_name"], "Alice");
+        assert_eq!(result["session"]["kind"], "human");
+        assert_eq!(result["session"]["status"], "active");
+        assert!(result["session"]["id"].as_str().unwrap().starts_with("sess-"));
+    }
+
+    #[tokio::test]
+    async fn copilot_join_rejects_empty_name() {
+        let app = test_app();
+        let req_body = serde_json::json!({"display_name": ""});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn copilot_list_sessions_shows_joined() {
+        let app = test_app();
+        // Join
+        let req_body = serde_json::json!({"display_name": "Bob", "kind": "human"});
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // List
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(result["human_count"], 1);
+        assert_eq!(result["ai_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn copilot_leave_removes_session() {
+        let app = test_app();
+        // Join
+        let req_body = serde_json::json!({"display_name": "Carol"});
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = result["session"]["id"].as_str().unwrap();
+
+        // Leave
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(&format!("/api/v1/operator/sessions/{session_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // List should be empty
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn copilot_heartbeat_keeps_session_alive() {
+        let app = test_app();
+        // Join
+        let req_body = serde_json::json!({"display_name": "Dave"});
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = result["session"]["id"].as_str().unwrap();
+
+        // Heartbeat
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!("/api/v1/operator/sessions/{session_id}/heartbeat"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn copilot_heartbeat_returns_not_found_for_missing() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions/nonexistent/heartbeat")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn copilot_confirmations_empty_initially() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/confirmations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["pending"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn copilot_confirm_nonexistent_returns_not_found() {
+        let app = test_app();
+        let req_body = serde_json::json!({"session_id": "fake"});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/confirmations/fake-id/confirm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn copilot_confirm_with_missing_session_returns_not_found() {
+        let app = test_app();
+        let req_body = serde_json::json!({"session_id": "nonexistent-session"});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/confirmations/fake-id/confirm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn copilot_join_ai_copilot() {
+        let app = test_app();
+        let req_body = serde_json::json!({
+            "display_name": "AI Copilot",
+            "kind": "ai",
+            "role": "operator"
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["session"]["kind"], "ai");
+    }
+
+    #[tokio::test]
+    async fn copilot_viewer_cannot_confirm() {
+        let app = test_app();
+        // Join as viewer
+        let req_body = serde_json::json!({
+            "display_name": "Viewer",
+            "kind": "human",
+            "role": "viewer"
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = result["session"]["id"].as_str().unwrap();
+
+        // Try to confirm — should be forbidden
+        let req_body = serde_json::json!({"session_id": session_id});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/confirmations/fake-id/confirm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

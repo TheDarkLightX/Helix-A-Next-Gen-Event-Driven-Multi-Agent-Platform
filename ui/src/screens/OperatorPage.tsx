@@ -6,6 +6,10 @@ import {
   DeskOperatorConfig,
   OperatorStatusResponse,
   OperatorActivityEntry,
+  OperatorSession,
+  SessionKind,
+  SessionRole,
+  ConfirmationRequest,
   fetchOperatorStatus,
   fetchOperatorConfig,
   updateOperatorConfig,
@@ -13,6 +17,13 @@ import {
   stopOperator,
   pauseOperator,
   fetchOperatorActivity,
+  joinSession,
+  leaveSession,
+  listSessions,
+  sessionHeartbeat,
+  listConfirmations,
+  confirmProposal,
+  denyProposal,
 } from "../lib/api";
 import {
   Panel,
@@ -72,6 +83,28 @@ function actionTone(entry: OperatorActivityEntry): BadgeTone {
   return "danger";
 }
 
+function sessionStatusTone(s: OperatorSession): BadgeTone {
+  switch (s.status) {
+    case "active": return "ok";
+    case "idle": return "warn";
+    case "disconnected": return "danger";
+    default: return "neutral";
+  }
+}
+
+function kindTone(k: SessionKind): BadgeTone {
+  return k === "ai" ? "accent" : "info";
+}
+
+function confirmationTone(c: ConfirmationRequest): BadgeTone {
+  switch (c.status) {
+    case "confirmed": return "ok";
+    case "denied": return "danger";
+    case "expired": return "warn";
+    case "pending": default: return "info";
+  }
+}
+
 export function OperatorPage() {
   const [status, setStatus] = useState<OperatorStatusResponse | null>(null);
   const [config, setConfig] = useState<DeskOperatorConfig | null>(null);
@@ -79,6 +112,17 @@ export function OperatorPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState("");
+
+  // CoPilot state
+  const [sessions, setSessions] = useState<OperatorSession[]>([]);
+  const [humanCount, setHumanCount] = useState(0);
+  const [aiCount, setAiCount] = useState(0);
+  const [confirmations, setConfirmations] = useState<ConfirmationRequest[]>([]);
+  const [mySession, setMySession] = useState<OperatorSession | null>(null);
+  const [joinName, setJoinName] = useState("");
+  const [joinKind, setJoinKind] = useState<SessionKind>("human");
+  const [joinRole, setJoinRole] = useState<SessionRole>("operator");
+  const [joinLocation, setJoinLocation] = useState("");
 
   // Editable config form state
   const [editEnabled, setEditEnabled] = useState(false);
@@ -96,14 +140,20 @@ export function OperatorPage() {
     setLoading(true);
     setError(null);
     try {
-      const [st, cfg, act] = await Promise.all([
+      const [st, cfg, act, sess, confs] = await Promise.all([
         fetchOperatorStatus(),
         fetchOperatorConfig(),
         fetchOperatorActivity(50),
+        listSessions(),
+        listConfirmations(),
       ]);
       setStatus(st);
       setConfig(cfg);
       setActivity(act);
+      setSessions(sess.sessions);
+      setHumanCount(sess.human_count);
+      setAiCount(sess.ai_count);
+      setConfirmations(confs.pending);
       // Sync form state with loaded config
       setEditEnabled(cfg.enabled);
       setEditMode(cfg.autopilot_mode);
@@ -187,6 +237,84 @@ export function OperatorPage() {
       setStatusMsg(err instanceof Error ? err.message : "Failed to pause operator");
     }
   }
+
+  // ---- CoPilot handlers ----
+
+  async function handleJoin(e: FormEvent) {
+    e.preventDefault();
+    setStatusMsg("");
+    try {
+      const session = await joinSession({
+        display_name: joinName.trim(),
+        kind: joinKind,
+        role: joinRole,
+        location: joinLocation.trim() || undefined,
+      });
+      setMySession(session);
+      setStatusMsg(`Joined as ${session.display_name}.`);
+      setJoinName("");
+      setJoinLocation("");
+      await loadAll();
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Failed to join");
+    }
+  }
+
+  async function handleLeave() {
+    if (!mySession) return;
+    setStatusMsg("");
+    try {
+      await leaveSession(mySession.id);
+      setMySession(null);
+      setStatusMsg("Left the desk.");
+      await loadAll();
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Failed to leave");
+    }
+  }
+
+  async function handleConfirm(confirmationId: string) {
+    if (!mySession) {
+      setStatusMsg("You must join the desk first to confirm proposals.");
+      return;
+    }
+    setStatusMsg("");
+    try {
+      await confirmProposal(confirmationId, mySession.id);
+      setStatusMsg("Proposal confirmed.");
+      await loadAll();
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Failed to confirm");
+    }
+  }
+
+  async function handleDeny(confirmationId: string) {
+    if (!mySession) {
+      setStatusMsg("You must join the desk first to deny proposals.");
+      return;
+    }
+    setStatusMsg("");
+    try {
+      await denyProposal(confirmationId, mySession.id);
+      setStatusMsg("Proposal denied.");
+      await loadAll();
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : "Failed to deny");
+    }
+  }
+
+  // Heartbeat effect — keep our session alive while connected
+  useEffect(() => {
+    if (!mySession) return;
+    const interval = setInterval(async () => {
+      try {
+        await sessionHeartbeat(mySession.id);
+      } catch {
+        // Silent fail — heartbeat will retry
+      }
+    }, 15000); // 15 second heartbeat
+    return () => clearInterval(interval);
+  }, [mySession]);
 
   if (loading) return <LoadingState title="Loading operator status..." />;
   if (error)
@@ -391,6 +519,149 @@ export function OperatorPage() {
               { key: "timestamp", header: "Timestamp", render: (e) => e.timestamp },
             ]}
             rows={activity}
+          />
+        )}
+      </Panel>
+
+      {/* CoPilot Mode: Multi-participant collaboration */}
+
+      <Panel title="CoPilot — Join the Desk">
+        {mySession ? (
+          <div>
+            <div className="hx-stat-row">
+              <span>You are connected as</span>
+              <Badge tone={kindTone(mySession.kind)}>
+                {mySession.display_name} ({mySession.kind})
+              </Badge>
+            </div>
+            <div className="hx-stat-row">
+              <span>Role</span>
+              <Badge tone="info">{mySession.role}</Badge>
+            </div>
+            <div className="hx-stat-row">
+              <span>Status</span>
+              <Badge tone={sessionStatusTone(mySession)}>{mySession.status}</Badge>
+            </div>
+            <div style={{ marginTop: "1rem" }}>
+              <Button onClick={handleLeave}>Leave Desk</Button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleJoin} className="hx-form">
+            <FormField label="Display Name" hint="Your name as it appears to other operators">
+              <Input
+                value={joinName}
+                onChange={(e) => setJoinName(e.target.value)}
+                placeholder="Alice"
+                required
+              />
+            </FormField>
+            <FormField label="Kind" hint="Human or AI copilot">
+              <Select
+                value={joinKind}
+                onChange={(e) => setJoinKind(e.target.value as SessionKind)}
+              >
+                <option value="human">Human</option>
+                <option value="ai">AI Copilot</option>
+              </Select>
+            </FormField>
+            <FormField label="Role" hint="Viewer=observe only, Operator=can confirm, Admin=full control">
+              <Select
+                value={joinRole}
+                onChange={(e) => setJoinRole(e.target.value as SessionRole)}
+              >
+                <option value="viewer">Viewer</option>
+                <option value="operator">Operator</option>
+                <option value="admin">Admin</option>
+              </Select>
+            </FormField>
+            <FormField label="Location" hint="Where you're operating from (optional)">
+              <Input
+                value={joinLocation}
+                onChange={(e) => setJoinLocation(e.target.value)}
+                placeholder="Tokyo"
+              />
+            </FormField>
+            <div style={{ marginTop: "1rem" }}>
+              <Button type="submit">Join Desk</Button>
+            </div>
+          </form>
+        )}
+      </Panel>
+
+      <Panel title={`CoPilot — Active Participants (${sessions.length})`}>
+        {sessions.length === 0 ? (
+          <EmptyState
+            title="No one connected"
+            description="Join the desk to start collaborating. Humans and AI copilots can work together in real time."
+          />
+        ) : (
+          <DataTable
+            rowKey={(s) => s.id}
+            columns={[
+              { key: "display_name", header: "Name", render: (s) => s.display_name },
+              {
+                key: "kind",
+                header: "Kind",
+                render: (s) => <Badge tone={kindTone(s.kind)}>{s.kind}</Badge>,
+              },
+              { key: "role", header: "Role", render: (s) => s.role },
+              {
+                key: "status",
+                header: "Status",
+                render: (s) => (
+                  <Badge tone={sessionStatusTone(s)}>{s.status}</Badge>
+                ),
+              },
+              { key: "location", header: "Location", render: (s) => s.location ?? "—" },
+              { key: "joined_at", header: "Joined", render: (s) => s.joined_at },
+            ]}
+            rows={sessions}
+          />
+        )}
+      </Panel>
+
+      <Panel title={`Confirmation Queue — Pending AI Proposals (${confirmations.length})`}>
+        {confirmations.length === 0 ? (
+          <EmptyState
+            title="No pending confirmations"
+            description="When the AI operator proposes actions in assist mode, they will appear here for human review."
+          />
+        ) : (
+          <DataTable
+            rowKey={(c) => c.id}
+            columns={[
+              { key: "cycle", header: "Cycle", render: (c) => String(c.cycle) },
+              {
+                key: "action_type",
+                header: "Action",
+                render: (c) => c.proposal.type,
+              },
+              { key: "rationale", header: "Rationale", render: (c) => c.rationale },
+              {
+                key: "status",
+                header: "Status",
+                render: (c) => (
+                  <Badge tone={confirmationTone(c)}>{c.status}</Badge>
+                ),
+              },
+              {
+                key: "actions",
+                header: "Review",
+                render: (c) =>
+                  c.status === "pending" ? (
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <Button onClick={() => handleConfirm(c.id)}>Confirm</Button>
+                      <Button onClick={() => handleDeny(c.id)}>Deny</Button>
+                    </div>
+                  ) : (
+                    <span>
+                      {c.resolved_by_name ? `by ${c.resolved_by_name}` : "—"}
+                    </span>
+                  ),
+              },
+            ]}
+            rows={confirmations}
           />
         )}
       </Panel>

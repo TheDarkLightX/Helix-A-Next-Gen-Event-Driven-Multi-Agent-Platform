@@ -13,7 +13,9 @@
 
 //! The operator loop: observe-think-act cycle with deterministic guardrails.
 
+use crate::collaboration::CollaborationBroadcaster;
 use crate::config::{DeskOperatorConfig, OperatorStatus};
+use crate::confirmation::{ConfirmationQueue, ConfirmationRequest};
 use crate::context::{format_context_for_llm, DeskContext};
 use crate::errors::OperatorError;
 use crate::proposals::{
@@ -100,6 +102,8 @@ pub struct OperatorLoop {
     guard: Arc<RwLock<AutopilotGuardMachine>>,
     activity_log: OperatorActivityLog,
     cycle_count: Arc<RwLock<u64>>,
+    confirmation_queue: ConfirmationQueue,
+    broadcaster: CollaborationBroadcaster,
 }
 
 impl OperatorLoop {
@@ -114,6 +118,8 @@ impl OperatorLoop {
             guard: Arc::new(RwLock::new(guard)),
             activity_log: OperatorActivityLog::new(200),
             cycle_count: Arc::new(RwLock::new(0)),
+            confirmation_queue: ConfirmationQueue::new(50),
+            broadcaster: CollaborationBroadcaster::default(),
         }
     }
 
@@ -157,6 +163,9 @@ impl OperatorLoop {
             },
         });
         *self.config.write().await = config;
+        drop(guard);
+        self.broadcaster
+            .broadcast(crate::collaboration::CollaborationEvent::config_changed());
         Ok(())
     }
 
@@ -172,6 +181,9 @@ impl OperatorLoop {
             return Err(OperatorError::AlreadyRunning);
         }
         *status = OperatorStatus::Running;
+        drop(status);
+        self.broadcaster
+            .broadcast(crate::collaboration::CollaborationEvent::loop_started());
         Ok(())
     }
 
@@ -179,6 +191,9 @@ impl OperatorLoop {
     pub async fn stop(&self) -> Result<(), OperatorError> {
         let mut status = self.status.write().await;
         *status = OperatorStatus::Stopped;
+        drop(status);
+        self.broadcaster
+            .broadcast(crate::collaboration::CollaborationEvent::loop_stopped());
         Ok(())
     }
 
@@ -186,6 +201,9 @@ impl OperatorLoop {
     pub async fn pause(&self) -> Result<(), OperatorError> {
         let mut status = self.status.write().await;
         *status = OperatorStatus::Paused;
+        drop(status);
+        self.broadcaster
+            .broadcast(crate::collaboration::CollaborationEvent::loop_paused());
         Ok(())
     }
 
@@ -197,6 +215,16 @@ impl OperatorLoop {
     /// Returns a reference to the activity log.
     pub fn activity_log(&self) -> &OperatorActivityLog {
         &self.activity_log
+    }
+
+    /// Returns a reference to the confirmation queue.
+    pub fn confirmation_queue(&self) -> &ConfirmationQueue {
+        &self.confirmation_queue
+    }
+
+    /// Returns a reference to the collaboration broadcaster.
+    pub fn broadcaster(&self) -> &CollaborationBroadcaster {
+        &self.broadcaster
     }
 
     /// Runs one observe-think-act cycle.
@@ -272,6 +300,7 @@ impl OperatorLoop {
         let mut decisions = Vec::new();
         let mut allowed_count = 0;
         let mut denied_count = 0;
+        let mut pending_confirmation_count = 0;
 
         for proposal in &proposals {
             // Scope check (first gate)
@@ -285,6 +314,9 @@ impl OperatorLoop {
                 if config.log_denied_proposals {
                     self.log_activity(cycle, &decision).await;
                 }
+                self.broadcaster.broadcast(
+                    crate::collaboration::CollaborationEvent::operator_decision(cycle, decision.clone()),
+                );
                 decisions.push(decision);
                 denied_count += 1;
                 continue;
@@ -300,35 +332,75 @@ impl OperatorLoop {
                 })
             };
 
-            let (allowed, denial_reason, requires_confirmation) = match guard_decision {
+            let decision = match guard_decision {
                 AutopilotGuardDecision::Allow {
                     requires_confirmation,
                 } => {
-                    allowed_count += 1;
-                    (true, None, requires_confirmation)
+                    if requires_confirmation {
+                        // CoPilot assist mode: enqueue for human review
+                        let conf_req = ConfirmationRequest::new(cycle, proposal.clone());
+                        self.confirmation_queue.enqueue(conf_req.clone()).await;
+                        pending_confirmation_count += 1;
+                        self.broadcaster.broadcast(
+                            crate::collaboration::CollaborationEvent::confirmation_requested(conf_req),
+                        );
+                        // Not allowed yet — pending human confirmation
+                        OperatorDecision {
+                            proposal: proposal.clone(),
+                            allowed: false,
+                            denial_reason: Some("pending_confirmation".to_string()),
+                            requires_confirmation: true,
+                        }
+                    } else {
+                        allowed_count += 1;
+                        OperatorDecision {
+                            proposal: proposal.clone(),
+                            allowed: true,
+                            denial_reason: None,
+                            requires_confirmation: false,
+                        }
+                    }
                 }
                 AutopilotGuardDecision::Deny { reason } => {
                     denied_count += 1;
-                    (false, Some(reason), false)
+                    OperatorDecision {
+                        proposal: proposal.clone(),
+                        allowed: false,
+                        denial_reason: Some(reason),
+                        requires_confirmation: false,
+                    }
                 }
                 AutopilotGuardDecision::ConfigUpdated => {
                     denied_count += 1;
-                    (false, Some("config_updated".to_string()), false)
+                    OperatorDecision {
+                        proposal: proposal.clone(),
+                        allowed: false,
+                        denial_reason: Some("config_updated".to_string()),
+                        requires_confirmation: false,
+                    }
                 }
-            };
-
-            let decision = OperatorDecision {
-                proposal: proposal.clone(),
-                allowed,
-                denial_reason: denial_reason.clone(),
-                requires_confirmation,
             };
 
             // Log all activities (both allowed and denied)
             self.log_activity(cycle, &decision).await;
 
+            // Broadcast the decision to all CoPilot participants
+            self.broadcaster.broadcast(
+                crate::collaboration::CollaborationEvent::operator_decision(cycle, decision.clone()),
+            );
+
             decisions.push(decision);
         }
+
+        // Broadcast cycle completion
+        self.broadcaster.broadcast(
+            crate::collaboration::CollaborationEvent::cycle_completed(
+                cycle,
+                allowed_count,
+                denied_count,
+                pending_confirmation_count,
+            ),
+        );
 
         Ok(OperatorProposalResponse {
             model: llm_response.model,

@@ -22,14 +22,20 @@ jobs:
         include:
           - label: linux-x64
             os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
           - label: linux-arm64
-            os: ubuntu-24.04-arm
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
           - label: darwin-x64
             os: macos-13
+            target: x86_64-apple-darwin
           - label: darwin-arm64
             os: macos-14
+            target: aarch64-apple-darwin
           - label: windows-x64
             os: windows-latest
+            target: x86_64-pc-windows-msvc
 
     steps:
       - name: Checkout
@@ -37,6 +43,14 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install arm64 cross-compiler
+        if: matrix.cross == true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -56,9 +70,16 @@ jobs:
         shell: bash
         env:
           SQLX_OFFLINE: "true"
-        run: cargo build --release -p helix-api
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          if [[ -n "${{ matrix.cross }}" ]]; then
+            cargo build --release -p helix-api --target ${{ matrix.target }}
+          else
+            cargo build --release -p helix-api
+          fi
 
       - name: Smoke-test binary
+        if: matrix.cross != true
         shell: bash
         run: |
           exe="target/release/helix-api"
@@ -74,32 +95,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          case "${RUNNER_OS}" in
-            Linux) os="linux" ;;
-            macOS) os="darwin" ;;
-            Windows) os="windows" ;;
-            *) echo "unsupported runner OS: ${RUNNER_OS}" >&2; exit 1 ;;
-          esac
+          # Determine OS and arch from the matrix label
+          label="${{ matrix.label }}"
+          os="${label%%-*}"
+          arch="${label##*-}"
 
-          case "${RUNNER_ARCH}" in
-            X64) arch="x64" ;;
-            ARM64) arch="arm64" ;;
-            *) echo "unsupported runner arch: ${RUNNER_ARCH}" >&2; exit 1 ;;
+          case "$os" in
+            linux)   os_name="linux" ;;
+            darwin)  os_name="darwin" ;;
+            windows) os_name="windows" ;;
+            *) echo "unsupported os: $os" >&2; exit 1 ;;
           esac
 
           exe=""
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          if [[ "$os_name" == "windows" ]]; then
             exe=".exe"
           fi
 
-          suffix="${os}-${arch}"
+          # Binary location: target/release/ for native, target/<target>/release/ for cross
+          if [[ -n "${{ matrix.cross }}" ]]; then
+            bin_dir="target/${{ matrix.target }}/release"
+          else
+            bin_dir="target/release"
+          fi
+
+          suffix="${os_name}-${arch}"
           archive="helix-api-${suffix}.tar.gz"
           staging="target/release-package/helix-api-${suffix}"
           rm -rf "$staging"
           mkdir -p "$staging/bin" "$staging/ui"
 
-          cp "target/release/helix-api${exe}" "$staging/bin/"
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          cp "${bin_dir}/helix-api${exe}" "$staging/bin/"
+          if [[ "$os_name" == "windows" ]]; then
             cat > "$staging/bin/helix.cmd" <<'EOF'
 @echo off
 if "%HELIX_UI_DIST%"=="" set "HELIX_UI_DIST=%~dp0..\ui\dist"

@@ -127,21 +127,9 @@ jobs:
 
           cp "${bin_dir}/helix-api${exe}" "$staging/bin/"
           if [[ "$os_name" == "windows" ]]; then
-            cat > "$staging/bin/helix.cmd" <<'EOF'
-@echo off
-if "%HELIX_UI_DIST%"=="" set "HELIX_UI_DIST=%~dp0..\ui\dist"
-"%~dp0helix-api.exe" %*
-EOF
+            printf '@echo off\nif "%%HELIX_UI_DIST%%"=="" set "HELIX_UI_DIST=%%~dp0..\\ui\\dist"\n"%%~dp0helix-api.exe" %%*\n' > "$staging/bin/helix.cmd"
           else
-            cat > "$staging/bin/helix" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -z "${HELIX_UI_DIST:-}" ]]; then
-  export HELIX_UI_DIST="$(cd "$SCRIPT_DIR/../ui/dist" && pwd)"
-fi
-exec "$SCRIPT_DIR/helix-api" "$@"
-EOF
+            printf '#!/usr/bin/env bash\nset -euo pipefail\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\nif [[ -z "${HELIX_UI_DIST:-}" ]]; then\n  export HELIX_UI_DIST="$(cd "$SCRIPT_DIR/../ui/dist" && pwd)"\nfi\nexec "$SCRIPT_DIR/helix-api" "$@"\n' > "$staging/bin/helix"
             chmod 0755 "$staging/bin/helix"
           fi
           cp -R ui/dist "$staging/ui/dist"

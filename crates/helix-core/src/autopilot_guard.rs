@@ -175,10 +175,10 @@ impl AutopilotGuardMachine {
                 }
 
                 if self.config.mode == AutopilotMode::Assist && !confirmed_by_human {
-                    self.stats.denied = self.stats.denied.saturating_add(1);
-                    return AutopilotGuardDecision::Deny {
-                        reason: "assist_requires_confirmation".to_string(),
-                    };
+                    // In assist mode, unconfirmed proposals are not denied — they
+                    // are allowed with requires_confirmation=true so the caller
+                    // can enqueue them for human review. The action-specific
+                    // checks below still apply.
                 }
 
                 match action {
@@ -227,15 +227,21 @@ mod tests {
     #[test]
     fn assist_mode_requires_confirmation() {
         let mut machine = AutopilotGuardMachine::default();
-        let denied = machine.step(AutopilotGuardInput::Evaluate {
+        // In assist mode, unconfirmed proposals are allowed with requires_confirmation=true
+        // so they can be enqueued for human review (not denied).
+        let result = machine.step(AutopilotGuardInput::Evaluate {
             action: AutopilotActionClass::PolicySimulation { command_count: 3 },
             confirmed_by_human: false,
         });
         assert!(matches!(
-            denied,
-            AutopilotGuardDecision::Deny { reason } if reason == "assist_requires_confirmation"
+            result,
+            AutopilotGuardDecision::Allow {
+                requires_confirmation: true
+            }
         ));
 
+        // When confirmed by human, still allowed with requires_confirmation=true
+        // (the confirmation flag means the human already approved it).
         let allowed = machine.step(AutopilotGuardInput::Evaluate {
             action: AutopilotActionClass::PolicySimulation { command_count: 3 },
             confirmed_by_human: true,

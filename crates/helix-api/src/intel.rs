@@ -494,11 +494,11 @@ pub(crate) struct CaseTransitionResponse {
 
 #[derive(Debug, Clone)]
 pub(crate) struct IntelDeskStore {
-    sources: BTreeMap<String, SourceDefinition>,
-    watchlists: BTreeMap<String, Watchlist>,
-    evidence: BTreeMap<String, EvidenceItem>,
-    claims: BTreeMap<String, ClaimRecord>,
-    cases: BTreeMap<String, CaseFile>,
+    pub(crate) sources: BTreeMap<String, SourceDefinition>,
+    pub(crate) watchlists: BTreeMap<String, Watchlist>,
+    pub(crate) evidence: BTreeMap<String, EvidenceItem>,
+    pub(crate) claims: BTreeMap<String, ClaimRecord>,
+    pub(crate) cases: BTreeMap<String, CaseFile>,
 }
 
 #[derive(Debug, Clone)]

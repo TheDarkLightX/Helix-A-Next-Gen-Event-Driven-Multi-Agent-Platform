@@ -242,9 +242,14 @@ async fn assist_mode_requires_confirmation() {
     }
 
     let result = loop_runner.run_cycle(&StubContext, &StubLlmProvider).await.unwrap();
-    // In assist mode without human confirmation, guard denies
-    assert_eq!(result.denied_count, 1);
+    // In assist mode without human confirmation, proposals are allowed with
+    // requires_confirmation=true and enqueued to the confirmation queue.
+    // They are not "denied" — they're pending human review.
+    assert_eq!(result.denied_count, 0);
     assert_eq!(result.allowed_count, 0);
+    assert_eq!(result.proposals.len(), 1);
+    // The proposal should be pending confirmation
+    assert!(result.decisions.iter().all(|d| d.requires_confirmation));
 }
 
 #[test]

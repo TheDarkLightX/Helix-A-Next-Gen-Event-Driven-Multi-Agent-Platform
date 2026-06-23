@@ -275,7 +275,7 @@ impl OperatorLoop {
                 content: user_prompt,
                 function_call: None,
             }],
-            max_tokens: Some(1024),
+            max_tokens: Some(4096),
             temperature: Some(0.0),
             top_p: Some(1.0),
             functions: None,

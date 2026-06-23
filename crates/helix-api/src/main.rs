@@ -2813,7 +2813,7 @@ async fn complete_autopilot_proposal(
             content: user_payload,
             function_call: None,
         }],
-        max_tokens: Some(512),
+        max_tokens: Some(4096),
         temperature: Some(0.0),
         top_p: Some(1.0),
         functions: None,
@@ -3022,6 +3022,18 @@ async fn post_autopilot_execute(
         AutopilotGuardDecision::Allow {
             requires_confirmation,
         } => {
+            if requires_confirmation && !req.confirmed_by_human {
+                return (
+                    StatusCode::OK,
+                    Json(AutopilotExecuteResponse {
+                        allowed: false,
+                        reason: Some("assist_requires_confirmation".to_string()),
+                        requires_confirmation: true,
+                        result: None,
+                    }),
+                )
+                    .into_response();
+            }
             let result = async {
                 let value = match req.action {
                     AutopilotActionRequest::PolicySimulation { commands } => {
@@ -6664,7 +6676,9 @@ mod tests {
 
         assert!(matches!(
             payload.guard_preview.decision_unconfirmed,
-            AutopilotGuardDecision::Deny { reason } if reason == "assist_requires_confirmation"
+            AutopilotGuardDecision::Allow {
+                requires_confirmation: true
+            }
         ));
         assert!(matches!(
             payload.guard_preview.decision_confirmed,
@@ -6702,6 +6716,7 @@ mod tests {
             payload.reason.as_deref(),
             Some("assist_requires_confirmation")
         );
+        assert!(payload.requires_confirmation);
     }
 
     #[tokio::test]

@@ -20,10 +20,135 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use helix_core::autopilot_guard::AutopilotMode;
+use helix_core::intel_desk::CaseStatus;
+use helix_operator::context::{
+    DeskContext, DeskContextSnapshot, DeskContextSummary, EvidenceSummary,
+    RecentDecisionSummary, WatchlistSummary,
+};
 use helix_operator::{
     DeskOperatorConfig, OperatorActionScope, OperatorActivityEntry, OperatorStatus,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+/// Adapter that implements [`DeskContext`] by snapshotting the API's intel desk.
+struct ApiDeskContext {
+    snapshot: DeskContextSnapshot,
+}
+
+impl DeskContext for ApiDeskContext {
+    fn snapshot(&self, _max_items: usize) -> DeskContextSnapshot {
+        self.snapshot.clone()
+    }
+}
+
+/// Builds a [`DeskContextSnapshot`] from the API's intel desk store.
+async fn build_desk_snapshot(
+    desk: &crate::intel::IntelDeskStore,
+    max_items: usize,
+    activity_log: &helix_operator::OperatorActivityLog,
+) -> DeskContextSnapshot {
+    let source_count = desk.sources.len();
+    let watchlist_count = desk.watchlists.len();
+    let evidence_count = desk.evidence.len();
+    let claim_count = desk.claims.len();
+    let open_case_count = desk
+        .cases
+        .values()
+        .filter(|c| !matches!(c.status, CaseStatus::Closed))
+        .count();
+    let escalated_case_count = desk
+        .cases
+        .values()
+        .filter(|c| matches!(c.status, CaseStatus::Escalated))
+        .count();
+
+    // Top cases (open, sorted by evidence count as a proxy for priority)
+    let mut top_cases: Vec<_> = desk
+        .cases
+        .values()
+        .filter(|c| !matches!(c.status, CaseStatus::Closed))
+        .map(|c| DeskContextSummary {
+            id: c.id.clone(),
+            title: c.title.clone(),
+            status: format!("{:?}", c.status).to_lowercase(),
+            watchlist_id: c.watchlist_id.clone(),
+            primary_entity: c.primary_entity.clone(),
+            evidence_count: c.evidence_ids.len(),
+            claim_count: c.claim_ids.len(),
+            latest_reason: c.latest_reason.clone(),
+            priority_total: (c.evidence_ids.len() as u64) * 10 + (c.claim_ids.len() as u64) * 5,
+        })
+        .collect();
+    top_cases.sort_by(|a, b| b.priority_total.cmp(&a.priority_total));
+    top_cases.truncate(max_items);
+
+    // Recent evidence
+    let recent_evidence: Vec<EvidenceSummary> = desk
+        .evidence
+        .values()
+        .rev()
+        .take(max_items)
+        .map(|e| {
+            let trust_score = desk
+                .sources
+                .get(&e.source_id)
+                .map(|s| s.trust_score)
+                .unwrap_or(0);
+            EvidenceSummary {
+                id: e.id.clone(),
+                title: e.title.clone(),
+                source_id: e.source_id.clone(),
+                trust_score,
+                observed_at: e.observed_at.clone(),
+                entity_labels: e.entity_labels.clone(),
+                tags: e.tags.clone(),
+            }
+        })
+        .collect();
+
+    // Active watchlists
+    let active_watchlists: Vec<WatchlistSummary> = desk
+        .watchlists
+        .values()
+        .filter(|w| w.enabled)
+        .take(max_items)
+        .map(|w| WatchlistSummary {
+            id: w.id.clone(),
+            name: w.name.clone(),
+            severity: format!("{:?}", w.severity).to_lowercase(),
+            keywords: w.keywords.clone(),
+            enabled: w.enabled,
+        })
+        .collect();
+
+    // Recent decisions from activity log
+    let recent_decisions: Vec<RecentDecisionSummary> = activity_log
+        .recent(5)
+        .await
+        .into_iter()
+        .map(|e| RecentDecisionSummary {
+            action_type: e.action_type,
+            decision: if e.allowed { "allowed".into() } else { "denied".into() },
+            denial_reason: e.denial_reason,
+            rationale: e.rationale,
+            timestamp: e.timestamp,
+        })
+        .collect();
+
+    DeskContextSnapshot {
+        source_count,
+        watchlist_count,
+        evidence_count,
+        claim_count,
+        open_case_count,
+        escalated_case_count,
+        top_cases,
+        recent_evidence,
+        active_watchlists,
+        recent_decisions,
+    }
+}
 
 /// Query params for limiting activity log results.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -183,6 +308,62 @@ pub async fn update_operator_config(
 pub async fn start_operator(State(state): State<AppState>) -> Response {
     match state.operator_loop.start().await {
         Ok(()) => {
+            // Spawn the background loop task
+            let operator_loop = Arc::clone(&state.operator_loop);
+            let llm_provider = state.llm_provider.clone();
+            let intel_desk = Arc::clone(&state.intel_desk);
+            let activity_log = operator_loop.activity_log().clone();
+
+            // If no LLM provider is configured, we can't run the loop
+            let Some(provider) = llm_provider else {
+                let status = state.operator_loop.status().await;
+                return Json(OperatorControlResponse { status }).into_response();
+            };
+
+            tokio::spawn(async move {
+                tracing::info!("operator loop task started");
+                loop {
+                    // Check if we should still be running
+                    let status = operator_loop.status().await;
+                    if status != OperatorStatus::Running {
+                        tracing::info!("operator loop task stopping (status={:?})", status);
+                        break;
+                    }
+
+                    // Get config for interval and context size
+                    let config = operator_loop.config().await;
+
+                    // Build desk context snapshot from the intel desk
+                    let snapshot = {
+                        let desk = intel_desk.read().await;
+                        build_desk_snapshot(&desk, config.max_context_items, &activity_log).await
+                    };
+                    let context = ApiDeskContext { snapshot };
+
+                    // Run one cycle
+                    match operator_loop.run_cycle(&context, provider.as_ref()).await {
+                        Ok(response) => {
+                            tracing::info!(
+                                proposals = response.proposals.len(),
+                                allowed = response.allowed_count,
+                                denied = response.denied_count,
+                                "operator cycle completed"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!("operator cycle error: {}", e);
+                        }
+                    }
+
+                    // Sleep until next cycle
+                    tokio::time::sleep(std::time::Duration::from_secs(
+                        config.loop_interval_secs.max(5),
+                    ))
+                    .await;
+                }
+                tracing::info!("operator loop task exited");
+            });
+
             let status = state.operator_loop.status().await;
             Json(OperatorControlResponse { status }).into_response()
         }

@@ -10,7 +10,10 @@ if (-not [Environment]::Is64BitOperatingSystem) {
   throw "Only 64-bit Windows release assets are currently published."
 }
 
-$asset = "helix-api-windows-x64.tar.gz"
+$osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+$arch = if ($osArch -eq "Arm64") { "arm64" } else { "x64" }
+
+$asset = "helix-api-windows-$arch.tar.gz"
 if ($Version -eq "latest") {
   $url = "https://github.com/$Repo/releases/latest/download/$asset"
 } else {

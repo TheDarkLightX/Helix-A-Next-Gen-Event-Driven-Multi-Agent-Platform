@@ -749,9 +749,126 @@ impl SymbolicProgramCache {
     }
 }
 
+/// Parsed command-line arguments.
+struct CliArgs {
+    addr: Option<SocketAddr>,
+    ui_dist: Option<PathBuf>,
+}
+
+const HELIX_VERSION: &str = env!("CARGO_PKG_VERSION");
+const HELIX_HELP_TEXT: &str = "\
+Helix — Event-Driven Multi-Agent Intelligence Platform
+
+USAGE:
+    helix [OPTIONS]
+
+OPTIONS:
+    --addr <ADDR>       Listen address (default: 127.0.0.1:3000, env: HELIX_API_ADDR)
+    --ui-dist <DIR>     Path to built UI static files (env: HELIX_UI_DIST)
+    --version, -V       Print version and exit
+    --help, -h          Print this help and exit
+
+ENVIRONMENT:
+    HELIX_API_ADDR              Listen address (default: 127.0.0.1:3000)
+    HELIX_UI_DIST               Path to UI static files directory
+    DATABASE_URL                PostgreSQL connection string (optional, in-memory if unset)
+    HELIX_AUTO_MIGRATE          Run DB migrations on startup (default: false)
+    HELIX_AUTH_REQUIRED         Require API token auth (default: false)
+    HELIX_API_TOKEN             API token for authentication
+    HELIX_AUTOPILOT_LLM_MODEL   LLM model for operator (e.g. gpt-4o)
+    HELIX_AUTOPILOT_MODE        Operator mode: off | assist | auto (default: assist)
+
+EXAMPLES:
+    helix                                    Start with defaults
+    helix --addr 0.0.0.0:3000                Listen on all interfaces
+    helix --ui-dist ./ui/dist                Serve UI from custom path
+    HELIX_AUTOPILOT_LLM_MODEL=gpt-4o helix   Start with LLM operator
+";
+
+fn parse_cli_args() -> CliArgs {
+    let mut args = CliArgs {
+        addr: None,
+        ui_dist: None,
+    };
+    let mut iter = std::env::args().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                println!("helix {}", HELIX_VERSION);
+                std::process::exit(0);
+            }
+            "--help" | "-h" => {
+                print!("{}", HELIX_HELP_TEXT);
+                std::process::exit(0);
+            }
+            "--addr" => {
+                let Some(value) = iter.next() else {
+                    eprintln!("error: --addr requires a value (e.g. --addr 0.0.0.0:3000)");
+                    std::process::exit(2);
+                };
+                match value.parse::<SocketAddr>() {
+                    Ok(addr) => args.addr = Some(addr),
+                    Err(e) => {
+                        eprintln!("error: invalid --addr value '{value}': {e}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--ui-dist" => {
+                let Some(value) = iter.next() else {
+                    eprintln!("error: --ui-dist requires a value (e.g. --ui-dist ./ui/dist)");
+                    std::process::exit(2);
+                };
+                args.ui_dist = Some(PathBuf::from(value));
+            }
+            other if other.starts_with("--addr=") => {
+                let value = &other[7..];
+                match value.parse::<SocketAddr>() {
+                    Ok(addr) => args.addr = Some(addr),
+                    Err(e) => {
+                        eprintln!("error: invalid --addr value '{value}': {e}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            other if other.starts_with("--ui-dist=") => {
+                args.ui_dist = Some(PathBuf::from(&other[10..]));
+            }
+            other => {
+                eprintln!("error: unknown argument '{other}'\n\nRun 'helix --help' for usage.");
+                std::process::exit(2);
+            }
+        }
+    }
+    args
+}
+
+fn print_startup_banner(addr: SocketAddr, ui_served: bool, db_connected: bool) {
+    let ui_status = if ui_served { "enabled" } else { "disabled (no UI dist found)" };
+    let db_status = if db_connected { "PostgreSQL" } else { "in-memory" };
+    eprintln!();
+    eprintln!("  ╔══════════════════════════════════════════════╗");
+    eprintln!("  ║          Helix v{}                        ║", HELIX_VERSION);
+    eprintln!("  ║          Event-Driven Multi-Agent Platform   ║");
+    eprintln!("  ╚══════════════════════════════════════════════╝");
+    eprintln!();
+    eprintln!("  Web UI:     http://{}  ({})", addr, ui_status);
+    eprintln!("  API:        http://{}/api/v1/health", addr);
+    eprintln!("  Storage:    {}", db_status);
+    eprintln!();
+    eprintln!("  Press Ctrl+C to stop.");
+    eprintln!();
+}
+
 #[tokio::main]
 async fn main() {
+    let cli = parse_cli_args();
     tracing_subscriber::fmt::init();
+
+    // CLI --ui-dist overrides env var
+    if let Some(ui_dist) = &cli.ui_dist {
+        std::env::set_var(HELIX_UI_DIST_ENV, ui_dist);
+    }
 
     let (llm_provider, llm_model) = match llm_provider_from_env() {
         Some((provider, model)) => (Some(provider), Some(model)),
@@ -831,7 +948,10 @@ async fn main() {
     };
     let app = app_with_optional_static_ui(state);
 
-    let addr = api_addr_from_env();
+    let addr = cli.addr.unwrap_or_else(api_addr_from_env);
+    let ui_served = std::env::var_os(HELIX_UI_DIST_ENV).is_some();
+    let db_connected = postgres_pool.is_some();
+    print_startup_banner(addr, ui_served, db_connected);
     tracing::info!("listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

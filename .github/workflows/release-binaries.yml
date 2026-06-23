@@ -14,12 +14,22 @@ env:
 
 jobs:
   package:
-    name: Package ${{ matrix.os }}
+    name: Package ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - label: linux-x64
+            os: ubuntu-latest
+          - label: linux-arm64
+            os: ubuntu-24.04-arm
+          - label: darwin-x64
+            os: macos-13
+          - label: darwin-arm64
+            os: macos-14
+          - label: windows-x64
+            os: windows-latest
 
     steps:
       - name: Checkout
@@ -44,7 +54,19 @@ jobs:
 
       - name: Build API binary
         shell: bash
+        env:
+          SQLX_OFFLINE: "true"
         run: cargo build --release -p helix-api
+
+      - name: Smoke-test binary
+        shell: bash
+        run: |
+          exe="target/release/helix-api"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            exe="target/release/helix-api.exe"
+          fi
+          "$exe" --version
+          "$exe" --help
 
       - name: Package archive
         id: package
@@ -128,3 +150,4 @@ EOF
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.tar.gz
+          generate_release_notes: true

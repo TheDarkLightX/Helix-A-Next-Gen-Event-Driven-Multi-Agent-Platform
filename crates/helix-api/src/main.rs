@@ -94,7 +94,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
@@ -119,6 +119,7 @@ pub(crate) struct AppState {
     federation_log: DispatchLog,
     federation_desk_id: String,
     operator_loop: Arc<helix_operator::OperatorLoop>,
+    operator_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     operator_registry: helix_operator::OperatorRegistry,
 }
 
@@ -944,6 +945,7 @@ async fn main() {
         operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
             helix_operator::DeskOperatorConfig::default(),
         )),
+        operator_task: Arc::new(Mutex::new(None)),
         operator_registry: helix_operator::OperatorRegistry::new(),
     };
     let app = app_with_optional_static_ui(state);
@@ -3587,6 +3589,7 @@ mod tests {
             operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
                 helix_operator::DeskOperatorConfig::default(),
             )),
+            operator_task: Arc::new(Mutex::new(None)),
             operator_registry: helix_operator::OperatorRegistry::new(),
         }
     }
@@ -3712,6 +3715,24 @@ mod tests {
         async fn health_check(&self) -> Result<(), LlmError> {
             Ok(())
         }
+    }
+
+    fn operator_test_app() -> Router {
+        let provider = StubLlmProvider {
+            content: serde_json::json!([
+                {
+                    "type": "log_analysis",
+                    "rationale": "operator test cycle",
+                    "parameters": {
+                        "severity": "low",
+                        "summary": "ok"
+                    }
+                }
+            ])
+            .to_string(),
+            model: "stub-model".to_string(),
+        };
+        test_app_with_llm(Arc::new(provider), "stub-model".to_string())
     }
 
     #[tokio::test]
@@ -7090,7 +7111,7 @@ mod tests {
 
     #[tokio::test]
     async fn operator_start_then_stop_changes_status() {
-        let app = test_app();
+        let app = operator_test_app();
 
         // Start
         let response = app
@@ -7127,8 +7148,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn operator_pause_changes_status_to_paused() {
+    async fn operator_start_without_llm_provider_fails() {
         let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn operator_pause_changes_status_to_paused() {
+        let app = operator_test_app();
 
         // Start first
         let _ = app
@@ -7195,7 +7232,7 @@ mod tests {
 
     #[tokio::test]
     async fn operator_double_start_returns_bad_request() {
-        let app = test_app();
+        let app = operator_test_app();
         // First start
         let _ = app
             .clone()

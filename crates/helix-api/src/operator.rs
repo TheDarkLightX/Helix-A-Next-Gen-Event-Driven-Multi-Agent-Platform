@@ -43,10 +43,10 @@ impl DeskContext for ApiDeskContext {
 }
 
 /// Builds a [`DeskContextSnapshot`] from the API's intel desk store.
-async fn build_desk_snapshot(
+fn build_desk_snapshot(
     desk: &crate::intel::IntelDeskStore,
     max_items: usize,
-    activity_log: &helix_operator::OperatorActivityLog,
+    recent_activity: Vec<OperatorActivityEntry>,
 ) -> DeskContextSnapshot {
     let source_count = desk.sources.len();
     let watchlist_count = desk.watchlists.len();
@@ -123,9 +123,7 @@ async fn build_desk_snapshot(
         .collect();
 
     // Recent decisions from activity log
-    let recent_decisions: Vec<RecentDecisionSummary> = activity_log
-        .recent(5)
-        .await
+    let recent_decisions: Vec<RecentDecisionSummary> = recent_activity
         .into_iter()
         .map(|e| RecentDecisionSummary {
             action_type: e.action_type,
@@ -304,65 +302,74 @@ pub async fn update_operator_config(
     Json(OperatorConfigResponse { config: current }).into_response()
 }
 
+fn spawn_operator_task(
+    operator_loop: Arc<helix_operator::OperatorLoop>,
+    provider: Arc<dyn helix_llm::providers::LlmProvider>,
+    intel_desk: Arc<tokio::sync::RwLock<crate::intel::IntelDeskStore>>,
+) -> tokio::task::JoinHandle<()> {
+    let activity_log = operator_loop.activity_log().clone();
+
+    tokio::spawn(async move {
+        tracing::info!("operator loop task started");
+        loop {
+            let status = operator_loop.status().await;
+            if status != OperatorStatus::Running {
+                tracing::info!("operator loop task stopping (status={:?})", status);
+                break;
+            }
+
+            let config = operator_loop.config().await;
+            let recent_activity = activity_log.recent(5).await;
+            let snapshot = {
+                let desk = intel_desk.read().await;
+                build_desk_snapshot(&desk, config.max_context_items, recent_activity)
+            };
+            let context = ApiDeskContext { snapshot };
+
+            match operator_loop.run_cycle(&context, provider.as_ref()).await {
+                Ok(response) => {
+                    tracing::info!(
+                        proposals = response.proposals.len(),
+                        allowed = response.allowed_count,
+                        denied = response.denied_count,
+                        "operator cycle completed"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("operator cycle error: {}", e);
+                }
+            }
+
+            tokio::time::sleep(std::time::Duration::from_secs(
+                config.loop_interval_secs.max(5),
+            ))
+            .await;
+        }
+        tracing::info!("operator loop task exited");
+    })
+}
+
 /// `POST /api/v1/operator/start`
 pub async fn start_operator(State(state): State<AppState>) -> Response {
+    let Some(provider) = state.llm_provider.as_ref().map(Arc::clone) else {
+        return api_error_response(HelixError::ValidationError {
+            context: "llm_provider".to_string(),
+            message: "operator requires a configured LLM provider".to_string(),
+        });
+    };
+
+    let mut task = state.operator_task.lock().await;
+    if state.operator_loop.status().await != OperatorStatus::Running {
+        if let Some(handle) = task.take() {
+            handle.abort();
+        }
+    }
+
     match state.operator_loop.start().await {
         Ok(()) => {
-            // Spawn the background loop task
             let operator_loop = Arc::clone(&state.operator_loop);
-            let llm_provider = state.llm_provider.clone();
             let intel_desk = Arc::clone(&state.intel_desk);
-            let activity_log = operator_loop.activity_log().clone();
-
-            // If no LLM provider is configured, we can't run the loop
-            let Some(provider) = llm_provider else {
-                let status = state.operator_loop.status().await;
-                return Json(OperatorControlResponse { status }).into_response();
-            };
-
-            tokio::spawn(async move {
-                tracing::info!("operator loop task started");
-                loop {
-                    // Check if we should still be running
-                    let status = operator_loop.status().await;
-                    if status != OperatorStatus::Running {
-                        tracing::info!("operator loop task stopping (status={:?})", status);
-                        break;
-                    }
-
-                    // Get config for interval and context size
-                    let config = operator_loop.config().await;
-
-                    // Build desk context snapshot from the intel desk
-                    let snapshot = {
-                        let desk = intel_desk.read().await;
-                        build_desk_snapshot(&desk, config.max_context_items, &activity_log).await
-                    };
-                    let context = ApiDeskContext { snapshot };
-
-                    // Run one cycle
-                    match operator_loop.run_cycle(&context, provider.as_ref()).await {
-                        Ok(response) => {
-                            tracing::info!(
-                                proposals = response.proposals.len(),
-                                allowed = response.allowed_count,
-                                denied = response.denied_count,
-                                "operator cycle completed"
-                            );
-                        }
-                        Err(e) => {
-                            tracing::warn!("operator cycle error: {}", e);
-                        }
-                    }
-
-                    // Sleep until next cycle
-                    tokio::time::sleep(std::time::Duration::from_secs(
-                        config.loop_interval_secs.max(5),
-                    ))
-                    .await;
-                }
-                tracing::info!("operator loop task exited");
-            });
+            *task = Some(spawn_operator_task(operator_loop, provider, intel_desk));
 
             let status = state.operator_loop.status().await;
             Json(OperatorControlResponse { status }).into_response()
@@ -378,6 +385,9 @@ pub async fn start_operator(State(state): State<AppState>) -> Response {
 pub async fn stop_operator(State(state): State<AppState>) -> Response {
     match state.operator_loop.stop().await {
         Ok(()) => {
+            if let Some(handle) = state.operator_task.lock().await.take() {
+                handle.abort();
+            }
             let status = state.operator_loop.status().await;
             Json(OperatorControlResponse { status }).into_response()
         }
@@ -392,6 +402,9 @@ pub async fn stop_operator(State(state): State<AppState>) -> Response {
 pub async fn pause_operator(State(state): State<AppState>) -> Response {
     match state.operator_loop.pause().await {
         Ok(()) => {
+            if let Some(handle) = state.operator_task.lock().await.take() {
+                handle.abort();
+            }
             let status = state.operator_loop.status().await;
             Json(OperatorControlResponse { status }).into_response()
         }
@@ -437,7 +450,7 @@ pub async fn clear_operator_activity(State(state): State<AppState>) -> Response 
 
 use helix_operator::{
     CollaborationEvent, ConfirmationRequest, JoinSessionRequest,
-    OperatorSession, SessionKind, SessionRole,
+    OperatorSession,
 };
 
 /// Response for `POST /api/v1/operator/sessions` (join).

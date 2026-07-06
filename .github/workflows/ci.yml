@@ -16,6 +16,8 @@ jobs:
   release-gates:
     name: Release gates
     runs-on: ubuntu-latest
+    env:
+      ESSO_READ_TOKEN_PRESENT: ${{ secrets.ESSO_READ_TOKEN != '' }}
 
     steps:
       - name: Checkout
@@ -41,14 +43,28 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
+      - name: Require ESSO verifier token
+        if: github.event_name != 'pull_request' && env.ESSO_READ_TOKEN_PRESENT != 'true'
+        shell: bash
+        run: |
+          echo "::error::ESSO_READ_TOKEN is required for release verification outside pull requests."
+          exit 1
+
+      - name: Checkout ESSO verifier
+        if: env.ESSO_READ_TOKEN_PRESENT == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: TheDarkLightX/ESSO
+          ref: ${{ env.HELIX_ESSO_REF }}
+          path: external/ESSO
+          token: ${{ secrets.ESSO_READ_TOKEN }}
+          persist-credentials: false
+
       - name: Install ESSO verifier
+        if: env.ESSO_READ_TOKEN_PRESENT == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf external/ESSO
-          git clone --depth 1 https://github.com/TheDarkLightX/ESSO.git external/ESSO
-          git -C external/ESSO fetch --depth 1 origin "$HELIX_ESSO_REF"
-          git -C external/ESSO checkout "$HELIX_ESSO_REF"
           python3 -m pip install --upgrade pip
           python3 -m pip install -e external/ESSO
 
@@ -64,5 +80,28 @@ jobs:
           fi
 
       - name: Run release verification
+        if: env.ESSO_READ_TOKEN_PRESENT == 'true'
         shell: bash
         run: bash scripts/verify_release.sh
+
+      - name: Run PR verification without private ESSO
+        if: github.event_name == 'pull_request' && env.ESSO_READ_TOKEN_PRESENT != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::notice::ESSO_READ_TOKEN is not configured; skipping private ESSO-backed formal verification for this pull request."
+          cargo test --manifest-path crates/helix-core/Cargo.toml
+          cargo test --manifest-path crates/helix-api/Cargo.toml
+          (
+            cd formal/lean
+            lake build
+          )
+          (
+            cd ui
+            npm run build
+          )
+          (
+            cd helix-ts-sdk
+            npm run asbuild
+            npm test
+          )

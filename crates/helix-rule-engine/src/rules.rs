@@ -22,7 +22,9 @@ use chrono::{DateTime, Utc};
 use helix_core::event::Event;
 use helix_core::types::RecipeId;
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as DeError;
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -82,8 +84,7 @@ fn default_enabled() -> bool {
 /// Serializes as an untagged enum so the JSON shape mirrors the field
 /// condition object (`{"field": ..., "operator": ..., "value": ...}`) or a
 /// logical combinator (`{"and": [...]}`, `{"or": [...]}`, `{"not": ...}`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum Condition {
     /// A leaf condition testing a single event field.
     Field(Box<FieldCondition>),
@@ -93,6 +94,90 @@ pub enum Condition {
     Or(ConditionList),
     /// Logical NOT over a single sub-condition.
     Not(Box<Condition>),
+}
+
+impl Serialize for Condition {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Condition::Field(field) => field.serialize(serializer),
+            Condition::And(list) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("and", &list.and)?;
+                map.end()
+            }
+            Condition::Or(list) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("or", &list.or)?;
+                map.end()
+            }
+            Condition::Not(inner) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("not", inner)?;
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Condition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("condition must be a JSON object"))?;
+        let logical_key_count = ["and", "or", "not"]
+            .iter()
+            .filter(|key| object.contains_key(**key))
+            .count();
+
+        if logical_key_count > 0 {
+            if logical_key_count != 1 || object.len() != 1 {
+                return Err(D::Error::custom(
+                    "logical condition must contain exactly one of 'and', 'or', or 'not'",
+                ));
+            }
+
+            if let Some(and_value) = object.get("and") {
+                let and = serde_json::from_value(and_value.clone()).map_err(D::Error::custom)?;
+                return Ok(Condition::And(ConditionList {
+                    and,
+                    or: Vec::new(),
+                }));
+            }
+
+            if let Some(or_value) = object.get("or") {
+                let or = serde_json::from_value(or_value.clone()).map_err(D::Error::custom)?;
+                return Ok(Condition::Or(ConditionList {
+                    and: Vec::new(),
+                    or,
+                }));
+            }
+
+            let inner = serde_json::from_value(
+                object
+                    .get("not")
+                    .expect("not key was counted above")
+                    .clone(),
+            )
+            .map_err(D::Error::custom)?;
+            return Ok(Condition::Not(Box::new(inner)));
+        }
+
+        if object.contains_key("field") {
+            let field = FieldCondition::deserialize(value).map_err(D::Error::custom)?;
+            return Ok(Condition::Field(Box::new(field)));
+        }
+
+        Err(D::Error::custom(
+            "condition must be a field condition or a logical condition",
+        ))
+    }
 }
 
 /// Wrapper for the logical combinator variants so the JSON shape is
@@ -849,6 +934,63 @@ mod tests {
         let condition: Condition = serde_json::from_value(json).unwrap();
         let event = make_event(json!({ "severity": "critical", "source": "osint" }));
         assert!(evaluate_condition(&event, &condition));
+    }
+
+    #[test]
+    fn logical_or_deserializes_by_or_key() {
+        let json = serde_json::json!({
+            "or": [
+                {
+                    "field": "event.data.severity",
+                    "operator": "equals",
+                    "value": "low"
+                },
+                {
+                    "field": "event.data.source",
+                    "operator": "equals",
+                    "value": "osint"
+                }
+            ]
+        });
+        let condition: Condition = serde_json::from_value(json).unwrap();
+        let event = make_event(json!({ "severity": "critical", "source": "intel" }));
+        assert!(!evaluate_condition(&event, &condition));
+    }
+
+    #[test]
+    fn logical_not_deserializes_by_not_key() {
+        let json = serde_json::json!({
+            "not": {
+                "field": "event.data.severity",
+                "operator": "equals",
+                "value": "critical"
+            }
+        });
+        let condition: Condition = serde_json::from_value(json).unwrap();
+        let event = make_event(json!({ "severity": "critical" }));
+        assert!(!evaluate_condition(&event, &condition));
+    }
+
+    #[test]
+    fn logical_condition_rejects_mixed_keys() {
+        let json = serde_json::json!({
+            "or": [],
+            "field": "event.data.severity",
+            "operator": "equals",
+            "value": "critical"
+        });
+        assert!(serde_json::from_value::<Condition>(json).is_err());
+    }
+
+    #[test]
+    fn logical_not_serializes_with_not_key() {
+        let condition = Condition::Not(Box::new(field_condition(
+            "event.data.severity",
+            Operator::Equals,
+            Some(json!("low")),
+        )));
+        let serialized = serde_json::to_value(condition).unwrap();
+        assert!(serialized.get("not").is_some());
     }
 
     #[test]

@@ -1401,3 +1401,476 @@ export async function deleteCredential(
     { retry: false }
   );
 }
+
+// --- Federation ---
+
+export type FederationEventKind =
+  | "case_escalated"
+  | "case_opened"
+  | "watchlist_hit"
+  | "evidence_ingested"
+  | "claim_reviewed"
+  | "autopilot_proposal"
+  | "manual_broadcast";
+
+export type DispatchStatus = "delivered" | "failed" | "unreachable";
+
+export type PeerDesk = {
+  id: string;
+  name: string;
+  endpoint_url: string;
+  auth_token: string;
+  trust_score: number;
+  enabled: boolean;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type FederationStatus = {
+  desk_id: string;
+  peer_count: number;
+  enabled_peer_count: number;
+  total_dispatches: number;
+  successful_dispatches: number;
+  failed_dispatches: number;
+  federation_enabled: boolean;
+};
+
+export type FederationOverview = {
+  desk_id: string;
+  peers: PeerDesk[];
+  status: FederationStatus;
+};
+
+export type DispatchLogEntry = {
+  id: string;
+  event_id: string;
+  peer_id: string;
+  peer_endpoint: string;
+  event_kind: string;
+  event_title: string;
+  status: DispatchStatus;
+  http_status: number | null;
+  error_message: string | null;
+  latency_ms: number;
+  dispatched_at: string;
+};
+
+export type DispatchLogResponse = {
+  entries: DispatchLogEntry[];
+};
+
+export type PeerListResponse = {
+  peers: PeerDesk[];
+};
+
+export type UpsertPeerRequest = {
+  id: string;
+  name: string;
+  endpoint_url: string;
+  auth_token: string;
+  trust_score: number;
+  enabled: boolean;
+  tags: string[];
+};
+
+export type ManualBroadcastRequest = {
+  title: string;
+  summary: string;
+  content: string;
+  url?: string | null;
+  entity_labels?: string[];
+  tags?: string[];
+};
+
+export type ManualBroadcastResponse = {
+  event_id: string;
+  dispatch_count: number;
+  results: DispatchLogEntry[];
+};
+
+export type FederationReceiveResponse = {
+  accepted: boolean;
+  evidence_id: string | null;
+  message: string;
+};
+
+export async function fetchFederationOverview(): Promise<FederationOverview> {
+  return requestJson<FederationOverview>(
+    API_BASE,
+    "/api/v1/federation/overview",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function fetchPeers(): Promise<PeerDesk[]> {
+  const payload = await requestJson<PeerListResponse>(
+    API_BASE,
+    "/api/v1/federation/peers",
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.peers;
+}
+
+export async function upsertPeer(request: UpsertPeerRequest): Promise<PeerDesk> {
+  const payload = await requestJson<{ peer: PeerDesk }>(
+    API_BASE,
+    "/api/v1/federation/peers",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.peer;
+}
+
+export async function deletePeer(peerId: string): Promise<PeerDesk> {
+  const payload = await requestJson<{ peer: PeerDesk }>(
+    API_BASE,
+    `/api/v1/federation/peers/${encodeURIComponent(peerId)}`,
+    { method: "DELETE" },
+    { retry: false }
+  );
+  return payload.peer;
+}
+
+export async function fetchDispatchLog(limit?: number): Promise<DispatchLogEntry[]> {
+  const query = limit ? `?limit=${limit}` : "";
+  const payload = await requestJson<DispatchLogResponse>(
+    API_BASE,
+    `/api/v1/federation/dispatch-log${query}`,
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.entries;
+}
+
+export async function manualBroadcast(
+  request: ManualBroadcastRequest
+): Promise<ManualBroadcastResponse> {
+  return requestJson<ManualBroadcastResponse>(
+    API_BASE,
+    "/api/v1/federation/broadcast",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+}
+
+// ---- Operator API ----
+
+export type OperatorStatus = "stopped" | "running" | "paused";
+export type OperatorActionScope =
+  | "observe_only"
+  | "intelligence"
+  | "policy"
+  | "full";
+
+export type DeskOperatorConfig = {
+  enabled: boolean;
+  autopilot_mode: AutopilotMode;
+  action_scope: OperatorActionScope;
+  loop_interval_secs: number;
+  max_actions_per_cycle: number;
+  max_context_items: number;
+  model: string;
+  rules_text: string;
+  dispatch_to_peers: boolean;
+  log_denied_proposals: boolean;
+};
+
+export type OperatorStatusResponse = {
+  status: OperatorStatus;
+  enabled: boolean;
+  autopilot_mode: AutopilotMode;
+  action_scope: OperatorActionScope;
+  loop_interval_secs: number;
+  model: string;
+  cycle_count: number;
+  activity_log_count: number;
+};
+
+export type OperatorConfigResponse = {
+  config: DeskOperatorConfig;
+};
+
+export type UpdateOperatorConfigRequest = {
+  enabled?: boolean;
+  autopilot_mode?: AutopilotMode;
+  action_scope?: OperatorActionScope;
+  loop_interval_secs?: number;
+  max_actions_per_cycle?: number;
+  max_context_items?: number;
+  model?: string;
+  rules_text?: string;
+  dispatch_to_peers?: boolean;
+  log_denied_proposals?: boolean;
+};
+
+export type OperatorControlResponse = {
+  status: OperatorStatus;
+};
+
+export type OperatorActivityEntry = {
+  id: string;
+  cycle: number;
+  action_type: string;
+  rationale: string;
+  allowed: boolean;
+  denial_reason: string | null;
+  requires_confirmation: boolean;
+  timestamp: string;
+};
+
+export type OperatorActivityResponse = {
+  entries: OperatorActivityEntry[];
+};
+
+export async function fetchOperatorStatus(): Promise<OperatorStatusResponse> {
+  return requestJson<OperatorStatusResponse>(
+    API_BASE,
+    "/api/v1/operator/status",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function fetchOperatorConfig(): Promise<DeskOperatorConfig> {
+  const payload = await requestJson<OperatorConfigResponse>(
+    API_BASE,
+    "/api/v1/operator/config",
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.config;
+}
+
+export async function updateOperatorConfig(
+  request: UpdateOperatorConfigRequest
+): Promise<DeskOperatorConfig> {
+  const payload = await requestJson<OperatorConfigResponse>(
+    API_BASE,
+    "/api/v1/operator/config",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.config;
+}
+
+export async function startOperator(): Promise<OperatorControlResponse> {
+  return requestJson<OperatorControlResponse>(
+    API_BASE,
+    "/api/v1/operator/start",
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function stopOperator(): Promise<OperatorControlResponse> {
+  return requestJson<OperatorControlResponse>(
+    API_BASE,
+    "/api/v1/operator/stop",
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function pauseOperator(): Promise<OperatorControlResponse> {
+  return requestJson<OperatorControlResponse>(
+    API_BASE,
+    "/api/v1/operator/pause",
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function fetchOperatorActivity(
+  limit?: number
+): Promise<OperatorActivityEntry[]> {
+  const query = limit ? `?limit=${limit}` : "";
+  const payload = await requestJson<OperatorActivityResponse>(
+    API_BASE,
+    `/api/v1/operator/activity${query}`,
+    { method: "GET" },
+    { retry: true }
+  );
+  return payload.entries;
+}
+
+// ---- CoPilot mode API ----
+
+export type SessionKind = "human" | "ai";
+export type SessionRole = "viewer" | "operator" | "admin";
+export type SessionStatus = "active" | "idle" | "disconnected";
+
+export type OperatorSession = {
+  id: string;
+  display_name: string;
+  kind: SessionKind;
+  role: SessionRole;
+  status: SessionStatus;
+  joined_at: string;
+  last_heartbeat: string;
+  location: string | null;
+};
+
+export type JoinSessionRequest = {
+  display_name: string;
+  kind?: SessionKind;
+  role?: SessionRole;
+  location?: string;
+};
+
+export type JoinSessionResponse = {
+  session: OperatorSession;
+};
+
+export type SessionListResponse = {
+  sessions: OperatorSession[];
+  human_count: number;
+  ai_count: number;
+};
+
+export type ConfirmationStatus = "pending" | "confirmed" | "denied" | "expired";
+
+export type OperatorProposal = {
+  type: string;
+  target_id: string | null;
+  rationale: string;
+  parameters: unknown;
+};
+
+export type ConfirmationRequest = {
+  id: string;
+  cycle: number;
+  proposal: OperatorProposal;
+  rationale: string;
+  requested_at: string;
+  status: ConfirmationStatus;
+  resolved_by: string | null;
+  resolved_by_name: string | null;
+  resolved_at: string | null;
+  denial_reason: string | null;
+};
+
+export type ConfirmationListResponse = {
+  pending: ConfirmationRequest[];
+  recent: ConfirmationRequest[];
+};
+
+export type ResolveConfirmationRequest = {
+  session_id: string;
+  denial_reason?: string;
+};
+
+export type ResolveConfirmationResponse = {
+  request: ConfirmationRequest;
+};
+
+export async function joinSession(
+  request: JoinSessionRequest
+): Promise<OperatorSession> {
+  const payload = await requestJson<JoinSessionResponse>(
+    API_BASE,
+    "/api/v1/operator/sessions",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    },
+    { retry: false }
+  );
+  return payload.session;
+}
+
+export async function leaveSession(sessionId: string): Promise<void> {
+  await requestJson(
+    API_BASE,
+    `/api/v1/operator/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+    { retry: false }
+  );
+}
+
+export async function listSessions(): Promise<SessionListResponse> {
+  return requestJson<SessionListResponse>(
+    API_BASE,
+    "/api/v1/operator/sessions",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function sessionHeartbeat(sessionId: string): Promise<void> {
+  await requestJson(
+    API_BASE,
+    `/api/v1/operator/sessions/${encodeURIComponent(sessionId)}/heartbeat`,
+    { method: "POST" },
+    { retry: false }
+  );
+}
+
+export async function listConfirmations(): Promise<ConfirmationListResponse> {
+  return requestJson<ConfirmationListResponse>(
+    API_BASE,
+    "/api/v1/operator/confirmations",
+    { method: "GET" },
+    { retry: true }
+  );
+}
+
+export async function confirmProposal(
+  confirmationId: string,
+  sessionId: string
+): Promise<ConfirmationRequest> {
+  const payload = await requestJson<ResolveConfirmationResponse>(
+    API_BASE,
+    `/api/v1/operator/confirmations/${encodeURIComponent(confirmationId)}/confirm`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    },
+    { retry: false }
+  );
+  return payload.request;
+}
+
+export async function denyProposal(
+  confirmationId: string,
+  sessionId: string,
+  denialReason?: string
+): Promise<ConfirmationRequest> {
+  const payload = await requestJson<ResolveConfirmationResponse>(
+    API_BASE,
+    `/api/v1/operator/confirmations/${encodeURIComponent(confirmationId)}/deny`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        denial_reason: denialReason,
+      }),
+    },
+    { retry: false }
+  );
+  return payload.request;
+}
+
+/// Creates an SSE connection to the operator event stream.
+/// Returns the EventSource (caller is responsible for closing it).
+export function operatorEventStreamUrl(): string {
+  return `${API_BASE}/api/v1/operator/stream`;
+}

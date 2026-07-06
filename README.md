@@ -37,7 +37,10 @@ Helix is not positioned as a generic automation clone. The main product surface 
 - Onchain EVM transaction shell with dry-run support and receipt polling
 - Autopilot control plane with `off`, `assist`, and `auto` modes
 - Operator UI for dashboard, sources, watchlists, evidence, cases, policy, agents, credentials, automation, audit, onchain, and autopilot
+- CoPilot mode for multi-participant desk collaboration (humans + AI copilots, real-time SSE, confirmation queue)
+- Federation layer for swarming intelligence desks across peers
 - Effect-powered UI transport layer for typed browser-side timeouts, retries, and HTTP error normalization
+- Single-binary distribution with bundled UI for Linux, macOS, and Windows
 - GitHub Pages marketing site under `site/`
 
 ## Architecture
@@ -51,25 +54,56 @@ Helix uses a functional core / imperative shell design:
 
 ## Quickstart
 
+### Install (one line)
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/main/scripts/install_helix.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+iwr https://raw.githubusercontent.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/main/scripts/install_helix.ps1 -OutFile install_helix.ps1
+.\install_helix.ps1
+```
+
+Then run:
+
+```bash
+helix
+```
+
+Open `http://127.0.0.1:3000` in your browser. Done.
+
+### From source
+
 ```bash
 ./scripts/setup_local.sh
 ./scripts/run_local.sh
 ```
 
-Containerized local run with Postgres:
+### Containerized (with Postgres)
 
 ```bash
 ./scripts/run_compose.sh
 ```
 
-Prebuilt release archives install a `helix` launcher with the UI bundled; see
-[`docs/install.md`](docs/install.md).
+### CLI options
+
+```
+helix                              Start with defaults (127.0.0.1:3000)
+helix --addr 0.0.0.0:3000          Listen on all interfaces
+helix --ui-dist ./ui/dist          Serve UI from custom path
+helix --version                    Print version
+helix --help                       Show all options
+```
 
 Default local addresses:
 
-- API: `http://127.0.0.1:3000`
-- UI: `http://127.0.0.1:5173`
-- Compose UI/API: `http://127.0.0.1:3000`
+- API + UI: `http://127.0.0.1:3000`
+- Dev UI (from source): `http://127.0.0.1:5173`
 
 ## Public Environment Configuration
 

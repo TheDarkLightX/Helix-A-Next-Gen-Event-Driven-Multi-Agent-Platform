@@ -12,17 +12,27 @@ import {
   fetchMarketIntelOverview,
   generateMarketIntelBrief,
 } from "../lib/api";
+import {
+  Panel,
+  StatCard,
+  StatGrid,
+  Badge,
+  Button,
+  Tag,
+  StatusLine,
+  CodeBlock,
+} from "../components";
 
-function caseStatusClass(activeCaseCount: number, escalatedCaseCount?: number) {
-  if ((escalatedCaseCount ?? 0) > 0) return "danger";
-  if (activeCaseCount > 0) return "warn";
-  return "ok";
+function caseStatusTone(activeCaseCount: number, escalatedCaseCount?: number) {
+  if ((escalatedCaseCount ?? 0) > 0) return "danger" as const;
+  if (activeCaseCount > 0) return "warn" as const;
+  return "ok" as const;
 }
 
-function briefStatusClass(status: MarketIntelCaseBrief["status"], attachedToCase: boolean) {
-  if (status === "escalated") return "danger";
-  if (attachedToCase || status === "brief_ready") return "ok";
-  return "warn";
+function briefStatusTone(status: MarketIntelCaseBrief["status"], attachedToCase: boolean) {
+  if (status === "escalated") return "danger" as const;
+  if (attachedToCase || status === "brief_ready") return "ok" as const;
+  return "warn" as const;
 }
 
 function priorityLabel(priority: PriorityBreakdown) {
@@ -31,17 +41,15 @@ function priorityLabel(priority: PriorityBreakdown) {
 
 function renderPlaybook(playbook: MarketIntelPlaybook) {
   return (
-    <div key={playbook.id} className="agent-card">
-      <div className="agent-card-head">
+    <div key={playbook.id} className="hx-card">
+      <div className="hx-card-head">
         <h3>{playbook.name}</h3>
-        <span className="status-pill info">deterministic</span>
+        <Badge tone="info">deterministic</Badge>
       </div>
-      <p>{playbook.objective}</p>
-      <div className="pill-row">
+      <p className="hx-description">{playbook.objective}</p>
+      <div className="hx-tag-row">
         {playbook.signals.map((signal) => (
-          <span key={signal} className="tag-chip">
-            {signal}
-          </span>
+          <Tag key={signal}>{signal}</Tag>
         ))}
       </div>
     </div>
@@ -50,29 +58,27 @@ function renderPlaybook(playbook: MarketIntelPlaybook) {
 
 function renderTheme(theme: MarketIntelThemeCard) {
   return (
-    <div key={theme.theme_id} className="agent-card">
-      <div className="agent-card-head">
+    <div key={theme.theme_id} className="hx-card">
+      <div className="hx-card-head">
         <h3>{theme.name}</h3>
-        <span className={`status-pill ${caseStatusClass(theme.active_case_count, theme.escalated_case_count)}`}>
+        <Badge tone={caseStatusTone(theme.active_case_count, theme.escalated_case_count)}>
           {theme.active_case_count > 0 ? `${theme.active_case_count} active` : "watching"}
-        </span>
+        </Badge>
       </div>
-      <p>{theme.summary}</p>
-      <div className="pill-row">
-        <span className="info-pill">{priorityLabel(theme.priority)}</span>
-        <span className="info-pill">watchlists: {theme.watchlist_count}</span>
-        <span className="info-pill">evidence: {theme.evidence_count}</span>
-        <span className="info-pill">escalated: {theme.escalated_case_count}</span>
+      <p className="hx-description">{theme.summary}</p>
+      <div className="hx-tag-row">
+        <Tag>{priorityLabel(theme.priority)}</Tag>
+        <Tag>watchlists: {theme.watchlist_count}</Tag>
+        <Tag>evidence: {theme.evidence_count}</Tag>
+        <Tag>escalated: {theme.escalated_case_count}</Tag>
       </div>
-      <div className="pill-row">
+      <div className="hx-tag-row">
         {theme.top_entities.length > 0 ? (
           theme.top_entities.map((entity) => (
-            <span key={entity} className="tag-chip">
-              {entity}
-            </span>
+            <Tag key={entity}>{entity}</Tag>
           ))
         ) : (
-          <span className="info-pill">no tracked entities yet</span>
+          <Tag>no tracked entities yet</Tag>
         )}
       </div>
     </div>
@@ -81,22 +87,20 @@ function renderTheme(theme: MarketIntelThemeCard) {
 
 function renderCompany(card: MarketIntelCompanyCard) {
   return (
-    <div key={card.company} className="command-row">
-      <div className="agent-card-head">
+    <div key={card.company} className="hx-row hx-row-stack">
+      <div className="hx-card-head">
         <h3>{card.company}</h3>
-        <span className={`status-pill ${caseStatusClass(card.active_case_count)}`}>
+        <Badge tone={caseStatusTone(card.active_case_count)}>
           {card.active_case_count > 0 ? `${card.active_case_count} cases` : "tracked"}
-        </span>
+        </Badge>
       </div>
-      <code>mentions: {card.mention_count}</code>
-      <code>claims: {card.claim_count}</code>
-      <code>latest_signal_at: {card.latest_signal_at ?? "none"}</code>
-      <div className="pill-row">
-        <span className="info-pill">{priorityLabel(card.priority)}</span>
+      <code className="hx-mono-detail">mentions: {card.mention_count}</code>
+      <code className="hx-mono-detail">claims: {card.claim_count}</code>
+      <code className="hx-mono-detail">latest_signal_at: {card.latest_signal_at ?? "none"}</code>
+      <div className="hx-tag-row">
+        <Tag>{priorityLabel(card.priority)}</Tag>
         {card.themes.map((theme) => (
-          <span key={theme} className="tag-chip">
-            {theme}
-          </span>
+          <Tag key={theme}>{theme}</Tag>
         ))}
       </div>
     </div>
@@ -109,67 +113,61 @@ function renderCaseBrief(
   onExport: (caseId: string) => void
 ) {
   return (
-    <div key={briefing.case_id} className="agent-card">
-      <div className="agent-card-head">
+    <div key={briefing.case_id} className="hx-card">
+      <div className="hx-card-head">
         <h3>{briefing.title}</h3>
-        <span className={`status-pill ${briefStatusClass(briefing.status, briefing.attached_to_case)}`}>
+        <Badge tone={briefStatusTone(briefing.status, briefing.attached_to_case)}>
           {briefing.status}
-        </span>
+        </Badge>
       </div>
-      <p>{briefing.summary}</p>
-      <div className="pill-row">
-        <span className="info-pill">{priorityLabel(briefing.priority)}</span>
-        <span className="info-pill">theme: {briefing.theme_name}</span>
-        <span className="info-pill">company: {briefing.company ?? "unassigned"}</span>
-        <span className="info-pill">evidence: {briefing.evidence_count}</span>
-        <span className="info-pill">claims: {briefing.claim_count}</span>
+      <p className="hx-description">{briefing.summary}</p>
+      <div className="hx-tag-row">
+        <Tag>{priorityLabel(briefing.priority)}</Tag>
+        <Tag>theme: {briefing.theme_name}</Tag>
+        <Tag>company: {briefing.company ?? "unassigned"}</Tag>
+        <Tag>evidence: {briefing.evidence_count}</Tag>
+        <Tag>claims: {briefing.claim_count}</Tag>
       </div>
-      <div className="pill-row">
-        <span className="info-pill">
-          latest_signal_at: {briefing.latest_signal_at ?? "unknown"}
-        </span>
-        <span className={`status-pill ${briefing.attached_to_case ? "ok" : "warn"}`}>
+      <div className="hx-tag-row">
+        <Tag>latest_signal_at: {briefing.latest_signal_at ?? "unknown"}</Tag>
+        <Badge tone={briefing.attached_to_case ? "ok" : "warn"}>
           {briefing.attached_to_case ? "brief attached" : "preview only"}
-        </span>
+        </Badge>
       </div>
-      <div className="stack-list">
+      <div className="hx-stack">
         <div>
-          <p className="mono-label">Key Claims</p>
-          <div className="pill-row">
+          <p className="hx-eyebrow">Key Claims</p>
+          <div className="hx-tag-row">
             {briefing.key_claims.map((claim) => (
-              <span key={claim} className="tag-chip">
-                {claim}
-              </span>
+              <Tag key={claim}>{claim}</Tag>
             ))}
           </div>
         </div>
         <div>
-          <p className="mono-label">Recommended Actions</p>
-          <div className="pill-row">
+          <p className="hx-eyebrow">Recommended Actions</p>
+          <div className="hx-tag-row">
             {briefing.recommended_actions.map((action) => (
-              <span key={action} className="tag-chip">
-                {action}
-              </span>
+              <Tag key={action}>{action}</Tag>
             ))}
           </div>
         </div>
       </div>
-      <div className="button-row">
-        <button
-          className="btn-secondary"
+      <div className="hx-cluster">
+        <Button
+          variant="secondary"
           type="button"
           onClick={() => onAttach(briefing.case_id)}
           disabled={briefing.attached_to_case}
         >
           {briefing.attached_to_case ? "Attached" : "Attach Brief"}
-        </button>
-        <button
-          className="btn-secondary"
+        </Button>
+        <Button
+          variant="secondary"
           type="button"
           onClick={() => onExport(briefing.case_id)}
         >
           Export Packet
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -222,91 +220,78 @@ export function MarketIntelPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Market Intelligence</p>
-        <h2>Competitors, Pricing, Launches, and Channel Motion</h2>
-        <p>
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Market Intelligence" title="Competitors, Pricing, Launches, and Channel Motion">
+        <p className="hx-description">
           Market intelligence runs on the same deterministic substrate as the OSINT desk: explicit
           sources, provenance-linked evidence, watchlists, cases, and guarded follow-up. The use
           case changes. The trust model does not.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Market Coverage</p>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <p className="metric-label">Market Sources</p>
-            <p className="metric-value">{overview?.market_source_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Market Watchlists</p>
-            <p className="metric-value">{overview?.market_watchlist_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Tracked Companies</p>
-            <p className="metric-value">{overview?.tracked_company_count ?? 0}</p>
-          </div>
-          <div className="metric-card">
-            <p className="metric-label">Active Cases</p>
-            <p className="metric-value">{overview?.active_case_count ?? 0}</p>
-          </div>
-        </div>
-        <p className="status-line">{status}</p>
-      </article>
+      <Panel span={12} eyebrow="Market Coverage" title="Coverage Metrics">
+        <StatGrid>
+          <StatCard label="Market Sources" value={overview?.market_source_count ?? 0} />
+          <StatCard label="Market Watchlists" value={overview?.market_watchlist_count ?? 0} />
+          <StatCard label="Tracked Companies" value={overview?.tracked_company_count ?? 0} />
+          <StatCard label="Active Cases" value={overview?.active_case_count ?? 0} />
+        </StatGrid>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-7">
-        <p className="mono-label">Theme Coverage</p>
-        <div className="agent-grid">{overview?.theme_cards.map(renderTheme)}</div>
-      </article>
+      <Panel span={7} eyebrow="Theme Coverage" title="Themes">
+        <div className="hx-card-grid">{overview?.theme_cards.map(renderTheme)}</div>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <p className="mono-label">Tracked Companies</p>
-        <div className="command-stack">
+      <Panel span={5} eyebrow="Tracked Companies" title="Companies">
+        <div className="hx-list">
           {overview?.company_cards.length ? (
             overview.company_cards.map(renderCompany)
           ) : (
-            <p>No company signals yet. Register sources or ingest evidence to populate this view.</p>
+            <div className="hx-table-empty">
+              <p>No company signals yet. Register sources or ingest evidence to populate this view.</p>
+            </div>
           )}
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Active Case Briefs</p>
-        <div className="agent-grid">
+      <Panel span={12} eyebrow="Active Case Briefs" title="Case Briefs">
+        <div className="hx-card-grid">
           {overview?.case_briefs.length ? (
             overview.case_briefs.map((briefing) =>
               renderCaseBrief(briefing, attachBrief, exportBrief)
             )
           ) : (
-            <p>No market-intelligence cases are active yet.</p>
+            <div className="hx-table-empty">
+              <p>No market-intelligence cases are active yet.</p>
+            </div>
           )}
         </div>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Reference Playbooks</p>
-        <div className="agent-grid">{overview?.playbooks.map(renderPlaybook)}</div>
-      </article>
+      <Panel span={12} eyebrow="Reference Playbooks" title="Playbooks">
+        <div className="hx-card-grid">{overview?.playbooks.map(renderPlaybook)}</div>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Latest Attached Brief</p>
+      <Panel span={12} eyebrow="Latest Attached Brief" title="Attached Brief">
         {lastBrief ? (
-          <pre className="json-output">{JSON.stringify(lastBrief, null, 2)}</pre>
+          <CodeBlock label="Brief JSON">{JSON.stringify(lastBrief, null, 2)}</CodeBlock>
         ) : (
-          <p>No brief has been attached in this session.</p>
+          <div className="hx-table-empty">
+            <p>No brief has been attached in this session.</p>
+          </div>
         )}
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <p className="mono-label">Latest Export Packet</p>
+      <Panel span={12} eyebrow="Latest Export Packet" title="Export Packet">
         {lastExportPacket ? (
-          <pre className="json-output">{JSON.stringify(lastExportPacket, null, 2)}</pre>
+          <CodeBlock label="Packet JSON">{JSON.stringify(lastExportPacket, null, 2)}</CodeBlock>
         ) : (
-          <p>No market brief export packet has been generated in this session.</p>
+          <div className="hx-table-empty">
+            <p>No market brief export packet has been generated in this session.</p>
+          </div>
         )}
-      </article>
+      </Panel>
     </section>
   );
 }

@@ -14,6 +14,8 @@ members = [
     "crates/helix-embeddings",
     "crates/helix-agent-sdk-macros", # Added new macros crate
     "crates/helix-gui",
+    "crates/helix-federation",
+    "crates/helix-operator",
     # Add other core crates as needed
 ]
 

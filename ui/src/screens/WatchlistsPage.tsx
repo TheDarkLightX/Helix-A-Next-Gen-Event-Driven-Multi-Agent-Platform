@@ -5,6 +5,20 @@ import {
   createWatchlist,
   fetchWatchlists,
 } from "../lib/api";
+import {
+  Panel,
+  FormField,
+  Input,
+  Textarea,
+  Select,
+  CheckboxField,
+  FormGrid,
+  Button,
+  Badge,
+  Tag,
+  StatusLine,
+  severityTone,
+} from "../components";
 
 const SEVERITY_OPTIONS: WatchlistSeverity[] = ["low", "medium", "high", "critical"];
 
@@ -13,12 +27,6 @@ function parseCsv(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function severityClass(severity: WatchlistSeverity) {
-  if (severity === "critical" || severity === "high") return "danger";
-  if (severity === "medium") return "warn";
-  return "ok";
 }
 
 export function WatchlistsPage() {
@@ -74,118 +82,97 @@ export function WatchlistsPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Watchlists</p>
-        <h2>Deterministic Match Rules For What Matters</h2>
-        <p>
-          Model explicit keywords, entities, source-trust floors, and severity so the desk opens
-          work only when bounded conditions are met.
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Watchlists" title="Deterministic Match Rules For What Matters">
+        <p className="hx-description">
+          Model explicit keywords, entities, source-trust floors, and severity so the
+          desk opens work only when bounded conditions are met.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <p className="mono-label">Create Watchlist</p>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label className="field field-full">
-            <span>name</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+      <Panel span={5} eyebrow="Create" title="New Watchlist">
+        <form className="hx-form-grid" onSubmit={onSubmit}>
+          <FormField label="Name" full>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Executive departures" />
+          </FormField>
 
-          <label className="field field-full">
-            <span>description</span>
-            <textarea
-              rows={4}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </label>
+          <FormField label="Description" full>
+            <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this watchlist tracks and why" />
+          </FormField>
 
-          <label className="field field-full">
-            <span>keywords</span>
-            <input value={keywordsText} onChange={(e) => setKeywordsText(e.target.value)} />
-          </label>
+          <FormField label="Keywords" full hint="Comma-separated">
+            <Input value={keywordsText} onChange={(e) => setKeywordsText(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>entities</span>
-            <input value={entitiesText} onChange={(e) => setEntitiesText(e.target.value)} />
-          </label>
+          <FormField label="Entities" full hint="Comma-separated">
+            <Input value={entitiesText} onChange={(e) => setEntitiesText(e.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>min_source_trust</span>
-            <input
+          <FormField label="Min source trust" hint="0–100">
+            <Input
               type="number"
               min={0}
               max={100}
               value={minTrust}
               onChange={(e) => setMinTrust(Number(e.target.value))}
             />
-          </label>
+          </FormField>
 
-          <label className="field">
-            <span>severity</span>
-            <select value={severity} onChange={(e) => setSeverity(e.target.value as WatchlistSeverity)}>
+          <FormField label="Severity">
+            <Select value={severity} onChange={(e) => setSeverity(e.target.value as WatchlistSeverity)}>
               {SEVERITY_OPTIONS.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
+                <option key={value} value={value}>{value}</option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </FormField>
 
-          <label className="field checkbox-field field-full">
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-            <span>enabled</span>
-          </label>
+          <CheckboxField label="Enabled" checked={enabled} onChange={setEnabled} full />
 
-          <button className="btn-primary" type="submit">
-            Create Watchlist
-          </button>
+          <FormField label="" full>
+            <Button type="submit">Create Watchlist</Button>
+          </FormField>
         </form>
-        <p className="status-line">{status}</p>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-7">
-        <p className="mono-label">Configured Watchlists</p>
-        <div className="agent-grid">
-          {watchlists.map((watchlist) => (
-            <div key={watchlist.id} className="agent-card">
-              <div className="agent-card-head">
-                <h3>{watchlist.name}</h3>
-                <span className={`status-pill ${severityClass(watchlist.severity)}`}>{watchlist.severity}</span>
-              </div>
-              <p>{watchlist.description}</p>
-              <p className="mono-detail">{watchlist.id}</p>
-              <div className="pill-row">
-                <span className="info-pill">min trust: {watchlist.min_source_trust}</span>
-                <span className="info-pill">enabled: {watchlist.enabled ? "yes" : "no"}</span>
-              </div>
-              <div className="stack-list">
-                <div>
-                  <p className="mono-label">keywords</p>
-                  <div className="pill-row">
+      <Panel span={7} eyebrow="Configured" title="Watchlists" actions={<Badge tone="accent">{watchlists.length}</Badge>}>
+        {watchlists.length === 0 ? (
+          <div className="hx-table-empty"><p>No watchlists configured yet.</p></div>
+        ) : (
+          <div className="hx-card-grid">
+            {watchlists.map((watchlist) => (
+              <div key={watchlist.id} className="hx-card">
+                <div className="hx-card-head">
+                  <h3>{watchlist.name}</h3>
+                  <Badge tone={severityTone(watchlist.severity)}>{watchlist.severity}</Badge>
+                </div>
+                <p className="hx-row-secondary">{watchlist.description}</p>
+                <p className="hx-mono-detail">{watchlist.id}</p>
+                <div className="hx-tag-row">
+                  <Tag>min trust: {watchlist.min_source_trust}</Tag>
+                  <Tag>enabled: {watchlist.enabled ? "yes" : "no"}</Tag>
+                </div>
+                <div className="hx-card-section">
+                  <span className="hx-eyebrow">Keywords</span>
+                  <div className="hx-tag-row">
                     {watchlist.keywords.map((keyword) => (
-                      <span key={keyword} className="tag-chip">
-                        {keyword}
-                      </span>
+                      <Tag key={keyword}>{keyword}</Tag>
                     ))}
                   </div>
                 </div>
-                <div>
-                  <p className="mono-label">entities</p>
-                  <div className="pill-row">
+                <div className="hx-card-section">
+                  <span className="hx-eyebrow">Entities</span>
+                  <div className="hx-tag-row">
                     {watchlist.entities.map((entity) => (
-                      <span key={entity} className="tag-chip">
-                        {entity}
-                      </span>
+                      <Tag key={entity}>{entity}</Tag>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </article>
+            ))}
+          </div>
+        )}
+      </Panel>
     </section>
   );
 }

@@ -494,11 +494,11 @@ pub(crate) struct CaseTransitionResponse {
 
 #[derive(Debug, Clone)]
 pub(crate) struct IntelDeskStore {
-    sources: BTreeMap<String, SourceDefinition>,
-    watchlists: BTreeMap<String, Watchlist>,
-    evidence: BTreeMap<String, EvidenceItem>,
-    claims: BTreeMap<String, ClaimRecord>,
-    cases: BTreeMap<String, CaseFile>,
+    pub(crate) sources: BTreeMap<String, SourceDefinition>,
+    pub(crate) watchlists: BTreeMap<String, Watchlist>,
+    pub(crate) evidence: BTreeMap<String, EvidenceItem>,
+    pub(crate) claims: BTreeMap<String, ClaimRecord>,
+    pub(crate) cases: BTreeMap<String, CaseFile>,
 }
 
 #[derive(Debug, Clone)]
@@ -625,6 +625,16 @@ impl IntelDeskPostgresStore {
 }
 
 impl IntelDeskStore {
+    /// Returns true if a source with the given id exists.
+    pub(crate) fn has_source(&self, source_id: &str) -> bool {
+        self.sources.contains_key(source_id)
+    }
+
+    /// Inserts or replaces a source definition.
+    pub(crate) fn upsert_source(&mut self, source: SourceDefinition) {
+        self.sources.insert(source.id.clone(), source);
+    }
+
     pub(crate) fn seeded() -> Self {
         let mut store = Self {
             sources: BTreeMap::new(),
@@ -3447,7 +3457,7 @@ fn serde_error(error: serde_json::Error) -> HelixError {
     HelixError::InternalError(format!("intel desk serialization error: {error}"))
 }
 
-async fn mutate_intel_desk<T>(
+pub(crate) async fn mutate_intel_desk<T>(
     state: &AppState,
     mutation: impl FnOnce(&mut IntelDeskStore) -> Result<T, HelixError>,
 ) -> Result<T, HelixError> {
@@ -4042,8 +4052,8 @@ pub(crate) async fn ingest_evidence(
     State(state): State<AppState>,
     Json(request): Json<IngestEvidenceRequest>,
 ) -> Response {
-    let result = mutate_intel_desk(&state, |store| store.ingest_evidence(request)).await;
-    match result {
+    let source_id = request.source_id.clone();
+    match ingest_evidence_internal(&state, request).await {
         Ok(response) => {
             if let Err(error) = record_audit_event(
                 &state,
@@ -4064,10 +4074,41 @@ pub(crate) async fn ingest_evidence(
             {
                 return api_error_response(error);
             }
+
+            // Federation dispatch: share new evidence with peer desks
+            if !response.duplicate {
+                crate::federation::dispatch_evidence_ingested(
+                    &state,
+                    &response.evidence.title,
+                    &response.evidence.summary,
+                    &source_id,
+                )
+                .await;
+
+                // Dispatch watchlist hits
+                for hit in &response.hits {
+                    crate::federation::dispatch_watchlist_hit(
+                        &state,
+                        &hit.watchlist_id,
+                        &response.evidence.title,
+                        &response.evidence.summary,
+                    )
+                    .await;
+                }
+            }
+
             (StatusCode::CREATED, Json(response)).into_response()
         }
         Err(error) => api_error_response(error),
     }
+}
+
+/// Internal evidence ingestion without the Axum layer, for federation use.
+pub(crate) async fn ingest_evidence_internal(
+    state: &AppState,
+    request: IngestEvidenceRequest,
+) -> Result<IngestEvidenceResponse, HelixError> {
+    mutate_intel_desk(state, |store| store.ingest_evidence(request)).await
 }
 
 pub(crate) async fn list_cases(
@@ -4137,6 +4178,32 @@ pub(crate) async fn transition_case_handler(
             {
                 return api_error_response(error);
             }
+
+            // Federation dispatch: notify peers of case escalation
+            let status_str = format!("{:?}", transition.case.status).to_lowercase();
+            let case_summary = transition
+                .case
+                .briefing_summary
+                .as_deref()
+                .unwrap_or(&transition.case.latest_reason);
+            if status_str.contains("escalat") || status_str.contains("critical") || status_str.contains("high") {
+                crate::federation::dispatch_case_escalated(
+                    &state,
+                    &transition.case.id,
+                    &transition.case.title,
+                    case_summary,
+                )
+                .await;
+            } else if status_str.contains("open") {
+                crate::federation::dispatch_case_opened(
+                    &state,
+                    &transition.case.id,
+                    &transition.case.title,
+                    case_summary,
+                )
+                .await;
+            }
+
             (StatusCode::OK, Json(CaseTransitionResponse { transition })).into_response()
         }
         Err(error) => api_error_response(error),

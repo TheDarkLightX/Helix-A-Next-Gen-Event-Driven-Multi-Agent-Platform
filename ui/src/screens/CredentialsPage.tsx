@@ -5,6 +5,17 @@ import {
   fetchCredentials,
   upsertCredential,
 } from "../lib/api";
+import {
+  Panel,
+  FormField,
+  Input,
+  Textarea,
+  Select,
+  Button,
+  Badge,
+  Tag,
+  StatusLine,
+} from "../components";
 
 const DEFAULT_PROFILE_ID = "50000000-0000-0000-0000-000000000010";
 const DEFAULT_METADATA = JSON.stringify({ provider: "github", scope: "repo:read" }, null, 2);
@@ -16,7 +27,6 @@ function parseMetadata(value: string): Record<string, string> {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("metadata must be a JSON object");
   }
-
   const metadata: Record<string, string> = {};
   for (const [key, item] of Object.entries(parsed)) {
     if (typeof item !== "string") {
@@ -124,142 +134,118 @@ export function CredentialsPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Credential Vault</p>
-        <h2>Encrypted Access Material With Redacted Operator Views</h2>
-        <p>
-          Store connector credentials behind the same profile boundary used by recipes, agents, and
-          deterministic automation.
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Credential Vault" title="Encrypted Access Material With Redacted Operator Views">
+        <p className="hx-description">
+          Store connector credentials behind the same profile boundary used by recipes,
+          agents, and deterministic automation.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Vault Write</p>
-            <p className="status-line">{status}</p>
-          </div>
-          <span className={`status-pill ${persistenceEnabled ? "ok" : "warn"}`}>
-            {persistenceEnabled ? "durable" : "disabled"}
-          </span>
-        </div>
+      <Panel
+        span={5}
+        eyebrow="Vault Write"
+        title="Save Credential"
+        actions={<Badge tone={persistenceEnabled ? "ok" : "warn"}>{persistenceEnabled ? "durable" : "disabled"}</Badge>}
+      >
+        <form className="hx-form-grid" onSubmit={onSubmit}>
+          <FormField label="Profile ID" full>
+            <Input value={profileId} onChange={(e) => setProfileId(e.target.value)} />
+          </FormField>
 
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label className="field field-full">
-            <span>profile_id</span>
-            <input value={profileId} onChange={(event) => setProfileId(event.target.value)} />
-          </label>
+          <FormField label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>name</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-
-          <label className="field">
-            <span>kind</span>
-            <select value={kind} onChange={(event) => setKind(event.target.value)}>
+          <FormField label="Kind">
+            <Select value={kind} onChange={(e) => setKind(e.target.value)}>
               <option value="api_key">api_key</option>
               <option value="oauth2">oauth2</option>
               <option value="bearer_token">bearer_token</option>
               <option value="webhook_secret">webhook_secret</option>
-            </select>
-          </label>
+            </Select>
+          </FormField>
 
-          <label className="field field-full">
-            <span>secret</span>
-            <input
+          <FormField label="Secret" full>
+            <Input
               type="password"
               autoComplete="off"
               value={secret}
-              onChange={(event) => setSecret(event.target.value)}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder="paste secret"
             />
-          </label>
+          </FormField>
 
-          <label className="field field-full">
-            <span>metadata_json</span>
-            <textarea
-              rows={5}
-              value={metadataText}
-              onChange={(event) => setMetadataText(event.target.value)}
-            />
-          </label>
+          <FormField label="Metadata JSON" full>
+            <Textarea rows={5} value={metadataText} onChange={(e) => setMetadataText(e.target.value)} />
+          </FormField>
 
-          <div className="button-row field-full">
-            <button className="btn-primary" type="submit" disabled={submitting}>
-              {submitting ? "Saving" : "Save Credential"}
-            </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() => void loadCredentials(profileId)}
-            >
+          <div className="hx-cluster" style={{ gridColumn: "1 / -1" }}>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? "Saving..." : "Save Credential"}
+            </Button>
+            <Button variant="secondary" type="button" onClick={() => void loadCredentials(profileId)}>
               Refresh
-            </button>
+            </Button>
           </div>
         </form>
 
-        <div className="pill-row">
+        <div className="hx-tag-row" style={{ marginTop: "var(--hx-space-3)" }}>
           {metadataKeys.length === 0 ? (
-            <span className="info-pill">metadata: none</span>
+            <Tag>metadata: none</Tag>
           ) : (
             metadataKeys.map((key) => (
-              <span key={key} className="info-pill">
-                metadata: {key}
-              </span>
+              <Tag key={key}>metadata: {key}</Tag>
             ))
           )}
         </div>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-7">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Redacted Credentials</p>
-            <p className="status-line">profile: {profileId || "unset"}</p>
-          </div>
-          <span className="status-pill info">{credentials.length} record(s)</span>
-        </div>
-
-        <div className="agent-grid">
-          {credentials.length === 0 ? (
-            <p className="panel-note">No credential metadata is available for this profile.</p>
-          ) : (
-            credentials.map((entry) => (
-              <div key={entry.id} className="agent-card">
-                <div className="agent-card-head">
+      <Panel
+        span={7}
+        eyebrow="Stored"
+        title="Redacted Credentials"
+        actions={<Badge tone="info">{credentials.length} record(s)</Badge>}
+      >
+        <StatusLine>profile: {profileId || "unset"}</StatusLine>
+        {credentials.length === 0 ? (
+          <div className="hx-table-empty"><p>No credential metadata is available for this profile.</p></div>
+        ) : (
+          <div className="hx-card-grid">
+            {credentials.map((entry) => (
+              <div key={entry.id} className="hx-card">
+                <div className="hx-card-head">
                   <h3>{entry.name}</h3>
-                  <span className="status-pill ok">redacted</span>
+                  <Badge tone="ok">redacted</Badge>
                 </div>
-                <p className="mono-detail">{entry.id}</p>
-                <div className="pill-row">
-                  <span className="info-pill">kind: {entry.kind}</span>
-                  <span className="info-pill">{createdLabel(entry)}</span>
+                <p className="hx-mono-detail">{entry.id}</p>
+                <div className="hx-tag-row">
+                  <Tag>kind: {entry.kind}</Tag>
+                  <Tag>{createdLabel(entry)}</Tag>
                 </div>
-                <div className="pill-row">
+                <div className="hx-tag-row">
                   {Object.keys(entry.metadata).length === 0 ? (
-                    <span className="tag-chip">metadata: none</span>
+                    <Tag>metadata: none</Tag>
                   ) : (
                     Object.entries(entry.metadata).map(([key, value]) => (
-                      <span key={key} className="tag-chip">
-                        {key}: {value}
-                      </span>
+                      <Tag key={key}>{key}: {value}</Tag>
                     ))
                   )}
                 </div>
-                <button
-                  className="btn-secondary"
+                <Button
+                  variant="danger"
                   type="button"
                   disabled={deletingId === entry.id}
                   onClick={() => void onDelete(entry)}
                 >
-                  {deletingId === entry.id ? "Deleting" : "Delete"}
-                </button>
+                  {deletingId === entry.id ? "Deleting..." : "Delete"}
+                </Button>
               </div>
-            ))
-          )}
-        </div>
-      </article>
+            ))}
+          </div>
+        )}
+      </Panel>
     </section>
   );
 }

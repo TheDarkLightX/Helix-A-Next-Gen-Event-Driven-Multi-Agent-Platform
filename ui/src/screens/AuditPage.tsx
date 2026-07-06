@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AuditLogEntry, fetchAuditLog } from "../lib/api";
+import { Panel, Badge, Button, StatusLine, CodeBlock, Tag } from "../components";
 
 function metadataPreview(metadata: unknown): string {
   try {
@@ -34,58 +35,52 @@ export function AuditPage() {
   }, []);
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Audit Timeline</p>
-        <h2>Durable Operator Decisions</h2>
-        <p>
-          Review persisted source collection, evidence, policy, and autopilot guard decisions from
-          the Postgres audit log.
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Audit Timeline" title="Durable Operator Decisions">
+        <p className="hx-description">
+          Review persisted source collection, evidence, policy, and autopilot guard
+          decisions from the Postgres audit log.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Audit Store</p>
-            <p className="status-line">{status}</p>
-          </div>
-          <div className="toolbar-actions">
-            <span className={`status-pill ${persistenceEnabled ? "ok" : "warn"}`}>
-              {persistenceEnabled ? "durable" : "in-memory mode"}
-            </span>
-            <button className="btn-secondary" type="button" onClick={() => void loadAuditLog()}>
+      <Panel
+        span={12}
+        eyebrow="Store"
+        title="Audit Log"
+        actions={
+          <>
+            <Badge tone={persistenceEnabled ? "ok" : "warn"}>
+              {persistenceEnabled ? "durable" : "in-memory"}
+            </Badge>
+            <Button variant="secondary" type="button" onClick={() => void loadAuditLog()}>
               Refresh
-            </button>
-          </div>
-        </div>
-
-        <div className="command-list">
-          {entries.length === 0 ? (
-            <p className="panel-note">No audit records are available for the current store.</p>
-          ) : (
-            entries.map((entry) => (
-              <div key={entry.id} className="command-row">
-                <div>
-                  <div className="command-row-head">
-                    <h3>{entry.action}</h3>
-                    <span className={`status-pill ${entry.decision === "allow" ? "ok" : "warn"}`}>
-                      {entry.decision}
-                    </span>
-                  </div>
-                  <p>{entry.resource}</p>
-                  <div className="pill-row">
-                    <span className="info-pill">subject: {entry.subject}</span>
-                    <span className="info-pill">created: {entry.created_at}</span>
-                    {entry.reason ? <span className="info-pill">reason: {entry.reason}</span> : null}
-                  </div>
-                  <pre className="json-block">{metadataPreview(entry.metadata)}</pre>
+            </Button>
+          </>
+        }
+      >
+        <StatusLine>{status}</StatusLine>
+        {entries.length === 0 ? (
+          <div className="hx-table-empty"><p>No audit records available for the current store.</p></div>
+        ) : (
+          <div className="hx-list">
+            {entries.map((entry) => (
+              <div key={entry.id} className="hx-card">
+                <div className="hx-card-head">
+                  <h3>{entry.action}</h3>
+                  <Badge tone={entry.decision === "allow" ? "ok" : "warn"}>{entry.decision}</Badge>
                 </div>
+                <p className="hx-row-secondary">{entry.resource}</p>
+                <div className="hx-tag-row">
+                  <Tag>subject: {entry.subject}</Tag>
+                  <Tag>created: {entry.created_at}</Tag>
+                  {entry.reason && <Tag>reason: {entry.reason}</Tag>}
+                </div>
+                <CodeBlock label="metadata" maxHeight="180px">{metadataPreview(entry.metadata)}</CodeBlock>
               </div>
-            ))
-          )}
-        </div>
-      </article>
+            ))}
+          </div>
+        )}
+      </Panel>
     </section>
   );
 }

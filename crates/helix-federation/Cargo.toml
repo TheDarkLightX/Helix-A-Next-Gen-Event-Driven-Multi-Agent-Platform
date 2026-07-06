@@ -1,0 +1,22 @@
+[package]
+name = "helix-federation"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Federation layer for networking Helix intelligence desks"
+repository = "https://github.com/TheDarkLightX/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform"
+
+[dependencies]
+helix-core = { path = "../helix-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+url = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }

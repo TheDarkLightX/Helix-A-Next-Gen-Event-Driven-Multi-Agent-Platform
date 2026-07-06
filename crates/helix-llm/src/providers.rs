@@ -188,11 +188,15 @@ impl OpenAiProvider {
 
     /// Create a new OpenAI provider with custom base URL
     pub fn with_base_url(api_key: String, base_url: String) -> Self {
+        let timeout_secs = std::env::var("LLM_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(120);
         Self {
             api_key,
             base_url,
             client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
+                .timeout(Duration::from_secs(timeout_secs))
                 .build()
                 .expect("failed to build HTTP client"),
         }

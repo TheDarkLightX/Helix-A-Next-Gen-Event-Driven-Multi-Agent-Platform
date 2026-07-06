@@ -4,6 +4,16 @@ import {
   fetchOnchainReceipt,
   sendRawOnchainTransaction,
 } from "../lib/api";
+import {
+  Panel,
+  FormField,
+  Input,
+  Textarea,
+  CheckboxField,
+  Button,
+  Badge,
+  StatusLine,
+} from "../components";
 
 export function OnchainPage() {
   const [rpcUrl, setRpcUrl] = useState<string>("https://rpc.ankr.com/eth");
@@ -58,110 +68,88 @@ export function OnchainPage() {
     }
   }
 
+  const phaseTone = (phase: string) =>
+    phase === "Confirmed" ? "ok" : phase === "Reverted" || phase === "Failed" ? "danger" : phase === "Idle" ? "neutral" : "info";
+
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Onchain Shell</p>
-        <h2>EVM Raw Transaction Submit + Receipt Polling</h2>
-        <p>
-          Deterministic transaction intent in core, imperative JSON-RPC execution in shell. Use
-          dry-run mode first, then submit signed raw tx when ready.
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Onchain Shell" title="EVM Raw Transaction Submit + Receipt Polling">
+        <p className="hx-description">
+          Deterministic transaction intent in core, imperative JSON-RPC execution in
+          shell. Use dry-run mode first, then submit signed raw tx when ready.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Broadcast Transaction</p>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label className="field field-full">
-            <span>rpc_url</span>
-            <input value={rpcUrl} onChange={(e) => setRpcUrl(e.target.value)} />
-          </label>
+      <Panel span={6} eyebrow="Broadcast" title="Transaction Intent">
+        <form className="hx-form-grid" onSubmit={onSubmit}>
+          <FormField label="RPC URL" full>
+            <Input value={rpcUrl} onChange={(e) => setRpcUrl(e.target.value)} />
+          </FormField>
 
-          <label className="field field-full">
-            <span>raw_tx_hex</span>
-            <textarea
-              className="command-editor"
-              rows={4}
-              value={rawTxHex}
-              onChange={(e) => setRawTxHex(e.target.value)}
-            />
-          </label>
+          <FormField label="Raw TX Hex" full>
+            <Textarea rows={4} value={rawTxHex} onChange={(e) => setRawTxHex(e.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>max_poll_rounds</span>
-            <input
-              type="number"
-              min={1}
-              value={maxPollRounds}
-              onChange={(e) => setMaxPollRounds(Number(e.target.value))}
-            />
-          </label>
+          <FormField label="Max poll rounds">
+            <Input type="number" min={1} value={maxPollRounds} onChange={(e) => setMaxPollRounds(Number(e.target.value))} />
+          </FormField>
 
-          <label className="field">
-            <span>poll_interval_ms</span>
-            <input
-              type="number"
-              min={50}
-              value={pollIntervalMs}
-              onChange={(e) => setPollIntervalMs(Number(e.target.value))}
-            />
-          </label>
+          <FormField label="Poll interval (ms)">
+            <Input type="number" min={50} value={pollIntervalMs} onChange={(e) => setPollIntervalMs(Number(e.target.value))} />
+          </FormField>
 
-          <label className="field checkbox-field">
-            <input
-              type="checkbox"
-              checked={awaitReceipt}
-              onChange={(e) => setAwaitReceipt(e.target.checked)}
-            />
-            <span>await_receipt</span>
-          </label>
+          <CheckboxField label="Await receipt" checked={awaitReceipt} onChange={setAwaitReceipt} />
+          <CheckboxField label="Dry run" checked={dryRun} onChange={setDryRun} />
 
-          <label className="field checkbox-field">
-            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-            <span>dry_run</span>
-          </label>
-
-          <button className="btn-primary" type="submit">
-            Execute Broadcast
-          </button>
+          <FormField label="" full>
+            <Button type="submit" variant={dryRun ? "primary" : "danger"}>
+              {dryRun ? "Dry Run Broadcast" : "Execute Broadcast"}
+            </Button>
+          </FormField>
         </form>
-        <p className="status-line">{status}</p>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-3">
-        <p className="mono-label">Result</p>
+      <Panel span={3} eyebrow="Result" title="Broadcast Output">
         {result ? (
-          <div className="command-stack">
-            <code className="command-inline">phase: {result.phase}</code>
-            <code className="command-inline">tx_hash: {result.tx_hash ?? "none"}</code>
-            <code className="command-inline">
-              poll_rounds: {result.poll_rounds}/{result.max_poll_rounds}
-            </code>
-            <code className="command-inline">
-              receipt_status: {result.receipt?.status ?? "none"}
-            </code>
-            <code className="command-inline">
-              receipt_block: {result.receipt?.blockNumber ?? "none"}
-            </code>
+          <div className="hx-list">
+            <div className="hx-row">
+              <span className="hx-row-primary">phase</span>
+              <Badge tone={phaseTone(result.phase)}>{result.phase}</Badge>
+            </div>
+            <div className="hx-row hx-row-stack">
+              <span className="hx-row-primary">tx_hash</span>
+              <code className="hx-mono-detail">{result.tx_hash ?? "none"}</code>
+            </div>
+            <div className="hx-row">
+              <span className="hx-row-primary">poll rounds</span>
+              <span className="hx-row-secondary">{result.poll_rounds}/{result.max_poll_rounds}</span>
+            </div>
+            <div className="hx-row">
+              <span className="hx-row-primary">receipt status</span>
+              <span className="hx-row-secondary">{result.receipt?.status ?? "none"}</span>
+            </div>
+            <div className="hx-row">
+              <span className="hx-row-primary">receipt block</span>
+              <span className="hx-row-secondary">{result.receipt?.blockNumber ?? "none"}</span>
+            </div>
           </div>
         ) : (
-          <p>No result yet.</p>
+          <div className="hx-table-empty"><p>No result yet.</p></div>
         )}
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-3">
-        <p className="mono-label">Manual Receipt Lookup</p>
-        <form onSubmit={onLookupReceipt} className="form-grid">
-          <label className="field field-full">
-            <span>tx_hash</span>
-            <input value={receiptHash} onChange={(e) => setReceiptHash(e.target.value)} />
-          </label>
-          <button className="btn-secondary" type="submit">
-            Fetch Receipt
-          </button>
+      <Panel span={3} eyebrow="Lookup" title="Manual Receipt">
+        <form onSubmit={onLookupReceipt} className="hx-form-grid">
+          <FormField label="TX Hash" full>
+            <Input value={receiptHash} onChange={(e) => setReceiptHash(e.target.value)} placeholder="0x..." />
+          </FormField>
+          <FormField label="" full>
+            <Button type="submit" variant="secondary">Fetch Receipt</Button>
+          </FormField>
         </form>
-        <p className="status-line">{receiptStatus}</p>
-      </article>
+        <StatusLine>{receiptStatus}</StatusLine>
+      </Panel>
     </section>
   );
 }

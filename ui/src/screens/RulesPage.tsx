@@ -12,6 +12,21 @@ import {
   runRecipeTriggerPlan,
   upsertAutomationRule,
 } from "../lib/api";
+import {
+  Panel,
+  StatCard,
+  StatGrid,
+  Badge,
+  Button,
+  FormField,
+  Input,
+  Textarea,
+  Select,
+  CheckboxField,
+  StatusLine,
+  Tag,
+  CodeBlock,
+} from "../components";
 
 const OPERATOR_OPTIONS: { value: RuleOperator; label: string }[] = [
   { value: "equals", label: "equals" },
@@ -257,55 +272,48 @@ export function RulesPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Automation Rules</p>
-        <h2>Event Rules With Durable Trigger Plans</h2>
-        <p>
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Automation Rules" title="Event Rules With Durable Trigger Plans">
+        <p className="hx-description">
           Store deterministic match rules, evaluate CloudEvents, and inspect the recipe trigger
           packets before automation reaches the runtime.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-4">
-        <p className="mono-label">Rule Status</p>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <span className="metric-label">rules</span>
-            <strong className="metric-value">{rules.length}</strong>
-          </div>
-          <div className="metric-card">
-            <span className="metric-label">enabled</span>
-            <strong className="metric-value">{enabledCount}</strong>
-          </div>
-        </div>
-        <div className="pill-row">
-          <span className={`status-pill ${persistenceEnabled ? "ok" : "warn"}`}>
-            {persistenceEnabled ? "durable" : "in-memory"}
-          </span>
-          <button className="btn-secondary" type="button" onClick={() => void loadRules()}>
+      <Panel
+        span={4}
+        eyebrow="Rule Status"
+        title="Workspace Metrics"
+        actions={
+          <Button variant="secondary" type="button" onClick={() => void loadRules()}>
             Refresh
-          </button>
+          </Button>
+        }
+      >
+        <StatGrid>
+          <StatCard label="rules" value={rules.length} tone="info" />
+          <StatCard label="enabled" value={enabledCount} tone="ok" />
+        </StatGrid>
+        <div className="hx-tag-row">
+          <Badge tone={persistenceEnabled ? "ok" : "warn"}>
+            {persistenceEnabled ? "durable" : "in-memory"}
+          </Badge>
         </div>
-        <p className="status-line">{status}</p>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-8">
-        <p className="mono-label">Create Rule</p>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label className="field field-full">
-            <span>name</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
+      <Panel span={8} eyebrow="Create Rule" title="Rule Builder">
+        <form className="hx-form-grid" onSubmit={onSubmit}>
+          <FormField label="name" full>
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>match_field</span>
-            <input value={field} onChange={(event) => setField(event.target.value)} />
-          </label>
+          <FormField label="match_field">
+            <Input value={field} onChange={(event) => setField(event.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>operator</span>
-            <select
+          <FormField label="operator">
+            <Select
               value={operator}
               onChange={(event) => setOperator(event.target.value as RuleOperator)}
             >
@@ -314,224 +322,241 @@ export function RulesPage() {
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </FormField>
 
-          <label className="field">
-            <span>value_json</span>
-            <input
+          <FormField label="value_json">
+            <Input
               disabled={operator === "exists"}
               value={literal}
               onChange={(event) => setLiteral(event.target.value)}
             />
-          </label>
+          </FormField>
 
-          <label className="field">
-            <span>recipe_id</span>
-            <input value={recipeId} onChange={(event) => setRecipeId(event.target.value)} />
-          </label>
+          <FormField label="recipe_id">
+            <Input value={recipeId} onChange={(event) => setRecipeId(event.target.value)} />
+          </FormField>
 
-          <label className="field">
-            <span>parameter</span>
-            <input
+          <FormField label="parameter">
+            <Input
               value={parameterName}
               onChange={(event) => setParameterName(event.target.value)}
             />
-          </label>
+          </FormField>
 
-          <label className="field">
-            <span>from_event</span>
-            <input
+          <FormField label="from_event">
+            <Input
               value={parameterPath}
               onChange={(event) => setParameterPath(event.target.value)}
             />
-          </label>
+          </FormField>
 
-          <label className="field checkbox-field">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(event) => setEnabled(event.target.checked)}
-            />
-            <span>enabled</span>
-          </label>
+          <CheckboxField
+            label="enabled"
+            checked={enabled}
+            onChange={(checked) => setEnabled(checked)}
+            full
+          />
 
-          <button className="btn-primary" type="submit">
-            Save Rule
-          </button>
+          <div className="hx-cluster" style={{ gridColumn: "1 / -1" }}>
+            <Button type="submit">Save Rule</Button>
+          </div>
         </form>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Rule Catalog</p>
-            <p className="status-line">{rules.length} stored rule definition(s).</p>
+      <Panel
+        span={6}
+        eyebrow="Rule Catalog"
+        title="Stored Definitions"
+        actions={<Badge tone="info">{rules.length} rule(s)</Badge>}
+      >
+        <StatusLine>{rules.length} stored rule definition(s).</StatusLine>
+        {rules.length === 0 ? (
+          <div className="hx-table-empty">
+            <p>No automation rules are stored in the current workspace.</p>
           </div>
-        </div>
-        <div className="command-list">
-          {rules.length === 0 ? (
-            <p className="panel-note">No automation rules are stored in the current workspace.</p>
-          ) : (
-            rules.map((rule) => (
-              <div key={rule.id} className="command-row">
-                <div className="command-row-head">
-                  <h3>{rule.name}</h3>
-                  <span className={`status-pill ${rule.enabled !== false ? "ok" : "warn"}`}>
-                    {rule.enabled !== false ? "enabled" : "paused"}
-                  </span>
+        ) : (
+          <div className="hx-list">
+            {rules.map((rule) => (
+              <div key={rule.id} className="hx-row">
+                <div className="hx-row-stack">
+                  <div className="hx-row-primary">
+                    <h3>{rule.name}</h3>
+                    <Badge tone={rule.enabled !== false ? "ok" : "warn"}>
+                      {rule.enabled !== false ? "enabled" : "paused"}
+                    </Badge>
+                  </div>
+                  <p className="hx-mono-detail">{rule.id}</p>
+                  <div className="hx-tag-row">
+                    <Tag>{describeCondition(rule.condition)}</Tag>
+                    <Tag>{actionTarget(rule)}</Tag>
+                  </div>
                 </div>
-                <p className="mono-detail">{rule.id}</p>
-                <div className="pill-row">
-                  <span className="info-pill">{describeCondition(rule.condition)}</span>
-                  <span className="info-pill">{actionTarget(rule)}</span>
-                </div>
-                <pre className="json-block">{formatJson(rule.actions)}</pre>
+                <CodeBlock>{formatJson(rule.actions)}</CodeBlock>
               </div>
-            ))
-          )}
-        </div>
-      </article>
-
-      <article className="panel panel-span-6">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Evaluate Event</p>
-            <p className="status-line">{plans.length} trigger plan(s) from latest evaluation.</p>
+            ))}
           </div>
-          <button className="btn-secondary" type="button" onClick={() => void onEvaluate()}>
+        )}
+      </Panel>
+
+      <Panel
+        span={6}
+        eyebrow="Evaluate Event"
+        title="Trigger Plan Preview"
+        actions={
+          <Button variant="secondary" type="button" onClick={() => void onEvaluate()}>
             Evaluate
-          </button>
-        </div>
-        <label className="field field-full">
-          <span>event_json</span>
-          <textarea
+          </Button>
+        }
+      >
+        <StatusLine>{plans.length} trigger plan(s) from latest evaluation.</StatusLine>
+        <FormField label="event_json" full>
+          <Textarea
             rows={9}
             value={eventJson}
             onChange={(event) => setEventJson(event.target.value)}
           />
-        </label>
-        <div className="command-list rule-plan-list">
-          {plans.length === 0 ? (
-            <p className="panel-note">No trigger plans have been produced.</p>
-          ) : (
-            plans.map((plan) => (
-              <div key={`${plan.rule_id}:${plan.action_id ?? plan.recipe_id ?? plan.recipe_name}`} className="command-row">
-                <div className="command-row-head">
-                  <h3>{plan.rule_name}</h3>
-                  <div className="toolbar-actions">
-                    <span className="status-pill info">trigger</span>
-                    <button
-                      className="btn-secondary"
-                      type="button"
-                      onClick={() => void onRunPlan(plan)}
-                    >
-                      Run
-                    </button>
+        </FormField>
+        {plans.length === 0 ? (
+          <div className="hx-table-empty">
+            <p>No trigger plans have been produced.</p>
+          </div>
+        ) : (
+          <div className="hx-list">
+            {plans.map((plan) => (
+              <div
+                key={`${plan.rule_id}:${plan.action_id ?? plan.recipe_id ?? plan.recipe_name}`}
+                className="hx-row hx-row--info"
+              >
+                <div className="hx-row-stack">
+                  <div className="hx-row-primary">
+                    <h3>{plan.rule_name}</h3>
+                    <div className="hx-cluster">
+                      <Badge tone="info">trigger</Badge>
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        onClick={() => void onRunPlan(plan)}
+                      >
+                        Run
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="hx-tag-row">
+                    {plan.recipe_id ? <Tag>recipe_id: {plan.recipe_id}</Tag> : null}
+                    {plan.recipe_name ? <Tag>recipe_name: {plan.recipe_name}</Tag> : null}
                   </div>
                 </div>
-                <div className="pill-row">
-                  {plan.recipe_id ? <span className="info-pill">recipe_id: {plan.recipe_id}</span> : null}
-                  {plan.recipe_name ? (
-                    <span className="info-pill">recipe_name: {plan.recipe_name}</span>
-                  ) : null}
-                </div>
-                <pre className="json-block">{formatJson(plan.parameters)}</pre>
+                <CodeBlock>{formatJson(plan.parameters)}</CodeBlock>
               </div>
-            ))
-          )}
-        </div>
-      </article>
-
-      <article className="panel panel-span-12">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Evaluation History</p>
-            <p className="status-line">{historyStatus}</p>
+            ))}
           </div>
-          <div className="toolbar-actions">
-            <span className={`status-pill ${historyPersistenceEnabled ? "ok" : "warn"}`}>
+        )}
+      </Panel>
+
+      <Panel
+        span={12}
+        eyebrow="Evaluation History"
+        title="Persisted Evaluations"
+        actions={
+          <div className="hx-cluster">
+            <Badge tone={historyPersistenceEnabled ? "ok" : "warn"}>
               {historyPersistenceEnabled ? "durable" : "not persisted"}
-            </span>
-            <button
-              className="btn-secondary"
+            </Badge>
+            <Button
+              variant="secondary"
               type="button"
               onClick={() => void loadEvaluationHistory()}
             >
               Refresh
-            </button>
+            </Button>
           </div>
-        </div>
-        <div className="command-list">
-          {evaluations.length === 0 ? (
-            <p className="panel-note">No rule evaluations have been persisted.</p>
-          ) : (
-            evaluations.map((entry) => (
-              <div key={entry.id} className="command-row">
-                <div className="command-row-head">
-                  <h3>{entry.event_type}</h3>
-                  <span className={`status-pill ${entry.trigger_plan_count > 0 ? "ok" : "warn"}`}>
-                    {entry.trigger_plan_count} plan(s)
-                  </span>
+        }
+      >
+        <StatusLine>{historyStatus}</StatusLine>
+        {evaluations.length === 0 ? (
+          <div className="hx-table-empty">
+            <p>No rule evaluations have been persisted.</p>
+          </div>
+        ) : (
+          <div className="hx-list">
+            {evaluations.map((entry) => (
+              <div key={entry.id} className="hx-row">
+                <div className="hx-row-stack">
+                  <div className="hx-row-primary">
+                    <h3>{entry.event_type}</h3>
+                    <Badge tone={entry.trigger_plan_count > 0 ? "ok" : "warn"}>
+                      {entry.trigger_plan_count} plan(s)
+                    </Badge>
+                  </div>
+                  <p className="hx-mono-detail">{entry.event_id}</p>
+                  <div className="hx-tag-row">
+                    <Tag>source: {entry.event_source}</Tag>
+                    <Tag>rules: {entry.rule_count}</Tag>
+                    <Tag>created: {entry.created_at}</Tag>
+                  </div>
                 </div>
-                <p className="mono-detail">{entry.event_id}</p>
-                <div className="pill-row">
-                  <span className="info-pill">source: {entry.event_source}</span>
-                  <span className="info-pill">rules: {entry.rule_count}</span>
-                  <span className="info-pill">created: {entry.created_at}</span>
-                </div>
-                <pre className="json-block">
+                <CodeBlock>
                   {formatJson({
                     event: entry.event,
                     trigger_plans: entry.trigger_plans,
                   })}
-                </pre>
+                </CodeBlock>
               </div>
-            ))
-          )}
-        </div>
-      </article>
+            ))}
+          </div>
+        )}
+      </Panel>
 
-      <article className="panel panel-span-12">
-        <div className="panel-toolbar">
-          <div>
-            <p className="mono-label">Recipe Run History</p>
-            <p className="status-line">{runStatus}</p>
-          </div>
-          <div className="toolbar-actions">
-            <span className={`status-pill ${runPersistenceEnabled ? "ok" : "warn"}`}>
+      <Panel
+        span={12}
+        eyebrow="Recipe Run History"
+        title="Automation Executions"
+        actions={
+          <div className="hx-cluster">
+            <Badge tone={runPersistenceEnabled ? "ok" : "warn"}>
               {runPersistenceEnabled ? "durable" : "not persisted"}
-            </span>
-            <button className="btn-secondary" type="button" onClick={() => void loadRecipeRuns()}>
+            </Badge>
+            <Button variant="secondary" type="button" onClick={() => void loadRecipeRuns()}>
               Refresh
-            </button>
+            </Button>
           </div>
-        </div>
-        <div className="command-list">
-          {runs.length === 0 ? (
-            <p className="panel-note">No recipe runs have been persisted.</p>
-          ) : (
-            runs.map((entry) => (
-              <div key={entry.id} className="command-row">
-                <div className="command-row-head">
-                  <h3>{entry.resolved_recipe_name ?? entry.requested_recipe_name ?? "unresolved recipe"}</h3>
-                  <span className={`status-pill ${entry.status === "completed" ? "ok" : "warn"}`}>
-                    {entry.status}
-                  </span>
+        }
+      >
+        <StatusLine>{runStatus}</StatusLine>
+        {runs.length === 0 ? (
+          <div className="hx-table-empty">
+            <p>No recipe runs have been persisted.</p>
+          </div>
+        ) : (
+          <div className="hx-list">
+            {runs.map((entry) => (
+              <div key={entry.id} className="hx-row">
+                <div className="hx-row-stack">
+                  <div className="hx-row-primary">
+                    <h3>
+                      {entry.resolved_recipe_name ??
+                        entry.requested_recipe_name ??
+                        "unresolved recipe"}
+                    </h3>
+                    <Badge tone={entry.status === "completed" ? "ok" : "warn"}>
+                      {entry.status}
+                    </Badge>
+                  </div>
+                  <p className="hx-mono-detail">run {entry.id}</p>
+                  <div className="hx-tag-row">
+                    {entry.evaluation_id ? (
+                      <Tag>evaluation: {entry.evaluation_id}</Tag>
+                    ) : null}
+                    {entry.resolved_recipe_id ? (
+                      <Tag>recipe_id: {entry.resolved_recipe_id}</Tag>
+                    ) : null}
+                    <Tag>agents: {entry.started_agent_ids.length}</Tag>
+                    <Tag>created: {entry.created_at}</Tag>
+                  </div>
                 </div>
-                <p className="mono-detail">run {entry.id}</p>
-                <div className="pill-row">
-                  {entry.evaluation_id ? (
-                    <span className="info-pill">evaluation: {entry.evaluation_id}</span>
-                  ) : null}
-                  {entry.resolved_recipe_id ? (
-                    <span className="info-pill">recipe_id: {entry.resolved_recipe_id}</span>
-                  ) : null}
-                  <span className="info-pill">agents: {entry.started_agent_ids.length}</span>
-                  <span className="info-pill">created: {entry.created_at}</span>
-                </div>
-                {entry.error ? <p className="status-line">reason: {entry.error}</p> : null}
-                <pre className="json-block">
+                {entry.error ? <StatusLine>reason: {entry.error}</StatusLine> : null}
+                <CodeBlock>
                   {formatJson({
                     trigger_plan: entry.trigger_plan,
                     parameters: entry.parameters,
@@ -539,12 +564,12 @@ export function RulesPage() {
                     emitted_events: entry.emitted_events,
                     state_snapshots: entry.state_snapshots,
                   })}
-                </pre>
+                </CodeBlock>
               </div>
-            ))
-          )}
-        </div>
-      </article>
+            ))}
+          </div>
+        )}
+      </Panel>
     </section>
   );
 }

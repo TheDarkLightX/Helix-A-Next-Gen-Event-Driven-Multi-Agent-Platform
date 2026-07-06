@@ -14,8 +14,20 @@
 //! Helix REST API.
 
 mod evm_rpc;
+mod federation;
 mod intel;
+mod operator;
 
+use crate::federation::{
+    delete_peer, get_dispatch_log, get_federation_overview, get_peer, list_peers,
+    manual_broadcast, receive_federation_event, upsert_peer,
+};
+use crate::operator::{
+    clear_operator_activity, confirm_proposal, deny_proposal, get_operator_activity,
+    get_operator_config, get_operator_status, join_session, leave_session,
+    list_confirmations, list_sessions, operator_stream, pause_operator, session_heartbeat,
+    start_operator, stop_operator, update_operator_config,
+};
 use crate::intel::{
     collect_due_sources_handler, collect_source_handler, create_source, create_watchlist,
     export_autopilot_review_packet, export_market_brief_packet_handler, file_import_handler,
@@ -64,6 +76,7 @@ use helix_core::recipe::Recipe;
 use helix_core::state::{InMemoryStateStore, StateStore};
 use helix_core::types::{AgentId, CredentialId, ProfileId};
 use helix_core::HelixError;
+use helix_federation::{DispatchLog, PeerRegistry};
 use helix_llm::providers::{LlmProvider, LlmRequest, Message, MessageRole, OpenAiProvider};
 use helix_rule_engine::event_listener::RuleEngineEventListener;
 use helix_rule_engine::rules::{ParameterValue, RecipeTriggerPlan, Rule};
@@ -81,7 +94,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::time::{sleep, Duration};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
@@ -102,6 +115,12 @@ pub(crate) struct AppState {
     llm_provider: Option<Arc<dyn LlmProvider>>,
     llm_model: Option<String>,
     auth_service: Arc<AuthService>,
+    federation_registry: PeerRegistry,
+    federation_log: DispatchLog,
+    federation_desk_id: String,
+    operator_loop: Arc<helix_operator::OperatorLoop>,
+    operator_task: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    operator_registry: helix_operator::OperatorRegistry,
 }
 
 const SYMBOLIC_PROGRAM_CACHE_CAPACITY: usize = 128;
@@ -731,9 +750,126 @@ impl SymbolicProgramCache {
     }
 }
 
+/// Parsed command-line arguments.
+struct CliArgs {
+    addr: Option<SocketAddr>,
+    ui_dist: Option<PathBuf>,
+}
+
+const HELIX_VERSION: &str = env!("CARGO_PKG_VERSION");
+const HELIX_HELP_TEXT: &str = "\
+Helix — Event-Driven Multi-Agent Intelligence Platform
+
+USAGE:
+    helix [OPTIONS]
+
+OPTIONS:
+    --addr <ADDR>       Listen address (default: 127.0.0.1:3000, env: HELIX_API_ADDR)
+    --ui-dist <DIR>     Path to built UI static files (env: HELIX_UI_DIST)
+    --version, -V       Print version and exit
+    --help, -h          Print this help and exit
+
+ENVIRONMENT:
+    HELIX_API_ADDR              Listen address (default: 127.0.0.1:3000)
+    HELIX_UI_DIST               Path to UI static files directory
+    DATABASE_URL                PostgreSQL connection string (optional, in-memory if unset)
+    HELIX_AUTO_MIGRATE          Run DB migrations on startup (default: false)
+    HELIX_AUTH_REQUIRED         Require API token auth (default: false)
+    HELIX_API_TOKEN             API token for authentication
+    HELIX_AUTOPILOT_LLM_MODEL   LLM model for operator (e.g. gpt-4o)
+    HELIX_AUTOPILOT_MODE        Operator mode: off | assist | auto (default: assist)
+
+EXAMPLES:
+    helix                                    Start with defaults
+    helix --addr 0.0.0.0:3000                Listen on all interfaces
+    helix --ui-dist ./ui/dist                Serve UI from custom path
+    HELIX_AUTOPILOT_LLM_MODEL=gpt-4o helix   Start with LLM operator
+";
+
+fn parse_cli_args() -> CliArgs {
+    let mut args = CliArgs {
+        addr: None,
+        ui_dist: None,
+    };
+    let mut iter = std::env::args().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                println!("helix {}", HELIX_VERSION);
+                std::process::exit(0);
+            }
+            "--help" | "-h" => {
+                print!("{}", HELIX_HELP_TEXT);
+                std::process::exit(0);
+            }
+            "--addr" => {
+                let Some(value) = iter.next() else {
+                    eprintln!("error: --addr requires a value (e.g. --addr 0.0.0.0:3000)");
+                    std::process::exit(2);
+                };
+                match value.parse::<SocketAddr>() {
+                    Ok(addr) => args.addr = Some(addr),
+                    Err(e) => {
+                        eprintln!("error: invalid --addr value '{value}': {e}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "--ui-dist" => {
+                let Some(value) = iter.next() else {
+                    eprintln!("error: --ui-dist requires a value (e.g. --ui-dist ./ui/dist)");
+                    std::process::exit(2);
+                };
+                args.ui_dist = Some(PathBuf::from(value));
+            }
+            other if other.starts_with("--addr=") => {
+                let value = &other[7..];
+                match value.parse::<SocketAddr>() {
+                    Ok(addr) => args.addr = Some(addr),
+                    Err(e) => {
+                        eprintln!("error: invalid --addr value '{value}': {e}");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            other if other.starts_with("--ui-dist=") => {
+                args.ui_dist = Some(PathBuf::from(&other[10..]));
+            }
+            other => {
+                eprintln!("error: unknown argument '{other}'\n\nRun 'helix --help' for usage.");
+                std::process::exit(2);
+            }
+        }
+    }
+    args
+}
+
+fn print_startup_banner(addr: SocketAddr, ui_served: bool, db_connected: bool) {
+    let ui_status = if ui_served { "enabled" } else { "disabled (no UI dist found)" };
+    let db_status = if db_connected { "PostgreSQL" } else { "in-memory" };
+    eprintln!();
+    eprintln!("  ╔══════════════════════════════════════════════╗");
+    eprintln!("  ║          Helix v{}                        ║", HELIX_VERSION);
+    eprintln!("  ║          Event-Driven Multi-Agent Platform   ║");
+    eprintln!("  ╚══════════════════════════════════════════════╝");
+    eprintln!();
+    eprintln!("  Web UI:     http://{}  ({})", addr, ui_status);
+    eprintln!("  API:        http://{}/api/v1/health", addr);
+    eprintln!("  Storage:    {}", db_status);
+    eprintln!();
+    eprintln!("  Press Ctrl+C to stop.");
+    eprintln!();
+}
+
 #[tokio::main]
 async fn main() {
+    let cli = parse_cli_args();
     tracing_subscriber::fmt::init();
+
+    // CLI --ui-dist overrides env var
+    if let Some(ui_dist) = &cli.ui_dist {
+        std::env::set_var(HELIX_UI_DIST_ENV, ui_dist);
+    }
 
     let (llm_provider, llm_model) = match llm_provider_from_env() {
         Some((provider, model)) => (Some(provider), Some(model)),
@@ -803,10 +939,21 @@ async fn main() {
         llm_provider,
         llm_model,
         auth_service: Arc::new(api_auth_from_env()),
+        federation_registry: PeerRegistry::new(),
+        federation_log: DispatchLog::new(500),
+        federation_desk_id: helix_federation::desk_id_from_env(),
+        operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
+            helix_operator::DeskOperatorConfig::default(),
+        )),
+        operator_task: Arc::new(Mutex::new(None)),
+        operator_registry: helix_operator::OperatorRegistry::new(),
     };
     let app = app_with_optional_static_ui(state);
 
-    let addr = api_addr_from_env();
+    let addr = cli.addr.unwrap_or_else(api_addr_from_env);
+    let ui_served = std::env::var_os(HELIX_UI_DIST_ENV).is_some();
+    let db_connected = postgres_pool.is_some();
+    print_startup_banner(addr, ui_served, db_connected);
     tracing::info!("listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -1872,7 +2019,7 @@ async fn onchain_get_receipt(Json(req): Json<OnchainReceiptRequest>) -> Response
     }
 }
 
-fn api_error_response(error: HelixError) -> Response {
+pub(crate) fn api_error_response(error: HelixError) -> Response {
     let status = match error {
         HelixError::NotFound(_) => StatusCode::NOT_FOUND,
         HelixError::ValidationError { .. } => StatusCode::BAD_REQUEST,
@@ -2668,7 +2815,7 @@ async fn complete_autopilot_proposal(
             content: user_payload,
             function_call: None,
         }],
-        max_tokens: Some(512),
+        max_tokens: Some(4096),
         temperature: Some(0.0),
         top_p: Some(1.0),
         functions: None,
@@ -2877,6 +3024,18 @@ async fn post_autopilot_execute(
         AutopilotGuardDecision::Allow {
             requires_confirmation,
         } => {
+            if requires_confirmation && !req.confirmed_by_human {
+                return (
+                    StatusCode::OK,
+                    Json(AutopilotExecuteResponse {
+                        allowed: false,
+                        reason: Some("assist_requires_confirmation".to_string()),
+                        requires_confirmation: true,
+                        result: None,
+                    }),
+                )
+                    .into_response();
+            }
             let result = async {
                 let value = match req.action {
                     AutopilotActionRequest::PolicySimulation { commands } => {
@@ -3318,6 +3477,46 @@ fn api_router() -> Router<AppState> {
         .route("/api/v1/autopilot/execute", post(post_autopilot_execute))
         .route("/api/v1/onchain/send_raw", post(onchain_send_raw))
         .route("/api/v1/onchain/receipt", post(onchain_get_receipt))
+        // Federation: peer desk networking
+        .route("/api/v1/federation/overview", get(get_federation_overview))
+        .route("/api/v1/federation/peers", get(list_peers).post(upsert_peer))
+        .route(
+            "/api/v1/federation/peers/:peer_id",
+            get(get_peer).delete(delete_peer),
+        )
+        .route("/api/v1/federation/dispatch-log", get(get_dispatch_log))
+        .route("/api/v1/federation/broadcast", post(manual_broadcast))
+        .route("/api/v1/federation/receive", post(receive_federation_event))
+        // Operator: LLM-driven desk operator
+        .route("/api/v1/operator/status", get(get_operator_status))
+        .route("/api/v1/operator/config", get(get_operator_config).put(update_operator_config))
+        .route("/api/v1/operator/start", post(start_operator))
+        .route("/api/v1/operator/stop", post(stop_operator))
+        .route("/api/v1/operator/pause", post(pause_operator))
+        .route(
+            "/api/v1/operator/activity",
+            get(get_operator_activity).delete(clear_operator_activity),
+        )
+        // CoPilot mode: multi-participant collaboration
+        .route("/api/v1/operator/sessions", post(join_session).get(list_sessions))
+        .route(
+            "/api/v1/operator/sessions/:session_id",
+            delete(leave_session),
+        )
+        .route(
+            "/api/v1/operator/sessions/:session_id/heartbeat",
+            post(session_heartbeat),
+        )
+        .route("/api/v1/operator/confirmations", get(list_confirmations))
+        .route(
+            "/api/v1/operator/confirmations/:confirmation_id/confirm",
+            post(confirm_proposal),
+        )
+        .route(
+            "/api/v1/operator/confirmations/:confirmation_id/deny",
+            post(deny_proposal),
+        )
+        .route("/api/v1/operator/stream", get(operator_stream))
 }
 
 async fn require_api_auth(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -3384,6 +3583,14 @@ mod tests {
             llm_provider,
             llm_model,
             auth_service: Arc::new(AuthService::disabled()),
+            federation_registry: helix_federation::PeerRegistry::new(),
+            federation_log: helix_federation::DispatchLog::new(100),
+            federation_desk_id: "test-desk".to_string(),
+            operator_loop: Arc::new(helix_operator::OperatorLoop::from_config(
+                helix_operator::DeskOperatorConfig::default(),
+            )),
+            operator_task: Arc::new(Mutex::new(None)),
+            operator_registry: helix_operator::OperatorRegistry::new(),
         }
     }
 
@@ -3508,6 +3715,24 @@ mod tests {
         async fn health_check(&self) -> Result<(), LlmError> {
             Ok(())
         }
+    }
+
+    fn operator_test_app() -> Router {
+        let provider = StubLlmProvider {
+            content: serde_json::json!([
+                {
+                    "type": "log_analysis",
+                    "rationale": "operator test cycle",
+                    "parameters": {
+                        "severity": "low",
+                        "summary": "ok"
+                    }
+                }
+            ])
+            .to_string(),
+            model: "stub-model".to_string(),
+        };
+        test_app_with_llm(Arc::new(provider), "stub-model".to_string())
     }
 
     #[tokio::test]
@@ -6472,7 +6697,9 @@ mod tests {
 
         assert!(matches!(
             payload.guard_preview.decision_unconfirmed,
-            AutopilotGuardDecision::Deny { reason } if reason == "assist_requires_confirmation"
+            AutopilotGuardDecision::Allow {
+                requires_confirmation: true
+            }
         ));
         assert!(matches!(
             payload.guard_preview.decision_confirmed,
@@ -6510,6 +6737,7 @@ mod tests {
             payload.reason.as_deref(),
             Some("assist_requires_confirmation")
         );
+        assert!(payload.requires_confirmation);
     }
 
     #[tokio::test]
@@ -6591,5 +6819,747 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn federation_overview_returns_empty_state() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/overview")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let overview: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(overview["status"]["peer_count"], 0);
+        assert_eq!(overview["status"]["federation_enabled"], false);
+    }
+
+    #[tokio::test]
+    async fn federation_peer_crud_roundtrip() {
+        let app = test_app();
+
+        // Create a peer
+        let peer_json = serde_json::json!({
+            "id": "desk-beta",
+            "name": "Beta Desk",
+            "endpoint_url": "https://beta.helix.io",
+            "auth_token": "secret-token-abc",
+            "trust_score": 80,
+            "enabled": true,
+            "tags": ["osint"],
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/peers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(peer_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+
+        // List peers
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/peers")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let list: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(list["peers"].as_array().unwrap().len(), 1);
+        assert_eq!(list["peers"][0]["id"], "desk-beta");
+
+        // Get single peer
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/peers/desk-beta")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Delete peer
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/api/v1/federation/peers/desk-beta")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn federation_peer_validation_rejects_bad_url() {
+        let app = test_app();
+        let peer_json = serde_json::json!({
+            "id": "desk-bad",
+            "name": "Bad Desk",
+            "endpoint_url": "not-a-url",
+            "auth_token": "secret-token-abc",
+            "trust_score": 80,
+            "enabled": true,
+            "tags": [],
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/peers")
+                    .header("content-type", "application/json")
+                    .body(Body::from(peer_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn federation_dispatch_log_is_empty_initially() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/federation/dispatch-log")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let log: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(log["entries"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn federation_receive_ingests_evidence() {
+        let app = test_app();
+        let event_json = serde_json::json!({
+            "specversion": "1.0",
+            "id": "fed-test-001",
+            "type": "helix.case.escalated",
+            "source_desk_id": "desk-remote",
+            "target_desk_id": "*",
+            "title": "Remote case escalation",
+            "summary": "Executive departure at target company",
+            "content": "Full details of the escalation",
+            "url": null,
+            "observed_at": "2026-01-01T00:00:00Z",
+            "kind": "case_escalated",
+            "trust_score": 85,
+            "entity_labels": ["alice"],
+            "tags": ["osint"],
+            "case_id": null,
+            "watchlist_id": null,
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/receive")
+                    .header("content-type", "application/json")
+                    .body(Body::from(event_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["accepted"], true);
+        assert!(result["evidence_id"].as_str().is_some());
+    }
+
+    #[tokio::test]
+    async fn federation_manual_broadcast_with_no_peers() {
+        let app = test_app();
+        let broadcast_json = serde_json::json!({
+            "title": "Manual broadcast",
+            "summary": "Test broadcast",
+            "content": "Content",
+            "url": null,
+            "entity_labels": [],
+            "tags": [],
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/federation/broadcast")
+                    .header("content-type", "application/json")
+                    .body(Body::from(broadcast_json.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["dispatch_count"], 0);
+    }
+
+    // ---- Operator integration tests ----
+
+    #[tokio::test]
+    async fn operator_status_returns_stopped_by_default() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/status")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "stopped");
+        assert_eq!(result["cycle_count"], 0);
+        assert_eq!(result["activity_log_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn operator_config_returns_default() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/config")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["config"]["model"], "gpt-4o-mini");
+        assert_eq!(result["config"]["autopilot_mode"], "assist");
+        assert_eq!(result["config"]["action_scope"], "intelligence");
+    }
+
+    #[tokio::test]
+    async fn operator_update_config_changes_model() {
+        let app = test_app();
+        let req_body = serde_json::json!({
+            "model": "claude-opus-4",
+            "loop_interval_secs": 30
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/operator/config")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["config"]["model"], "claude-opus-4");
+        assert_eq!(result["config"]["loop_interval_secs"], 30);
+    }
+
+    #[tokio::test]
+    async fn operator_update_config_rejects_invalid_interval() {
+        let app = test_app();
+        let req_body = serde_json::json!({"loop_interval_secs": 1});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/api/v1/operator/config")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn operator_start_then_stop_changes_status() {
+        let app = operator_test_app();
+
+        // Start
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "running");
+
+        // Stop
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/stop")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "stopped");
+    }
+
+    #[tokio::test]
+    async fn operator_start_without_llm_provider_fails() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn operator_pause_changes_status_to_paused() {
+        let app = operator_test_app();
+
+        // Start first
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Pause
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/pause")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["status"], "paused");
+    }
+
+    #[tokio::test]
+    async fn operator_activity_returns_empty_by_default() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/activity")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["entries"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn operator_activity_with_limit_query_param() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/activity?limit=10")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn operator_double_start_returns_bad_request() {
+        let app = operator_test_app();
+        // First start
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Second start should fail
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/start")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ---- CoPilot integration tests ----
+
+    #[tokio::test]
+    async fn copilot_join_creates_session() {
+        let app = test_app();
+        let req_body = serde_json::json!({
+            "display_name": "Alice",
+            "kind": "human",
+            "role": "operator"
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["session"]["display_name"], "Alice");
+        assert_eq!(result["session"]["kind"], "human");
+        assert_eq!(result["session"]["status"], "active");
+        assert!(result["session"]["id"].as_str().unwrap().starts_with("sess-"));
+    }
+
+    #[tokio::test]
+    async fn copilot_join_rejects_empty_name() {
+        let app = test_app();
+        let req_body = serde_json::json!({"display_name": ""});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn copilot_list_sessions_shows_joined() {
+        let app = test_app();
+        // Join
+        let req_body = serde_json::json!({"display_name": "Bob", "kind": "human"});
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // List
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(result["human_count"], 1);
+        assert_eq!(result["ai_count"], 0);
+    }
+
+    #[tokio::test]
+    async fn copilot_leave_removes_session() {
+        let app = test_app();
+        // Join
+        let req_body = serde_json::json!({"display_name": "Carol"});
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = result["session"]["id"].as_str().unwrap();
+
+        // Leave
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(&format!("/api/v1/operator/sessions/{session_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // List should be empty
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/sessions")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["sessions"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn copilot_heartbeat_keeps_session_alive() {
+        let app = test_app();
+        // Join
+        let req_body = serde_json::json!({"display_name": "Dave"});
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = result["session"]["id"].as_str().unwrap();
+
+        // Heartbeat
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(&format!("/api/v1/operator/sessions/{session_id}/heartbeat"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn copilot_heartbeat_returns_not_found_for_missing() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions/nonexistent/heartbeat")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn copilot_confirmations_empty_initially() {
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/operator/confirmations")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["pending"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn copilot_confirm_nonexistent_returns_not_found() {
+        let app = test_app();
+        let req_body = serde_json::json!({"session_id": "fake"});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/confirmations/fake-id/confirm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn copilot_confirm_with_missing_session_returns_not_found() {
+        let app = test_app();
+        let req_body = serde_json::json!({"session_id": "nonexistent-session"});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/confirmations/fake-id/confirm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn copilot_join_ai_copilot() {
+        let app = test_app();
+        let req_body = serde_json::json!({
+            "display_name": "AI Copilot",
+            "kind": "ai",
+            "role": "operator"
+        });
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["session"]["kind"], "ai");
+    }
+
+    #[tokio::test]
+    async fn copilot_viewer_cannot_confirm() {
+        let app = test_app();
+        // Join as viewer
+        let req_body = serde_json::json!({
+            "display_name": "Viewer",
+            "kind": "human",
+            "role": "viewer"
+        });
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/sessions")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let session_id = result["session"]["id"].as_str().unwrap();
+
+        // Try to confirm — should be forbidden
+        let req_body = serde_json::json!({"session_id": session_id});
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/operator/confirmations/fake-id/confirm")
+                    .header("content-type", "application/json")
+                    .body(Body::from(req_body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

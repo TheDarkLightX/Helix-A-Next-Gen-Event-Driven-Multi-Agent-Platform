@@ -6,6 +6,14 @@ import {
   fetchAgentCatalog,
   fetchAgentTemplates,
 } from "../lib/api";
+import {
+  Panel,
+  Button,
+  Badge,
+  StatusLine,
+  CodeBlock,
+  Tag,
+} from "../components";
 
 const verificationCommands = [
   "cargo test --manifest-path crates/helix-api/Cargo.toml",
@@ -53,7 +61,6 @@ export function AgentCatalogPage() {
       setTemplateStatus("Clipboard is not available in this browser context.");
       return;
     }
-
     try {
       await navigator.clipboard.writeText(value);
       setTemplateStatus(`${label} copied to clipboard.`);
@@ -63,10 +70,7 @@ export function AgentCatalogPage() {
   }
 
   async function applySelectedTemplate() {
-    if (!selectedTemplate) {
-      return;
-    }
-
+    if (!selectedTemplate) return;
     setApplyStatus(`Applying ${selectedTemplate.name}...`);
     try {
       const response = await applyAgentTemplate(selectedTemplate.id, true);
@@ -80,121 +84,103 @@ export function AgentCatalogPage() {
   }
 
   return (
-    <section className="dashboard-grid">
-      <article className="panel panel-hero panel-span-12">
-        <p className="mono-label">Agent Catalog</p>
-        <h2>High-ROI Deterministic State Machines</h2>
-        <p>
-          These kernels are pure and replayable. Each includes formal model coverage for fail-closed
-          verification.
+    <section className="hx-page-grid">
+      <Panel hero span={12} eyebrow="Agent Catalog" title="High-ROI Deterministic State Machines">
+        <p className="hx-description">
+          These kernels are pure and replayable. Each includes formal model coverage
+          for fail-closed verification.
         </p>
-      </article>
+      </Panel>
 
-      <article className="panel panel-span-5">
-        <p className="mono-label">Verification Commands</p>
-        <div className="command-stack">
+      <Panel span={5} eyebrow="Verify" title="Verification Commands">
+        <div className="hx-list">
           {verificationCommands.map((command) => (
-            <code key={command} className="command-inline">
-              {command}
-            </code>
-          ))}
-        </div>
-        <p className="status-line">{status}</p>
-      </article>
-
-      <article className="panel panel-span-7">
-        <p className="mono-label">Implemented Agents</p>
-        <div className="agent-grid">
-          {agents.map((agent) => (
-            <div key={agent.id} className="agent-card">
-              <div className="agent-card-head">
-                <h3>{agent.name}</h3>
-                <span className="status-pill ok">Implemented</span>
-              </div>
-              <p>{agent.roi_rationale}</p>
-              <p className="mono-detail">{agent.id}</p>
-              <code className="command-inline">{agent.kernel_module}</code>
-              <code className="command-inline">formal_model: available</code>
+            <div key={command} className="hx-row">
+              <code className="hx-mono-detail">{command}</code>
             </div>
           ))}
         </div>
-      </article>
+        <StatusLine>{status}</StatusLine>
+      </Panel>
 
-      <article className="panel panel-span-6">
-        <p className="mono-label">Deployment Templates</p>
-        <div className="agent-grid">
-          {templates.map((template) => (
-            <div key={template.id} className="agent-card">
-              <div className="agent-card-head">
-                <h3>{template.name}</h3>
-                <span className="status-pill ok">Template</span>
+      <Panel span={7} eyebrow="Implemented" title="Agents" actions={<Badge tone="accent">{agents.length}</Badge>}>
+        {agents.length === 0 ? (
+          <div className="hx-table-empty"><p>No agents loaded.</p></div>
+        ) : (
+          <div className="hx-card-grid">
+            {agents.map((agent) => (
+              <div key={agent.id} className="hx-card">
+                <div className="hx-card-head">
+                  <h3>{agent.name}</h3>
+                  <Badge tone="ok">Implemented</Badge>
+                </div>
+                <p className="hx-row-secondary">{agent.roi_rationale}</p>
+                <p className="hx-mono-detail">{agent.id}</p>
+                <div className="hx-tag-row">
+                  <Tag>{agent.kernel_module}</Tag>
+                  <Tag>formal model: available</Tag>
+                </div>
               </div>
-              <p>{template.summary}</p>
-              <p className="mono-detail">{template.id}</p>
-              <p>Use for: {template.recommended_for}</p>
-              <code className="command-inline">
-                required_agents=[{template.required_agents.join(", ")}]
-              </code>
-              <div className="button-row">
-                <button
-                  className={template.id === selectedTemplateId ? "btn-primary" : "btn-secondary"}
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <Panel span={6} eyebrow="Deploy" title="Templates" actions={<Badge tone="info">{templates.length}</Badge>}>
+        {templates.length === 0 ? (
+          <div className="hx-table-empty"><p>No templates loaded.</p></div>
+        ) : (
+          <div className="hx-card-grid">
+            {templates.map((template) => (
+              <div key={template.id} className="hx-card">
+                <div className="hx-card-head">
+                  <h3>{template.name}</h3>
+                  <Badge tone={template.id === selectedTemplateId ? "accent" : "neutral"}>Template</Badge>
+                </div>
+                <p className="hx-row-secondary">{template.summary}</p>
+                <p className="hx-mono-detail">{template.id}</p>
+                <p className="hx-row-secondary">Use for: {template.recommended_for}</p>
+                <div className="hx-tag-row">
+                  <Tag>required: {template.required_agents.join(", ")}</Tag>
+                </div>
+                <Button
+                  variant={template.id === selectedTemplateId ? "primary" : "secondary"}
                   onClick={() => setSelectedTemplateId(template.id)}
                 >
-                  {template.id === selectedTemplateId ? "Selected" : "Select Template"}
-                </button>
+                  {template.id === selectedTemplateId ? "Selected" : "Select"}
+                </Button>
               </div>
-            </div>
-          ))}
-        </div>
-        <p className="status-line">{templateStatus}</p>
-      </article>
-
-      <article className="panel panel-span-6">
-        <p className="mono-label">Template Details</p>
-        {selectedTemplate ? (
-          <>
-            <h3>{selectedTemplate.name}</h3>
-            <p>{selectedTemplate.summary}</p>
-            <p className="status-line">{selectedTemplate.recommended_for}</p>
-
-            <p className="mono-label">Config JSON</p>
-            <pre className="json-output">{JSON.stringify(selectedTemplate.config, null, 2)}</pre>
-
-            <p className="mono-label">Bootstrap Commands</p>
-            <pre className="json-output">
-              {JSON.stringify(selectedTemplate.bootstrap_commands, null, 2)}
-            </pre>
-
-            <div className="button-row">
-              <button
-                className="btn-secondary"
-                onClick={() =>
-                  void copyToClipboard("Config JSON", JSON.stringify(selectedTemplate.config, null, 2))
-                }
-              >
-                Copy Config
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() =>
-                  void copyToClipboard(
-                    "Bootstrap Commands",
-                    JSON.stringify(selectedTemplate.bootstrap_commands, null, 2)
-                  )
-                }
-              >
-                Copy Commands
-              </button>
-              <button className="btn-primary" onClick={() => void applySelectedTemplate()}>
-                Apply Template
-              </button>
-            </div>
-            <p className="status-line">{applyStatus}</p>
-          </>
-        ) : (
-          <p>Select a template to inspect deterministic config and bootstrap commands.</p>
+            ))}
+          </div>
         )}
-      </article>
+        <StatusLine>{templateStatus}</StatusLine>
+      </Panel>
+
+      <Panel span={6} eyebrow="Details" title="Template Config">
+        {selectedTemplate ? (
+          <div className="hx-list">
+            <div className="hx-card-head">
+              <h3>{selectedTemplate.name}</h3>
+            </div>
+            <p className="hx-row-secondary">{selectedTemplate.summary}</p>
+            <StatusLine>{selectedTemplate.recommended_for}</StatusLine>
+            <CodeBlock label="Config JSON">{JSON.stringify(selectedTemplate.config, null, 2)}</CodeBlock>
+            <CodeBlock label="Bootstrap Commands">{JSON.stringify(selectedTemplate.bootstrap_commands, null, 2)}</CodeBlock>
+            <div className="hx-cluster">
+              <Button variant="secondary" onClick={() => void copyToClipboard("Config JSON", JSON.stringify(selectedTemplate.config, null, 2))}>
+                Copy Config
+              </Button>
+              <Button variant="secondary" onClick={() => void copyToClipboard("Bootstrap Commands", JSON.stringify(selectedTemplate.bootstrap_commands, null, 2))}>
+                Copy Commands
+              </Button>
+              <Button onClick={() => void applySelectedTemplate()}>Apply Template</Button>
+            </div>
+            <StatusLine>{applyStatus}</StatusLine>
+          </div>
+        ) : (
+          <div className="hx-table-empty"><p>Select a template to inspect deterministic config and bootstrap commands.</p></div>
+        )}
+      </Panel>
     </section>
   );
 }

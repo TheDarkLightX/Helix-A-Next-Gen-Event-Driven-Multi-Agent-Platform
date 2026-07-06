@@ -14,7 +14,9 @@ import { CasesPage } from "./screens/CasesPage";
 import { CredentialsPage } from "./screens/CredentialsPage";
 import { DashboardPage } from "./screens/DashboardPage";
 import { EvidencePage } from "./screens/EvidencePage";
+import { FederationPage } from "./screens/FederationPage";
 import { MarketIntelPage } from "./screens/MarketIntelPage";
+import { OperatorPage } from "./screens/OperatorPage";
 import { OnchainPage } from "./screens/OnchainPage";
 import { PolicyWorkbenchPage } from "./screens/PolicyWorkbenchPage";
 import { RulesPage } from "./screens/RulesPage";
@@ -29,31 +31,38 @@ import {
 
 const NAV_GROUPS = [
   {
-    name: "Command & Control",
+    name: "Command",
     items: [
-      { to: "/" as const, label: "SYS.DASHBOARD", icon: "❖" },
-      { to: "/market-intel" as const, label: "MARKET.INTEL", icon: "◒" },
-      { to: "/autopilot" as const, label: "AUTOPILOT.AI", icon: "⌾" },
+      { to: "/" as const, label: "Dashboard", icon: "◆" },
+      { to: "/market-intel" as const, label: "Market Intel", icon: "◐" },
+      { to: "/autopilot" as const, label: "Autopilot", icon: "◎" },
     ],
   },
   {
-    name: "Data Substrate",
+    name: "Intelligence",
     items: [
-      { to: "/sources" as const, label: "NET.SOURCES", icon: "⏚" },
-      { to: "/evidence" as const, label: "RAW.EVIDENCE", icon: "▤" },
-      { to: "/watchlists" as const, label: "WATCH.RULES", icon: "⎈" },
+      { to: "/sources" as const, label: "Sources", icon: "▸" },
+      { to: "/evidence" as const, label: "Evidence", icon: "▤" },
+      { to: "/watchlists" as const, label: "Watchlists", icon: "⚑" },
     ],
   },
   {
-    name: "Execution & Logic",
+    name: "Operations",
     items: [
-      { to: "/cases" as const, label: "ACTIVE.CASES", icon: "⊡" },
-      { to: "/agents" as const, label: "AGENT.NODES", icon: "⎍" },
-      { to: "/policies" as const, label: "POLICY.GATE", icon: "⍜" },
-      { to: "/credentials" as const, label: "KEYS.VAULT", icon: "K" },
-      { to: "/rules" as const, label: "AUTO.RULES", icon: "⟲" },
-      { to: "/audit" as const, label: "AUDIT.LOG", icon: "⌁" },
-      { to: "/onchain" as const, label: "EVM.SHELL", icon: "⟡" },
+      { to: "/cases" as const, label: "Cases", icon: "⊡" },
+      { to: "/agents" as const, label: "Agents", icon: "⎌" },
+      { to: "/policies" as const, label: "Policy", icon: "⌥" },
+      { to: "/credentials" as const, label: "Credentials", icon: "⚿" },
+      { to: "/rules" as const, label: "Automation", icon: "⟲" },
+      { to: "/audit" as const, label: "Audit Log", icon: "≡" },
+      { to: "/onchain" as const, label: "Onchain", icon: "⟡" },
+    ],
+  },
+  {
+    name: "Network",
+    items: [
+      { to: "/federation" as const, label: "Federation", icon: "⬡" },
+      { to: "/operator" as const, label: "Operator", icon: "⊕" },
     ],
   },
 ];
@@ -101,130 +110,129 @@ function RootLayout() {
   }
 
   return (
-    <div className="tac-root">
-      <div className="tac-scanlines"></div>
-      <div className="tac-glow-orbs"></div>
+    <div className="hx-root">
+      <div className="hx-bg-grid" />
 
-      <div className="tac-layout">
-        <header className="tac-topbar">
-          <div className="topbar-brand">
+      <div className="hx-layout">
+        <header className="hx-topbar">
+          <div className="hx-topbar-brand">
             <button
               type="button"
-              className="topbar-menu"
+              className="hx-topbar-menu"
               aria-label={sidebarOpen ? "Close navigation" : "Open navigation"}
               aria-expanded={sidebarOpen}
               aria-controls="helix-sidebar"
               onClick={() => setSidebarOpen((open) => !open)}
             >
-              NAV
+              MENU
             </button>
-            <span className="brand-icon">⎈</span>
-            <span className="brand-name">HELIX</span>
-            <span className="brand-version">v2.0.4 - TACTICAL OSINT</span>
+            <span className="hx-brand-icon">⎈</span>
+            <span className="hx-brand-name">HELIX</span>
+            <span className="hx-brand-version">v2.1 · Intelligence Desk</span>
             <button
               type="button"
-              className="topbar-collapse"
+              className="hx-topbar-collapse"
               aria-label={preferences.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               aria-pressed={preferences.sidebarCollapsed}
               onClick={toggleSidebarCollapsed}
             >
-              {preferences.sidebarCollapsed ? "EXPAND" : "COLLAPSE"}
+              {preferences.sidebarCollapsed ? "▸" : "◂"}
             </button>
           </div>
-          <div className="topbar-telemetry">
-            <div className="telemetry-block">
-              <span className="t-label">NET</span>
-              <span className="t-val ok">SECURE</span>
+          <div className="hx-topbar-meta">
+            <div className="hx-meta-chip">
+              <span className="hx-meta-label">NET</span>
+              <span className="hx-meta-value is-ok">SECURE</span>
             </div>
-            <div className="telemetry-block">
-              <span className="t-label">RPC</span>
-              <span className="t-val">127.0.0.1:3000</span>
+            <div className="hx-meta-chip">
+              <span className="hx-meta-label">RPC</span>
+              <span className="hx-meta-value">127.0.0.1:3000</span>
             </div>
-            <div className="telemetry-block">
-              <span className="t-label">UI_SYNC</span>
-              <span className="t-val ok">SYNCED</span>
+            <div className="hx-meta-chip">
+              <span className="hx-meta-label">SYNC</span>
+              <span className="hx-meta-value is-ok">ONLINE</span>
             </div>
-            <label className="telemetry-auth">
-              <span className="t-label">API_AUTH</span>
+            <label className="hx-meta-auth">
+              <span className="hx-meta-label">TOKEN</span>
               <input
                 aria-label="API bearer token"
-                className="topbar-token"
+                className="hx-token-input"
                 type="password"
                 autoComplete="off"
-                placeholder="token"
+                placeholder="bearer token"
                 value={apiTokenInput}
                 onChange={(event) => updateApiToken(event.target.value)}
               />
               {hasApiToken ? (
-                <button type="button" className="topbar-token-clear" onClick={resetApiToken}>
+                <button type="button" className="hx-token-clear" onClick={resetApiToken}>
                   CLEAR
                 </button>
               ) : (
-                <span className="t-val">LOCAL</span>
+                <span className="hx-meta-value">LOCAL</span>
               )}
             </label>
           </div>
         </header>
 
         <div
-          className={`tac-main-grid${preferences.sidebarCollapsed ? " sidebar-collapsed" : ""}`}
+          className={`hx-main-grid${preferences.sidebarCollapsed ? " is-collapsed" : ""}`}
         >
           <aside
             id="helix-sidebar"
-            className={`tac-sidebar${sidebarOpen ? " is-open" : ""}${
+            className={`hx-sidebar${sidebarOpen ? " is-open" : ""}${
               preferences.sidebarCollapsed ? " is-collapsed" : ""
             }`}
           >
-            <nav className="tac-nav">
+            <nav className="hx-nav">
               {NAV_GROUPS.map((group) => (
-                <div key={group.name} className="nav-group">
-                  <span className="group-label">[{group.name}]</span>
-                  <div className="group-items">
+                <div key={group.name} className="hx-nav-group">
+                  <span className="hx-nav-group-label">{group.name}</span>
+                  <div className="hx-nav-group-items">
                     {group.items.map((item) => (
                       <Link
                         key={item.to}
                         to={item.to}
-                        activeProps={{ className: "tac-nav-link active" }}
-                        inactiveProps={{ className: "tac-nav-link" }}
+                        activeProps={{ className: "hx-nav-link active" }}
+                        inactiveProps={{ className: "hx-nav-link" }}
                         title={item.label}
                         onClick={() => setSidebarOpen(false)}
                       >
-                        <span className="nav-icon">{item.icon}</span>
-                        <span className="nav-text">{item.label}</span>
-                        <span className="nav-caret">⟩</span>
+                        <span className="hx-nav-icon">{item.icon}</span>
+                        <span className="hx-nav-text">{item.label}</span>
+                        <span className="hx-nav-caret">›</span>
                       </Link>
                     ))}
                   </div>
                 </div>
               ))}
             </nav>
-            <div className="sidebar-footer">
-              <label className="sidebar-pref">
-                <span className="group-label">[Default Landing]</span>
+            <div className="hx-sidebar-footer">
+              <label className="hx-sidebar-pref">
+                <span className="hx-nav-group-label">Default Landing</span>
                 <select
                   value={preferences.defaultLandingRoute}
                   onChange={(event) =>
                     updateDefaultLandingRoute(event.target.value as OperatorLandingRoute)
                   }
                 >
-                  <option value="/">SYS.DASHBOARD</option>
-                  <option value="/market-intel">MARKET.INTEL</option>
-                  <option value="/autopilot">AUTOPILOT.AI</option>
-                  <option value="/sources">NET.SOURCES</option>
-                  <option value="/evidence">RAW.EVIDENCE</option>
-                  <option value="/watchlists">WATCH.RULES</option>
-                  <option value="/cases">ACTIVE.CASES</option>
-                  <option value="/agents">AGENT.NODES</option>
-                  <option value="/policies">POLICY.GATE</option>
-                  <option value="/credentials">KEYS.VAULT</option>
-                  <option value="/rules">AUTO.RULES</option>
-                  <option value="/audit">AUDIT.LOG</option>
-                  <option value="/onchain">EVM.SHELL</option>
+                  <option value="/">Dashboard</option>
+                  <option value="/market-intel">Market Intel</option>
+                  <option value="/autopilot">Autopilot</option>
+                  <option value="/sources">Sources</option>
+                  <option value="/evidence">Evidence</option>
+                  <option value="/watchlists">Watchlists</option>
+                  <option value="/cases">Cases</option>
+                  <option value="/agents">Agents</option>
+                  <option value="/policies">Policy</option>
+                  <option value="/credentials">Credentials</option>
+                  <option value="/rules">Automation</option>
+                  <option value="/audit">Audit Log</option>
+                  <option value="/onchain">Onchain</option>
                 </select>
               </label>
-              <div className="status-indicator">
-                <span className="pulse-dot ok"></span>
-                <span>SYS_NOMINAL</span>
+              <div className="hx-sidebar-status">
+                <span className="hx-pulse-dot" />
+                <span>SYS NOMINAL</span>
               </div>
             </div>
           </aside>
@@ -232,14 +240,14 @@ function RootLayout() {
           {sidebarOpen ? (
             <button
               type="button"
-              className="sidebar-scrim"
+              className="hx-sidebar-scrim"
               aria-label="Close navigation"
               onClick={() => setSidebarOpen(false)}
             />
           ) : null}
 
-          <main className="tac-workspace">
-            <div className="workspace-frame">
+          <main className="hx-workspace">
+            <div className="hx-workspace-frame">
               <Outlet />
             </div>
           </main>
@@ -331,6 +339,18 @@ const autopilotRoute = createRoute({
   component: AutopilotPage,
 });
 
+const federationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/federation",
+  component: FederationPage,
+});
+
+const operatorRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/operator",
+  component: OperatorPage,
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   marketIntelRoute,
@@ -345,6 +365,8 @@ const routeTree = rootRoute.addChildren([
   auditRoute,
   onchainRoute,
   autopilotRoute,
+  federationRoute,
+  operatorRoute,
 ]);
 
 export const router = createRouter({

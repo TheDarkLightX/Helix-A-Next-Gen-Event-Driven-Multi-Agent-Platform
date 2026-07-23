@@ -13,6 +13,21 @@ env:
   HELIX_FORMAL_PYTHONPATH: external/ESSO
 
 jobs:
+  wasm-sandbox-tests:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/wasm-sandbox-enforcement'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --manifest-path crates/helix-wasm/Cargo.toml -- --check
+      - name: Tests
+        run: cargo test --manifest-path crates/helix-wasm/Cargo.toml
+      - name: Focused clippy
+        run: cargo clippy --manifest-path crates/helix-wasm/Cargo.toml --lib --no-deps -- -D warnings -A missing-docs
+
   release-gates:
     name: Release gates
     runs-on: ubuntu-latest

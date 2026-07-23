@@ -21,6 +21,7 @@ pub mod agent;
 pub mod autopilot_guard;
 /// Defines the Credential struct for secure storage.
 pub mod credential;
+pub mod deterministic_capability_selection;
 pub mod deterministic_agent_catalog;
 pub mod deterministic_agent_profiles;
 pub mod deterministic_agents;

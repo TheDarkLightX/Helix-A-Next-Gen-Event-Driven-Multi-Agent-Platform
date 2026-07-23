@@ -27,7 +27,7 @@ pub mod host_functions;
 pub mod plugins;
 pub mod runtime;
 pub mod sandbox;
-pub mod utils; // Declare the utils module
+pub mod utils;
 
 pub use errors::WasmError;
 pub use plugins::{Plugin, PluginConfig, PluginManager};
@@ -46,88 +46,94 @@ pub struct AllowedDirEntry {
     /// The path as seen by the guest WASM module.
     pub guest_path: PathBuf,
     /// Whether the guest has read-only access.
-    /// Note: Actual enforcement depends on host OS permissions.
+    ///
+    /// Directory preopens are not yet wired into the runtime; configurations
+    /// containing them currently fail closed during runtime construction.
     pub read_only: bool,
 }
 
-/// Configuration for WASM runtime
+/// Configuration for the WASM runtime.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmRuntimeConfig {
-    /// Maximum memory in bytes
+    /// Maximum memory in bytes.
     pub max_memory: u64,
-    /// Maximum execution time in milliseconds
+    /// Maximum wall-clock execution time in milliseconds.
     pub max_execution_time_ms: u64,
-    /// Maximum number of instructions (used as fuel)
+    /// Maximum number of instructions, enforced with Wasmtime fuel.
     pub max_instructions: u64,
-    /// Whether to enable WASI
+    /// Whether to enable WASI.
+    ///
+    /// WASI is currently rejected because the runtime has not yet implemented
+    /// policy-bound directory, environment, and socket preopens.
     pub enable_wasi: bool,
-    /// Allowed host functions (currently informational, not strictly enforced by this config alone)
+    /// Exact host-function capabilities linked into each instance.
     pub allowed_host_functions: Vec<String>,
-    /// Resource limits for the WASM instance
+    /// Resource limits for the WASM instance.
     pub resource_limits: ResourceLimits,
     /// Directories accessible to the WASM module via WASI.
     pub allowed_dirs: Option<Vec<AllowedDirEntry>>,
     /// Environment variables accessible to the WASM module via WASI.
     pub allowed_env_vars: Option<HashMap<String, String>>,
     /// Whether to allow TCP/UDP socket access for WASI.
+    ///
+    /// Network sockets are not implemented and a true value fails closed.
     pub allow_network_sockets: bool,
 }
 
-/// Resource limits for WASM execution
+/// Resource limits for WASM execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceLimits {
-    /// Maximum stack size
+    /// Maximum stack size.
     pub max_stack_size: u32,
-    /// Maximum number of globals
+    /// Maximum number of globals.
     pub max_globals: u32,
-    /// Maximum number of functions
+    /// Maximum number of functions.
     pub max_functions: u32,
-    /// Maximum number of tables
+    /// Maximum number of tables.
     pub max_tables: u32,
-    /// Maximum table size
+    /// Maximum table size.
     pub max_table_size: u32,
 }
 
-/// Trait for WASM-powered agents
+/// Trait for WASM-powered agents.
 #[async_trait]
 pub trait WasmAgent: helix_core::agent::Agent {
-    /// Load a WASM module
+    /// Load a WASM module.
     async fn load_module(&mut self, wasm_bytes: &[u8]) -> Result<(), WasmError>;
 
-    /// Execute a function in the loaded module
+    /// Execute a function in the loaded module.
     async fn execute_function(
         &mut self,
         function_name: &str,
         args: &[serde_json::Value],
     ) -> Result<serde_json::Value, WasmError>;
 
-    /// Get the current module's exports
+    /// Get the current module's exports.
     fn get_exports(&self) -> Vec<String>;
 
-    /// Check if a function exists in the module
+    /// Check whether a function exists in the module.
     fn has_function(&self, function_name: &str) -> bool;
 }
 
 impl Default for WasmRuntimeConfig {
     fn default() -> Self {
         Self {
-            max_memory: 64 * 1024 * 1024,    // 64MB
-            max_execution_time_ms: 5000,     // 5 seconds
-            max_instructions: 1_000_000_000, // 1 Billion instructions (fuel)
-            enable_wasi: true,
+            max_memory: 64 * 1024 * 1024,
+            max_execution_time_ms: 5_000,
+            max_instructions: 1_000_000_000,
+            enable_wasi: false,
+            // Default to read-only, deterministic capabilities. State mutation,
+            // event emission, credentials, host time, and randomness all require
+            // an explicit per-runtime grant.
             allowed_host_functions: vec![
-                // Examples, actual enforcement is via linker
-                "helix_log_message".to_string(),
-                "helix_emit_event".to_string(),
-                "helix_get_config_value".to_string(),
-                "helix_get_state".to_string(),
-                "helix_set_state".to_string(),
-                "helix_get_credential".to_string(),
+                host_functions::HOST_LOG_MESSAGE.to_string(),
+                host_functions::HOST_GET_CONFIG_VALUE.to_string(),
+                host_functions::HOST_GET_STATE.to_string(),
             ],
             resource_limits: ResourceLimits::default(),
             allowed_dirs: None,
             allowed_env_vars: None,
-            allow_network_sockets: false, // Default to no network access for security
+            allow_network_sockets: false,
         }
     }
 }
@@ -135,13 +141,11 @@ impl Default for WasmRuntimeConfig {
 impl Default for ResourceLimits {
     fn default() -> Self {
         Self {
-            max_stack_size: 1024 * 1024, // 1MB
-            max_globals: 1000,
-            max_functions: 10000,
+            max_stack_size: 1024 * 1024,
+            max_globals: 1_000,
+            max_functions: 10_000,
             max_tables: 10,
-            max_table_size: 10000,
+            max_table_size: 10_000,
         }
     }
 }
-
-// Removed inline utils module, it's now in utils.rs

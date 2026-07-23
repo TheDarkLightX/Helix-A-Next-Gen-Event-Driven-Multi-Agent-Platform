@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! WASM runtime implementation
+//! WASM runtime implementation.
 
 use crate::{
     errors::WasmError,
@@ -22,11 +22,12 @@ use helix_agent_sdk::EventPublisher;
 use helix_core::types::AgentId;
 use helix_core::{agent::AgentConfig, credential::CredentialProvider, state::StateStore};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-}; // Added Mutex for active_instances
-use uuid::Uuid; // For InstanceId
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::Duration;
+use uuid::Uuid;
 use wasmtime::{Engine, Instance, Linker, Module, Store, StoreLimitsBuilder, Val};
 
 /// Unique identifier for a WASM module instance.
@@ -34,8 +35,10 @@ use wasmtime::{Engine, Instance, Linker, Module, Store, StoreLimitsBuilder, Val}
 pub struct InstanceId(Uuid);
 
 impl InstanceId {
+    /// Create a new opaque instance identity.
+    #[must_use]
     pub fn new() -> Self {
-        InstanceId(Uuid::new_v4())
+        Self(Uuid::new_v4())
     }
 }
 
@@ -54,47 +57,87 @@ impl std::fmt::Display for InstanceId {
 /// Represents an active, instantiated WASM module.
 struct ManagedInstance {
     instance: Instance,
-    store: Store<HostState>, // Store is mutable, so direct ownership or careful management needed.
-    // If Store needs to be accessed mutably by multiple calls, it must be wrapped.
-    // For now, assuming call_function_on_instance will take &mut self for WasmRuntime,
-    // allowing mutable access to the store within ManagedInstance.
-    agent_id: AgentId, // For context
+    store: Store<HostState>,
+    agent_id: AgentId,
 }
 
-/// WASM runtime for executing modules
+/// WASM runtime for executing modules.
 pub struct WasmRuntime {
     engine: Engine,
     config: Arc<WasmRuntimeConfig>,
     active_instances: Arc<Mutex<HashMap<InstanceId, ManagedInstance>>>,
 }
 
-/// A loaded and compiled WASM module
-#[derive(Clone)] // Added Clone
+/// A loaded and compiled WASM module.
+#[derive(Clone)]
 pub struct WasmModule {
-    /// Compiled module
+    /// Compiled module.
     module: Module,
-    /// Exported functions (names) - can be extracted from the module if needed
+    /// Exported function and value names.
     pub exports: Vec<String>,
 }
 
-/// Result of WASM execution
+/// Result of WASM execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionResult {
-    /// Return value
+    /// First supported return value, or JSON null.
     pub result: serde_json::Value,
-    /// Execution time in milliseconds
+    /// Execution time in milliseconds.
     pub execution_time_ms: u64,
-    /// Memory used in bytes
+    /// Current exported linear-memory size in bytes.
     pub memory_used: u64,
-    /// Instructions executed
+    /// Instructions/fuel consumed by this invocation.
     pub instructions_executed: u64,
 }
 
+struct EpochDeadline {
+    cancel: Option<mpsc::Sender<()>>,
+    thread: Option<thread::JoinHandle<()>>,
+    fired: Arc<AtomicBool>,
+}
+
+impl EpochDeadline {
+    fn start(engine: Engine, timeout: Duration) -> Self {
+        let (cancel_tx, cancel_rx) = mpsc::channel();
+        let fired = Arc::new(AtomicBool::new(false));
+        let fired_for_thread = Arc::clone(&fired);
+        let thread = thread::spawn(move || {
+            if cancel_rx.recv_timeout(timeout).is_err() {
+                fired_for_thread.store(true, Ordering::Release);
+                engine.increment_epoch();
+            }
+        });
+        Self {
+            cancel: Some(cancel_tx),
+            thread: Some(thread),
+            fired,
+        }
+    }
+
+    fn fired(&self) -> bool {
+        self.fired.load(Ordering::Acquire)
+    }
+}
+
+impl Drop for EpochDeadline {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.cancel.take() {
+            let _ = cancel.send(());
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 impl WasmRuntime {
-    /// Create a new WASM runtime
+    /// Create a new policy-bound WASM runtime.
     pub fn new(config: WasmRuntimeConfig) -> Result<Self, WasmError> {
-        let engine = sandbox::configure_engine(&config).map_err(|e| {
-            WasmError::ConfigurationError(format!("Failed to configure engine: {}", e))
+        sandbox::validate_runtime_config(&config).map_err(|error| {
+            WasmError::ConfigurationError(format!("invalid runtime policy: {error}"))
+        })?;
+        let engine = sandbox::configure_engine(&config).map_err(|error| {
+            WasmError::ConfigurationError(format!("failed to configure engine: {error}"))
         })?;
         Ok(Self {
             engine,
@@ -107,57 +150,52 @@ impl WasmRuntime {
     pub async fn load_module_from_bytes(&self, wasm_bytes: &[u8]) -> Result<WasmModule, WasmError> {
         crate::utils::validate_wasm(wasm_bytes)?;
 
-        let module = Module::from_binary(&self.engine, wasm_bytes).map_err(|e| {
-            WasmError::LoadingError(format!("Failed to compile module from bytes: {}", e))
+        let module = Module::from_binary(&self.engine, wasm_bytes).map_err(|error| {
+            WasmError::LoadingError(format!("failed to compile module from bytes: {error}"))
         })?;
 
         let exports = module
             .exports()
             .map(|export| export.name().to_string())
-            .collect::<Vec<String>>();
+            .collect::<Vec<_>>();
 
         Ok(WasmModule { module, exports })
     }
 
-    /// Load and compile a WASM module from a file path.
+    /// Load, validate, and compile a WASM module from a file path.
     pub async fn load_module_from_path(
         &self,
         path: &std::path::Path,
     ) -> Result<WasmModule, WasmError> {
-        let module = Module::from_file(&self.engine, path).map_err(|e| {
-            WasmError::LoadingError(format!("Failed to load module from path {:?}: {}", path, e))
+        let bytes = tokio::fs::read(path).await.map_err(|error| {
+            WasmError::LoadingError(format!("failed to read module from {path:?}: {error}"))
         })?;
-
-        let exports = module
-            .exports()
-            .map(|export| export.name().to_string())
-            .collect::<Vec<String>>();
-
-        Ok(WasmModule { module, exports })
+        self.load_module_from_bytes(&bytes).await
     }
 
-    /// Instantiate a compiled WASM module.
-    ///
-    /// This sets up the execution environment (Store, Linker, HostState) for the module.
+    /// Instantiate a compiled WASM module with exactly the configured host capabilities.
     pub async fn instantiate_module(
         &self,
         wasm_module: &WasmModule,
-        // HostState components:
         agent_config: Arc<AgentConfig>,
         event_publisher: Arc<dyn EventPublisher>,
         credential_provider: Arc<dyn CredentialProvider>,
         state_store: Arc<dyn StateStore>,
     ) -> Result<InstanceId, WasmError> {
+        let max_memory = usize::try_from(self.config.max_memory).map_err(|_| {
+            WasmError::ConfigurationError("max_memory exceeds platform limits".to_string())
+        })?;
+        let max_tables = usize::try_from(self.config.resource_limits.max_tables).map_err(|_| {
+            WasmError::ConfigurationError("max_tables exceeds platform limits".to_string())
+        })?;
         let max_table_size =
             usize::try_from(self.config.resource_limits.max_table_size).map_err(|_| {
-                WasmError::ConfigurationError(
-                    "max_table_size exceeds platform limits".to_string(),
-                )
+                WasmError::ConfigurationError("max_table_size exceeds platform limits".to_string())
             })?;
         let store_limits = StoreLimitsBuilder::new()
-            .memory_size(self.config.max_memory as usize)
+            .memory_size(max_memory)
             .instances(1)
-            .tables(self.config.resource_limits.max_tables as usize)
+            .tables(max_tables)
             .table_elements(max_table_size)
             .build();
 
@@ -170,128 +208,163 @@ impl WasmRuntime {
         };
 
         let mut store = Store::new(&self.engine, host_state);
-        sandbox::configure_store(&mut store, &self.config).map_err(|e| {
-            WasmError::ConfigurationError(format!("Failed to configure store: {}", e))
+        sandbox::configure_store(&mut store, &self.config).map_err(|error| {
+            WasmError::ConfigurationError(format!("failed to configure store: {error}"))
         })?;
 
         let mut linker = Linker::new(&self.engine);
-        host_functions::link_all_functions(&mut linker, &self.config).map_err(|e| {
-            WasmError::ConfigurationError(format!("Failed to link host functions: {}", e))
+        host_functions::link_all_functions(&mut linker, &self.config).map_err(|error| {
+            WasmError::ConfigurationError(format!("failed to link host capabilities: {error}"))
         })?;
 
         let instance = linker
             .instantiate_async(&mut store, &wasm_module.module)
             .await
-            .map_err(|e| {
-                WasmError::InstantiationError(format!("Failed to instantiate module: {}", e))
+            .map_err(|error| {
+                WasmError::InstantiationError(format!("failed to instantiate module: {error}"))
             })?;
 
         let instance_id = InstanceId::new();
         let managed_instance = ManagedInstance {
             instance,
-            store, // Store is moved here
-            agent_id: agent_config.id.clone(),
+            store,
+            agent_id: agent_config.id,
         };
-
         self.active_instances
             .lock()
-            .unwrap()
+            .map_err(|_| WasmError::InternalError("instance registry lock poisoned".to_string()))?
             .insert(instance_id, managed_instance);
         Ok(instance_id)
     }
 
-    /// Calls an exported function on an already instantiated WASM module.
+    /// Call an exported function under per-call fuel and wall-clock bounds.
+    ///
+    /// A timed-out instance is removed from the registry because a runtime that
+    /// required forced interruption is not reused implicitly.
     pub async fn call_function_on_instance(
         &self,
         instance_id: InstanceId,
         function_name: &str,
         args: &[Val],
     ) -> Result<ExecutionResult, WasmError> {
-        let mut instances_guard = self.active_instances.lock().unwrap();
-        let managed_instance = instances_guard
-            .get_mut(&instance_id)
-            .ok_or_else(|| WasmError::InstanceNotFound(instance_id.to_string()))?;
+        let mut instances = self
+            .active_instances
+            .lock()
+            .map_err(|_| WasmError::InternalError("instance registry lock poisoned".to_string()))?;
 
-        // `store` is now `&mut managed_instance.store`
-        // `instance` is `&managed_instance.instance`
+        let timeout = Duration::from_millis(self.config.max_execution_time_ms);
+        let deadline = EpochDeadline::start(self.engine.clone(), timeout);
+        let start = std::time::Instant::now();
 
-        let func = managed_instance
-            .instance
-            .get_func(&mut managed_instance.store, function_name)
-            .ok_or_else(|| {
-                WasmError::FunctionNotFound(format!(
-                    "Function '{}' not found in instance {}",
-                    function_name, instance_id
-                ))
-            })?;
+        let call_outcome = {
+            let managed_instance = instances
+                .get_mut(&instance_id)
+                .ok_or_else(|| WasmError::InstanceNotFound(instance_id.to_string()))?;
 
-        let fuel_before = managed_instance.store.get_fuel().unwrap_or(0);
+            managed_instance
+                .store
+                .set_fuel(self.config.max_instructions)
+                .map_err(|error| {
+                    WasmError::ConfigurationError(format!("failed to reset fuel: {error}"))
+                })?;
+            managed_instance.store.set_epoch_deadline(1);
+            managed_instance.store.epoch_deadline_trap();
 
-        let start_time = std::time::Instant::now();
+            let function = managed_instance
+                .instance
+                .get_func(&mut managed_instance.store, function_name)
+                .ok_or_else(|| {
+                    WasmError::FunctionNotFound(format!(
+                        "function {function_name:?} not found in instance {instance_id}"
+                    ))
+                })?;
 
-        let mut results = vec![Val::I32(0); func.ty(&managed_instance.store).results().len()];
-        func.call_async(&mut managed_instance.store, args, &mut results)
-            .await
-            .map_err(|e| {
-                WasmError::ExecutionError(format!(
-                    "Function call failed for instance {}: {}",
-                    instance_id, e
-                ))
-            })?;
+            let fuel_before = managed_instance.store.get_fuel().unwrap_or(0);
+            let result_count = function.ty(&managed_instance.store).results().len();
+            let mut results = vec![Val::I32(0); result_count];
+            let call_result = function
+                .call_async(&mut managed_instance.store, args, &mut results)
+                .await;
+            let fuel_after = managed_instance.store.get_fuel().unwrap_or(0);
+            let memory_used = managed_instance
+                .instance
+                .get_memory(&mut managed_instance.store, "memory")
+                .map(|memory| memory.data_size(&managed_instance.store) as u64)
+                .unwrap_or(0);
 
-        let execution_time_ms = start_time.elapsed().as_millis() as u64;
+            (call_result, results, fuel_before, fuel_after, memory_used)
+        };
 
-        let result_json = results
+        let timed_out = deadline.fired();
+        drop(deadline);
+        let execution_time_ms = u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+        if timed_out {
+            instances.remove(&instance_id);
+            return Err(WasmError::ExecutionTimeout(
+                self.config.max_execution_time_ms,
+            ));
+        }
+
+        let (call_result, results, fuel_before, fuel_after, memory_used) = call_outcome;
+        call_result.map_err(|error| {
+            WasmError::ExecutionError(format!(
+                "function call failed for instance {instance_id}: {error}"
+            ))
+        })?;
+
+        let result = results
             .first()
-            .map(|val| match val {
-                Val::I32(i) => serde_json::json!(i),
-                Val::I64(i) => serde_json::json!(i),
+            .map(|value| match value {
+                Val::I32(value) => serde_json::json!(value),
+                Val::I64(value) => serde_json::json!(value),
+                Val::F32(value) => serde_json::json!(f32::from_bits(*value)),
+                Val::F64(value) => serde_json::json!(f64::from_bits(*value)),
                 _ => serde_json::Value::Null,
             })
             .unwrap_or(serde_json::Value::Null);
 
-        let fuel_after = managed_instance.store.get_fuel().unwrap_or(0);
-        let fuel_consumed = fuel_before.saturating_sub(fuel_after);
-        let memory_used = managed_instance
-            .instance
-            .get_memory(&mut managed_instance.store, "memory")
-            .map(|m| m.data_size(&managed_instance.store) as u64)
-            .unwrap_or(0);
-
         Ok(ExecutionResult {
-            result: result_json,
+            result,
             execution_time_ms,
             memory_used,
-            instructions_executed: fuel_consumed,
+            instructions_executed: fuel_before.saturating_sub(fuel_after),
         })
     }
 
-    /// Terminates a running WASM module instance and releases its resources.
+    /// Terminate a running WASM module instance and release its resources.
     pub async fn terminate_instance(&self, instance_id: InstanceId) -> Result<(), WasmError> {
-        let mut instances_guard = self.active_instances.lock().unwrap();
-        if instances_guard.remove(&instance_id).is_some() {
+        let removed = self
+            .active_instances
+            .lock()
+            .map_err(|_| WasmError::InternalError("instance registry lock poisoned".to_string()))?
+            .remove(&instance_id)
+            .is_some();
+        if removed {
             Ok(())
         } else {
             Err(WasmError::InstanceNotFound(instance_id.to_string()))
         }
     }
 
-    /// Get a list of active instance IDs.
+    /// Get a stable list of active instance IDs.
+    #[must_use]
     pub fn list_active_instances(&self) -> Vec<InstanceId> {
-        self.active_instances
-            .lock()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect()
+        let Ok(instances) = self.active_instances.lock() else {
+            return Vec::new();
+        };
+        let mut ids = instances.keys().copied().collect::<Vec<_>>();
+        ids.sort_by_key(ToString::to_string);
+        ids
     }
 
-    /// Get agent ID for a given instance ID.
+    /// Get the agent ID associated with an instance.
+    #[must_use]
     pub fn get_agent_id_for_instance(&self, instance_id: InstanceId) -> Option<AgentId> {
         self.active_instances
             .lock()
-            .unwrap()
+            .ok()?
             .get(&instance_id)
-            .map(|mi| mi.agent_id.clone())
+            .map(|instance| instance.agent_id)
     }
 }

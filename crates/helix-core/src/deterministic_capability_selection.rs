@@ -17,7 +17,10 @@
 //! It does not authorize execution: every selected capability remains subject to
 //! Helix policy, guard, and executor checks.
 
-use crate::deterministic_agent_catalog::high_roi_agent_catalog;
+use crate::{
+    deterministic_agent_catalog::high_roi_agent_catalog,
+    deterministic_agents_expanded::EXPANDED_AGENT_DESCRIPTORS,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -138,21 +141,39 @@ struct ScoredCapability {
 pub fn deterministic_agent_capabilities() -> Vec<CapabilityDescriptor> {
     high_roi_agent_catalog()
         .into_iter()
-        .map(|agent| {
-            let risk = match agent.id.as_str() {
-                "onchain_tx_intent" | "fee_bidding" | "nonce_manager" => CapabilityRisk::High,
-                "allowlist_guard" | "finality_guard" | "approval_gate" => CapabilityRisk::Moderate,
-                _ => CapabilityRisk::Low,
-            };
-            CapabilityDescriptor {
-                id: agent.id,
-                name: agent.name,
-                summary: agent.roi_rationale,
-                keywords: vec![agent.kernel_module, agent.formal_model],
-                risk,
-            }
+        .map(|agent| CapabilityDescriptor {
+            risk: prompt_exposure_risk(&agent.id),
+            id: agent.id,
+            name: agent.name,
+            summary: agent.roi_rationale,
+            keywords: vec![agent.kernel_module, agent.formal_model],
         })
         .collect()
+}
+
+fn prompt_exposure_risk(agent_id: &str) -> CapabilityRisk {
+    match agent_id {
+        "dedup_window" | "token_bucket" | "circuit_breaker" | "retry_budget" | "backpressure"
+        | "sla_deadline" | "dlq_budget" => CapabilityRisk::Low,
+        "approval_gate"
+        | "finality_guard"
+        | "allowlist_guard"
+        | "symbolic_reasoning_gate"
+        | "expert_system_gate"
+        | "neuro_risk_gate"
+        | "neuro_symbolic_fusion_gate" => CapabilityRisk::Moderate,
+        "nonce_manager" | "fee_bidding" | "onchain_tx_intent" => CapabilityRisk::High,
+        expanded
+            if EXPANDED_AGENT_DESCRIPTORS
+                .iter()
+                .any(|descriptor| descriptor.id == expanded) =>
+        {
+            CapabilityRisk::Moderate
+        }
+        // New catalog entries remain unavailable below Critical until a reviewer
+        // assigns an explicit prompt-exposure risk above.
+        _ => CapabilityRisk::Critical,
+    }
 }
 
 /// Select a bounded capability subset using deterministic lexical evidence.
@@ -420,6 +441,27 @@ mod tests {
             max_risk: CapabilityRisk::High,
             required_ids: Vec::new(),
         }
+    }
+
+    #[test]
+    fn unknown_agent_ids_default_to_critical_risk() {
+        assert_eq!(
+            prompt_exposure_risk("new_unreviewed_side_effect_agent"),
+            CapabilityRisk::Critical
+        );
+    }
+
+    #[test]
+    fn shipped_agent_catalog_has_reviewed_risk_assignments() {
+        let unreviewed = deterministic_agent_capabilities()
+            .into_iter()
+            .filter(|capability| capability.risk == CapabilityRisk::Critical)
+            .map(|capability| capability.id)
+            .collect::<Vec<_>>();
+        assert!(
+            unreviewed.is_empty(),
+            "shipped capabilities need explicit prompt-risk review: {unreviewed:?}"
+        );
     }
 
     #[test]

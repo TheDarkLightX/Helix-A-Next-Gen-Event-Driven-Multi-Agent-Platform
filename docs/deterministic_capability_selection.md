@@ -9,7 +9,8 @@ The trust model is different. AnythingLLM's selector may use an embedding rerank
 3. A deterministic lexical score ranks eligible capabilities with stable ID tie-breaks.
 4. Required capabilities must still fit the budget and risk bound.
 5. Empty, ambiguous, invalid, or unmatched requests fail closed instead of exposing the full catalog.
-6. The result includes a SHA-256 catalog digest and normalized query terms so the selection can be replayed and audited.
+6. A newly added catalog entry defaults to `critical` prompt risk until its exposure class is reviewed explicitly.
+7. The result includes a SHA-256 catalog digest and normalized query terms so the selection can be replayed and audited.
 
 ## Security boundary
 

@@ -1,0 +1,260 @@
+[1m[92m   Compiling[0m url v2.5.8
+[1m[92m   Compiling[0m futures-intrusive v0.5.0
+[1m[92m   Compiling[0m rustls v0.23.42
+[1m[92m   Compiling[0m hashlink v0.10.0
+[1m[92m   Compiling[0m unicode-normalization v0.1.25
+[1m[92m   Compiling[0m crossbeam-queue v0.3.13
+[1m[92m   Compiling[0m thiserror v2.0.19
+[1m[92m   Compiling[0m hmac v0.12.1
+[1m[92m   Compiling[0m either v1.16.0
+[1m[92m   Compiling[0m unicode-bidi v0.3.18
+[1m[92m    Checking[0m bytes v1.12.1
+[1m[92m   Compiling[0m unicode-properties v0.1.4
+[1m[92m   Compiling[0m stringprep v0.1.5
+[1m[92m   Compiling[0m hkdf v0.12.4
+[1m[92m   Compiling[0m rand v0.8.7
+[1m[92m    Checking[0m getrandom v0.3.4
+[1m[92m   Compiling[0m atoi v2.0.0
+[1m[92m   Compiling[0m md-5 v0.10.6
+[1m[92m    Checking[0m log v0.4.33
+[1m[92m   Compiling[0m home v0.5.12
+[1m[92m   Compiling[0m whoami v1.6.1
+[1m[92m   Compiling[0m sqlx-core v0.8.6
+[1m[92m   Compiling[0m dotenvy v0.15.7
+[1m[92m   Compiling[0m byteorder v1.5.0
+[1m[92m   Compiling[0m hex v0.4.3
+[1m[92m   Compiling[0m sqlx-postgres v0.8.6
+[1m[92m    Checking[0m rand_core v0.9.5
+[1m[92m    Checking[0m uuid v1.24.0
+[1m[92m    Checking[0m linux-raw-sys v0.12.1
+[1m[92m    Checking[0m base64 v0.22.1
+[1m[92m    Checking[0m rustix v1.1.4
+[1m[92m    Checking[0m fastrand v2.5.0
+[1m[92m    Checking[0m tempfile v3.27.0
+[1m[92m    Checking[0m wait-timeout v0.2.1
+[1m[92m    Checking[0m fnv v1.0.7
+[1m[92m    Checking[0m bit-vec v0.8.0
+[1m[92m    Checking[0m quick-error v1.2.3
+[1m[92m    Checking[0m rusty-fork v0.3.1
+[1m[92m   Compiling[0m sqlx-macros-core v0.8.6
+[1m[92m    Checking[0m bit-set v0.8.0
+[1m[92m    Checking[0m thiserror v1.0.69
+[1m[92m    Checking[0m rand_chacha v0.9.0
+[1m[92m    Checking[0m rand_xorshift v0.4.0
+[1m[92m    Checking[0m rand v0.9.5
+[1m[92m    Checking[0m futures-executor v0.3.33
+[1m[92m    Checking[0m unarray v0.1.4
+[1m[92m    Checking[0m regex-syntax v0.8.11
+[1m[92m    Checking[0m futures v0.3.33
+[1m[92m   Compiling[0m sqlx-macros v0.8.6
+[1m[92m    Checking[0m proptest v1.11.0
+[1m[92m    Checking[0m sqlx v0.8.6
+[1m[92m    Checking[0m helix-core v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-core)
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+  [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:57:5
+   [1m[94m|[0m
+[1m[94m57[0m [1m[94m|[0m     config.dedup_window_ticks = 5;
+   [1m[94m|[0m     [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { dedup_window_ticks: 5, rate_max_tokens: 25, rate_refill_per_tick: 5, breaker_failure_threshold: 4, breaker_open_duration_ticks: 2, retry_budget: 2, dlq_max_consecutive_failures: 3, ..Default::default() }` and removing relevant reassignments
+  [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:56:5
+   [1m[94m|[0m
+[1m[94m56[0m [1m[94m|[0m     let mut config = DeterministicPolicyConfig::default();
+   [1m[94m|[0m     [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+   [1m[94m= [0m[1mnote[0m: `-D clippy::field-reassign-with-default` implied by `-D warnings`
+   [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::field_reassign_with_default)]`
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:103:5
+    [1m[94m|[0m
+[1m[94m103[0m [1m[94m|[0m     config.backpressure_soft_limit = 3;
+    [1m[94m|[0m     [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { backpressure_soft_limit: 3, backpressure_hard_limit: 5, sla_deadline_ticks: 2, retry_budget: 1, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:102:5
+    [1m[94m|[0m
+[1m[94m102[0m [1m[94m|[0m     let mut config = DeterministicPolicyConfig::default();
+    [1m[94m|[0m     [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:141:5
+    [1m[94m|[0m
+[1m[94m141[0m [1m[94m|[0m     config.nonce_start = 0;
+    [1m[94m|[0m     [1m[91m^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { nonce_start: 0, nonce_max_in_flight: 32, fee_base_fee: 120, fee_priority_fee: 3, fee_bump_bps: 300, fee_max_fee_cap: 20_000, finality_required_depth: 12, allowlist_chain_id: 1, allowlist_contract_tag: 55, allowlist_method_tag: 0xdeadbeef, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:140:5
+    [1m[94m|[0m
+[1m[94m140[0m [1m[94m|[0m     let mut config = DeterministicPolicyConfig::default();
+    [1m[94m|[0m     [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:183:5
+    [1m[94m|[0m
+[1m[94m183[0m [1m[94m|[0m     config.approval_quorum = 2;
+    [1m[94m|[0m     [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { approval_quorum: 2, approval_reviewers: 3, allowlist_chain_id: 1, allowlist_contract_tag: 55, allowlist_method_tag: 0xdeadbeef, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_agent_profiles.rs:182:5
+    [1m[94m|[0m
+[1m[94m182[0m [1m[94m|[0m     let mut config = DeterministicPolicyConfig::default();
+    [1m[94m|[0m     [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: this function has too many arguments (8/7)[0m
+   [1m[94m--> [0mcrates/helix-core/src/reasoning.rs:514:1
+    [1m[94m|[0m
+[1m[94m514[0m [1m[94m|[0m [1m[91m/[0m pub fn evaluate_compiled_neuro_symbolic_reasoning(
+[1m[94m515[0m [1m[94m|[0m [1m[91m|[0m     query: String,
+[1m[94m516[0m [1m[94m|[0m [1m[91m|[0m     facts: Vec<String>,
+[1m[94m517[0m [1m[94m|[0m [1m[91m|[0m     program: &CompiledSymbolicProgram,
+[1m[94m...[0m   [1m[91m|[0m
+[1m[94m522[0m [1m[94m|[0m [1m[91m|[0m     max_rounds: Option<u8>,
+[1m[94m523[0m [1m[94m|[0m [1m[91m|[0m ) -> Result<ReasoningDecision, HelixError> {
+    [1m[94m|[0m [1m[91m|__________________________________________^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#too_many_arguments
+    [1m[94m= [0m[1mnote[0m: `-D clippy::too-many-arguments` implied by `-D warnings`
+    [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::too_many_arguments)]`
+
+[1m[91merror[0m[1m: this `impl` can be derived[0m
+  [1m[94m--> [0mcrates/helix-core/src/intel_priority.rs:44:1
+   [1m[94m|[0m
+[1m[94m44[0m [1m[94m|[0m [1m[91m/[0m impl Default for IntelSignalWindow {
+[1m[94m45[0m [1m[94m|[0m [1m[91m|[0m     fn default() -> Self {
+[1m[94m46[0m [1m[94m|[0m [1m[91m|[0m         Self {
+[1m[94m47[0m [1m[94m|[0m [1m[91m|[0m             newest_signal_at: None,
+[1m[94m...[0m  [1m[91m|[0m
+[1m[94m50[0m [1m[94m|[0m [1m[91m|[0m }
+   [1m[94m|[0m [1m[91m|_^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#derivable_impls
+   [1m[94m= [0m[1mnote[0m: `-D clippy::derivable-impls` implied by `-D warnings`
+   [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::derivable_impls)]`
+[1m[96mhelp[0m: replace the manual implementation with a derive attribute
+   [1m[94m|[0m
+[1m[94m 8[0m [92m+ #[derive(Default)][0m
+[1m[94m 9[0m [1m[94m|[0m pub struct IntelSignalWindow {
+   [1m[94m|[0m
+
+[1m[91merror[0m[1m: clamp-like pattern without using clamp function[0m
+   [1m[94m--> [0mcrates/helix-core/src/intel_priority.rs:348:44
+    [1m[94m|[0m
+[1m[94m348[0m [1m[94m|[0m         ClaimReviewStatus::Corroborated => linked_tier.min(4).max(1),
+    [1m[94m|[0m                                            [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[91mhelp: replace with clamp: `linked_tier.clamp(1, 4)`[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: clamp will panic if max < min
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_clamp
+    [1m[94m= [0m[1mnote[0m: `-D clippy::manual-clamp` implied by `-D warnings`
+    [1m[94m= [0m[1mhelp[0m: to override `-D warnings` add `#[allow(clippy::manual_clamp)]`
+
+[1m[91merror[0m: could not compile `helix-core` (lib) due to 7 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:699:9
+    [1m[94m|[0m
+[1m[94m699[0m [1m[94m|[0m         cfg.breaker_failure_threshold = 1;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { breaker_failure_threshold: 1, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:698:9
+    [1m[94m|[0m
+[1m[94m698[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:734:9
+    [1m[94m|[0m
+[1m[94m734[0m [1m[94m|[0m         cfg.dlq_max_consecutive_failures = 2;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { dlq_max_consecutive_failures: 2, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:733:9
+    [1m[94m|[0m
+[1m[94m733[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:755:9
+    [1m[94m|[0m
+[1m[94m755[0m [1m[94m|[0m         cfg.backpressure_soft_limit = 2;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { backpressure_soft_limit: 2, backpressure_hard_limit: 3, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:754:9
+    [1m[94m|[0m
+[1m[94m754[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:772:9
+    [1m[94m|[0m
+[1m[94m772[0m [1m[94m|[0m         cfg.sla_deadline_ticks = 1;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { sla_deadline_ticks: 1, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:771:9
+    [1m[94m|[0m
+[1m[94m771[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:794:9
+    [1m[94m|[0m
+[1m[94m794[0m [1m[94m|[0m         cfg.nonce_start = 7;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { nonce_start: 7, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:793:9
+    [1m[94m|[0m
+[1m[94m793[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:822:9
+    [1m[94m|[0m
+[1m[94m822[0m [1m[94m|[0m         cfg.fee_base_fee = 100;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { fee_base_fee: 100, fee_priority_fee: 2, fee_bump_bps: 500, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:821:9
+    [1m[94m|[0m
+[1m[94m821[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:854:9
+    [1m[94m|[0m
+[1m[94m854[0m [1m[94m|[0m         cfg.finality_required_depth = 2;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { finality_required_depth: 2, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:853:9
+    [1m[94m|[0m
+[1m[94m853[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m[1m: field assignment outside of initializer for an instance created with Default::default()[0m
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:878:9
+    [1m[94m|[0m
+[1m[94m878[0m [1m[94m|[0m         cfg.allowlist_chain_id = 1;
+    [1m[94m|[0m         [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+[1m[92mnote[0m: consider initializing the variable with `deterministic_policy::DeterministicPolicyConfig { allowlist_chain_id: 1, allowlist_contract_tag: 55, allowlist_method_tag: 0xdeadbeef, ..Default::default() }` and removing relevant reassignments
+   [1m[94m--> [0mcrates/helix-core/src/deterministic_policy.rs:877:9
+    [1m[94m|[0m
+[1m[94m877[0m [1m[94m|[0m         let mut cfg = DeterministicPolicyConfig::default();
+    [1m[94m|[0m         [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m= [0m[1mhelp[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#field_reassign_with_default
+
+[1m[91merror[0m: could not compile `helix-core` (lib test) due to 15 previous errors

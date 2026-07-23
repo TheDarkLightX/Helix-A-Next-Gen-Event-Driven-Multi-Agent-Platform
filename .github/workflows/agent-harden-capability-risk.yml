@@ -1,0 +1,198 @@
+name: Agent harden capability risk defaults
+
+on:
+  push:
+    branches:
+      - agent/deterministic-capability-selection
+    paths-ignore:
+      - .agent-ci-diagnostics/**
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Make unknown catalog risk fail closed and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agent-ci-diagnostics
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path("crates/helix-core/src/deterministic_capability_selection.rs")
+          source = source_path.read_text()
+
+          old_import = "use crate::deterministic_agent_catalog::high_roi_agent_catalog;"
+          new_import = """use crate::{
+              deterministic_agent_catalog::high_roi_agent_catalog,
+              deterministic_agents_expanded::EXPANDED_AGENT_DESCRIPTORS,
+          };"""
+          if old_import in source:
+              source = source.replace(old_import, new_import, 1)
+          elif new_import not in source:
+              raise SystemExit("capability selector import drifted")
+
+          old_projection = """pub fn deterministic_agent_capabilities() -> Vec<CapabilityDescriptor> {
+              high_roi_agent_catalog()
+                  .into_iter()
+                  .map(|agent| {
+                      let risk = match agent.id.as_str() {
+                          \"onchain_tx_intent\" | \"fee_bidding\" | \"nonce_manager\" => CapabilityRisk::High,
+                          \"allowlist_guard\" | \"finality_guard\" | \"approval_gate\" => CapabilityRisk::Moderate,
+                          _ => CapabilityRisk::Low,
+                      };
+                      CapabilityDescriptor {
+                          id: agent.id,
+                          name: agent.name,
+                          summary: agent.roi_rationale,
+                          keywords: vec![agent.kernel_module, agent.formal_model],
+                          risk,
+                      }
+                  })
+                  .collect()
+          }
+          """
+          new_projection = """pub fn deterministic_agent_capabilities() -> Vec<CapabilityDescriptor> {
+              high_roi_agent_catalog()
+                  .into_iter()
+                  .map(|agent| CapabilityDescriptor {
+                      risk: prompt_exposure_risk(&agent.id),
+                      id: agent.id,
+                      name: agent.name,
+                      summary: agent.roi_rationale,
+                      keywords: vec![agent.kernel_module, agent.formal_model],
+                  })
+                  .collect()
+          }
+
+          fn prompt_exposure_risk(agent_id: &str) -> CapabilityRisk {
+              match agent_id {
+                  \"dedup_window\"
+                  | \"token_bucket\"
+                  | \"circuit_breaker\"
+                  | \"retry_budget\"
+                  | \"backpressure\"
+                  | \"sla_deadline\"
+                  | \"dlq_budget\" => CapabilityRisk::Low,
+                  \"approval_gate\"
+                  | \"finality_guard\"
+                  | \"allowlist_guard\"
+                  | \"symbolic_reasoning_gate\"
+                  | \"expert_system_gate\"
+                  | \"neuro_risk_gate\"
+                  | \"neuro_symbolic_fusion_gate\" => CapabilityRisk::Moderate,
+                  \"nonce_manager\" | \"fee_bidding\" | \"onchain_tx_intent\" => {
+                      CapabilityRisk::High
+                  }
+                  expanded
+                      if EXPANDED_AGENT_DESCRIPTORS
+                          .iter()
+                          .any(|descriptor| descriptor.id == expanded) =>
+                  {
+                      CapabilityRisk::Moderate
+                  }
+                  // New catalog entries remain unavailable below Critical until a reviewer
+                  // assigns an explicit prompt-exposure risk above.
+                  _ => CapabilityRisk::Critical,
+              }
+          }
+          """
+          if old_projection in source:
+              source = source.replace(old_projection, new_projection, 1)
+          elif new_projection not in source:
+              raise SystemExit("capability projection drifted")
+
+          test_anchor = """    #[test]
+              fn catalog_and_query_order_do_not_change_receipt() {
+          """
+          new_tests = """    #[test]
+              fn unknown_agent_ids_default_to_critical_risk() {
+                  assert_eq!(
+                      prompt_exposure_risk(\"new_unreviewed_side_effect_agent\"),
+                      CapabilityRisk::Critical
+                  );
+              }
+
+              #[test]
+              fn shipped_agent_catalog_has_reviewed_risk_assignments() {
+                  let unreviewed = deterministic_agent_capabilities()
+                      .into_iter()
+                      .filter(|capability| capability.risk == CapabilityRisk::Critical)
+                      .map(|capability| capability.id)
+                      .collect::<Vec<_>>();
+                  assert!(
+                      unreviewed.is_empty(),
+                      \"shipped capabilities need explicit prompt-risk review: {unreviewed:?}\"
+                  );
+              }
+
+              #[test]
+              fn catalog_and_query_order_do_not_change_receipt() {
+          """
+          if test_anchor in source:
+              source = source.replace(test_anchor, new_tests, 1)
+          elif new_tests not in source:
+              raise SystemExit("capability tests anchor drifted")
+          source_path.write_text(source)
+
+          docs_path = Path("docs/deterministic_capability_selection.md")
+          docs = docs_path.read_text()
+          docs_anchor = """5. Empty, ambiguous, invalid, or unmatched requests fail closed instead of exposing the full catalog.
+          6. The result includes a SHA-256 catalog digest and normalized query terms so the selection can be replayed and audited.
+          """
+          docs_replacement = """5. Empty, ambiguous, invalid, or unmatched requests fail closed instead of exposing the full catalog.
+          6. A newly added catalog entry defaults to `critical` prompt risk until its exposure class is reviewed explicitly.
+          7. The result includes a SHA-256 catalog digest and normalized query terms so the selection can be replayed and audited.
+          """
+          if docs_anchor in docs:
+              docs = docs.replace(docs_anchor, docs_replacement, 1)
+          elif docs_replacement not in docs:
+              raise SystemExit("capability documentation anchor drifted")
+          docs_path.write_text(docs)
+          PY
+
+          cargo fmt --manifest-path crates/helix-core/Cargo.toml
+
+          set +e
+          cargo test --manifest-path crates/helix-core/Cargo.toml \
+            > .agent-ci-diagnostics/helix-core-test.full.log 2>&1
+          core_status=$?
+          cargo test --manifest-path crates/helix-api/Cargo.toml \
+            > .agent-ci-diagnostics/helix-api-test.full.log 2>&1
+          api_status=$?
+          cargo clippy --manifest-path crates/helix-core/Cargo.toml --all-targets -- -D warnings \
+            > .agent-ci-diagnostics/helix-core-clippy.full.log 2>&1
+          clippy_status=$?
+          set -e
+
+          tail -n 260 .agent-ci-diagnostics/helix-core-test.full.log \
+            > .agent-ci-diagnostics/helix-core-test.txt
+          tail -n 260 .agent-ci-diagnostics/helix-api-test.full.log \
+            > .agent-ci-diagnostics/helix-api-test.txt
+          tail -n 260 .agent-ci-diagnostics/helix-core-clippy.full.log \
+            > .agent-ci-diagnostics/helix-core-clippy.txt
+          rm .agent-ci-diagnostics/*.full.log
+          printf 'helix_core_test=%s\nhelix_api_test=%s\nhelix_core_clippy=%s\n' \
+            "$core_status" "$api_status" "$clippy_status" \
+            > .agent-ci-diagnostics/status.txt
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add crates/helix-core/src/deterministic_capability_selection.rs \
+            docs/deterministic_capability_selection.md \
+            .agent-ci-diagnostics/*.txt
+          git commit -m "fix: default unreviewed capabilities to critical risk"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

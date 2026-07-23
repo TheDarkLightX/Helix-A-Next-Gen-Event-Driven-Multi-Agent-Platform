@@ -11,6 +11,8 @@
 [1m[92m   Compiling[0m matchit v0.7.3
 [1m[92m   Compiling[0m nu-ansi-term v0.50.3
 [1m[92m   Compiling[0m tracing-subscriber v0.3.23
+[1m[92m   Compiling[0m axum v0.7.9
+[1m[92m   Compiling[0m tower-http v0.5.2
 [1m[92m   Compiling[0m helix-operator v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-operator)
 [1m[33mwarning[0m[1m: unused import: `std::sync::Arc`[0m
   [1m[94m--> [0mcrates/helix-operator/src/collaboration.rs:21:5
@@ -20,11 +22,9 @@
    [1m[94m|[0m
    [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-[1m[33mwarning[0m: `helix-operator` (lib) generated 1 warning (run `cargo fix --lib -p helix-operator` to apply 1 suggestion)
-[1m[92m   Compiling[0m axum v0.7.9
-[1m[92m   Compiling[0m tower-http v0.5.2
 [1m[92m   Compiling[0m helix-security v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-security)
 [1m[92m   Compiling[0m helix-rule-engine v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-rule-engine)
+[1m[33mwarning[0m: `helix-operator` (lib) generated 1 warning (run `cargo fix --lib -p helix-operator` to apply 1 suggestion)
 [1m[92m   Compiling[0m helix-federation v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-federation)
 [1m[92m   Compiling[0m helix-embeddings v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-embeddings)
 [1m[92m   Compiling[0m helix-wasm v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-wasm)
@@ -129,37 +129,37 @@
 [1m[92m   Compiling[0m helix-runtime v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-runtime)
 [1m[33mwarning[0m: `helix-wasm` (lib) generated 14 warnings
 [1m[92m   Compiling[0m helix-api v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-api)
-[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1m 52s
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1m 46s
 [1m[92m     Running[0m unittests src/main.rs (target/debug/deps/helix_api-4f3194ad8ce6a254)
 
 running 102 tests
-test evm_rpc::tests::hex_validation_requires_prefix_and_even_length ... ok
 test evm_rpc::tests::tx_hash_validation_rejects_bad_shape ... ok
+test evm_rpc::tests::hex_validation_requires_prefix_and_even_length ... ok
 test evm_rpc::tests::dry_run_hash_is_deterministic ... ok
 test tests::agent_template_detail_endpoint_returns_known_template ... ok
 test tests::agents_guard_simulation_endpoint_returns_temporal_trace ... ok
 test tests::agent_templates_endpoint_returns_items ... ok
 test tests::agents_catalog_endpoint_returns_items ... ok
-test tests::agents_quality_endpoint_reports_baseline_win ... ok
 test tests::api_auth_allows_health_but_protects_api_routes_when_required ... ok
-test tests::apply_agent_template_updates_policy_config ... ok
+test tests::agents_quality_endpoint_reports_baseline_win ... ok
 test tests::audit_endpoint_rejects_zero_limit ... ok
+test tests::apply_agent_template_updates_policy_config ... ok
 test tests::audit_endpoint_reports_disabled_without_postgres ... ok
 test tests::autopilot_execute_allows_confirmed_policy_simulation ... ok
-test tests::autopilot_propose_denies_when_llm_not_configured ... ok
 test tests::autopilot_execute_denies_unconfirmed_assist_request ... ok
-test tests::autopilot_review_queue_endpoint_filters_by_kind_and_limit ... ok
+test tests::autopilot_propose_denies_when_llm_not_configured ... ok
 test tests::autopilot_propose_parses_action_and_previews_guard ... ok
 test tests::autopilot_review_propose_endpoint_uses_ranked_item_context ... ok
 test tests::autopilot_review_export_endpoint_returns_deterministic_packet ... ok
+test tests::autopilot_review_queue_endpoint_filters_by_kind_and_limit ... ok
 test tests::autopilot_review_queue_endpoint_rejects_zero_limit ... ok
 test tests::autopilot_status_endpoint_works ... ok
-test tests::case_transition_endpoint_updates_status ... ok
 test tests::autopilot_review_queue_endpoint_returns_ranked_items ... ok
+test tests::case_transition_endpoint_updates_status ... ok
+test tests::cases_endpoint_breaks_equal_priorities_by_latest_signal ... ok
 test tests::cases_endpoint_filters_by_status_and_limit ... ok
 test tests::cases_endpoint_rejects_zero_limit ... ok
 test tests::cases_endpoint_returns_priority_ranked_queue ... ok
-test tests::cases_endpoint_breaks_equal_priorities_by_latest_signal ... ok
 test tests::claims_endpoint_rejects_invalid_min_confidence ... ok
 test tests::claim_review_endpoint_updates_review_status ... ok
 test tests::claims_endpoint_filters_by_review_status_and_limit ... ok
@@ -174,48 +174,48 @@ test tests::copilot_join_creates_session ... ok
 test tests::copilot_join_rejects_empty_name ... ok
 test tests::copilot_leave_removes_session ... ok
 test tests::credential_upsert_validation_rejects_boundaries ... ok
-test tests::copilot_list_sessions_shows_joined ... ok
 test tests::copilot_viewer_cannot_confirm ... ok
+test tests::copilot_list_sessions_shows_joined ... ok
 test tests::credential_upsert_fails_closed_without_postgres ... ok
 test tests::credentials_endpoint_rejects_invalid_profile_query ... ok
 test tests::credentials_endpoint_reports_disabled_without_postgres ... ok
-test tests::evidence_endpoint_rejects_invalid_min_trust ... ok
 test tests::evidence_endpoint_filters_by_min_trust_and_limit ... ok
-test tests::federation_dispatch_log_is_empty_initially ... ok
+test tests::evidence_endpoint_rejects_invalid_min_trust ... ok
 test tests::evidence_ingest_creates_claims_hits_and_case ... ok
 test tests::evidence_endpoint_semantic_query_ranks_relevant_evidence ... ok
+test tests::federation_dispatch_log_is_empty_initially ... ok
 test tests::evidence_endpoint_rejects_invalid_semantic_query ... ok
-test tests::federation_manual_broadcast_with_no_peers ... ok
 test tests::federation_overview_returns_empty_state ... ok
-test tests::federation_peer_crud_roundtrip ... ok
+test tests::federation_manual_broadcast_with_no_peers ... ok
 test tests::federation_peer_validation_rejects_bad_url ... ok
-test tests::federation_receive_ingests_evidence ... ok
+test tests::federation_peer_crud_roundtrip ... ok
 test tests::health_endpoint_works ... ok
+test tests::federation_receive_ingests_evidence ... ok
 test tests::intel_overview_reports_seeded_assets ... ok
 test tests::market_intel_brief_endpoint_attaches_summary_to_case ... ok
+test tests::onchain_receipt_validation_fail_returns_bad_request ... ok
 test tests::market_intel_overview_reports_seeded_market_coverage ... ok
 test tests::market_intel_brief_export_endpoint_returns_packet ... ok
-test tests::onchain_receipt_validation_fail_returns_bad_request ... ok
 test tests::onchain_send_raw_dry_run_returns_pending_hash ... ok
 test tests::operator_activity_returns_empty_by_default ... ok
 test tests::operator_activity_with_limit_query_param ... ok
 test tests::operator_config_returns_default ... ok
 test tests::operator_double_start_returns_bad_request ... ok
 test tests::operator_pause_changes_status_to_paused ... ok
-test tests::operator_start_without_llm_provider_fails ... ok
 test tests::operator_start_then_stop_changes_status ... ok
+test tests::operator_start_without_llm_provider_fails ... ok
 test tests::operator_status_returns_stopped_by_default ... ok
-test tests::operator_update_config_rejects_invalid_interval ... ok
 test tests::operator_update_config_changes_model ... ok
-test tests::policy_config_roundtrip_works ... ok
+test tests::operator_update_config_rejects_invalid_interval ... ok
 test tests::policy_simulator_returns_steps ... ok
-test tests::recipe_runs_endpoint_rejects_zero_limit ... ok
+test tests::policy_config_roundtrip_works ... ok
 test tests::reasoning_endpoint_supports_neuro_symbolic_backend ... ok
+test tests::recipe_runs_endpoint_rejects_zero_limit ... ok
 test tests::recipe_runs_endpoint_reports_disabled_without_postgres ... ok
-test tests::rule_evaluations_endpoint_rejects_zero_limit ... ok
 test tests::recipes_endpoint_creates_and_lists_recipe ... ok
-test tests::run_recipe_via_api_runtime_rejects_unregistered_agent_kind ... ok
+test tests::rule_evaluations_endpoint_rejects_zero_limit ... ok
 test tests::rule_evaluations_endpoint_reports_disabled_without_postgres ... ok
+test tests::run_recipe_via_api_runtime_rejects_unregistered_agent_kind ... ok
 test tests::run_recipe_via_api_runtime_runs_builtin_agents_in_dependency_order ... ok
 test tests::rules_endpoint_creates_lists_and_evaluates_rule ... ok
 test tests::rules_endpoint_rejects_action_without_recipe_target ... ok
@@ -226,15 +226,15 @@ test tests::source_collect_endpoint_fetches_json_and_opens_case ... ok
 test tests::source_file_import_endpoint_ingests_file_and_opens_case ... ok
 test tests::source_webhook_endpoint_ingests_payload_and_opens_case ... ok
 test tests::source_webhook_endpoint_rejects_non_webhook_source ... ok
-test tests::source_file_import_endpoint_rejects_kind_and_content_boundaries ... ok
 test tests::source_webhook_endpoint_rejects_payload_boundaries ... ok
+test tests::source_file_import_endpoint_rejects_kind_and_content_boundaries ... ok
 test tests::sources_endpoint_creates_and_lists_source ... ok
 test tests::symbolic_reasoning_endpoint_denies_contradictions ... ok
 test tests::symbolic_reasoning_endpoint_reports_truncation_metadata ... ok
-test tests::unknown_agent_template_returns_not_found ... ok
-test tests::watchlists_endpoint_creates_watchlist ... ok
 test tests::symbolic_reasoning_endpoint_returns_support_graph_and_reuses_cache ... ok
 test tests::symbolic_reasoning_endpoint_supports_query_support_scope ... ok
+test tests::unknown_agent_template_returns_not_found ... ok
+test tests::watchlists_endpoint_creates_watchlist ... ok
 
 test result: ok. 102 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
 

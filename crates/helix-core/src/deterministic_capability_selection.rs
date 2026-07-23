@@ -278,9 +278,9 @@ pub fn capability_catalog_digest(
     Ok(hex_lower(&hasher.finalize()))
 }
 
-fn validate_catalog<'a>(
-    catalog: &'a [CapabilityDescriptor],
-) -> Result<BTreeMap<String, &'a CapabilityDescriptor>, CapabilitySelectionError> {
+fn validate_catalog(
+    catalog: &[CapabilityDescriptor],
+) -> Result<BTreeMap<String, &CapabilityDescriptor>, CapabilitySelectionError> {
     if catalog.is_empty() {
         return Err(CapabilitySelectionError::EmptyCatalog);
     }

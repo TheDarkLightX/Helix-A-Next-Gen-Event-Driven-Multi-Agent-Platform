@@ -37,6 +37,10 @@ Fuel is reset for every invocation, so `max_instructions` is a per-call bound ra
 
 Memory, table count, and table-element limits are applied through `StoreLimits`. Stack depth is configured at the engine level.
 
+## Validation
+
+The branch runs crate-local formatting, unit tests, and clippy in addition to the repository release gate. The focused run captures bounded diagnostics for any Wasmtime API, timeout, capability-linking, or lint failure. Temporary diagnostics are removed before review.
+
 ## Unsupported features fail closed
 
 The earlier runtime exposed configuration fields for WASI directories, environment variables, and sockets without wiring those controls into instantiation. The hardened runtime rejects those configurations until a policy-bound WASI adapter exists. Defaults therefore use:

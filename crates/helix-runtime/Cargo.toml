@@ -22,6 +22,7 @@ thiserror = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 uuid = { workspace = true }
 futures = { workspace = true }
+sha2 = { workspace = true }
 
 # Add specific runtime dependencies like tokio, nats, etc. later
 

@@ -44,11 +44,11 @@ jobs:
           set -e
 
           tail -n 240 .agent-ci-diagnostics/helix-core-test.full.log \
-            > .agent-ci-diagnostics/helix-core-test.log
+            > .agent-ci-diagnostics/helix-core-test.txt
           tail -n 240 .agent-ci-diagnostics/helix-api-test.full.log \
-            > .agent-ci-diagnostics/helix-api-test.log
+            > .agent-ci-diagnostics/helix-api-test.txt
           tail -n 240 .agent-ci-diagnostics/helix-core-clippy.full.log \
-            > .agent-ci-diagnostics/helix-core-clippy.log
+            > .agent-ci-diagnostics/helix-core-clippy.txt
           rm .agent-ci-diagnostics/*.full.log
 
           printf 'helix_core_test=%s\nhelix_api_test=%s\nhelix_core_clippy=%s\n' \
@@ -57,7 +57,7 @@ jobs:
 
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add crates/helix-core/src .agent-ci-diagnostics
+          git add crates/helix-core/src .agent-ci-diagnostics/*.txt
           if ! git diff --cached --quiet; then
             git commit -m "chore: capture capability-selection diagnostics"
             git push origin "HEAD:${GITHUB_REF_NAME}"

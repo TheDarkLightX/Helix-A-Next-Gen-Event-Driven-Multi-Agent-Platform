@@ -1,3 +1,0 @@
-helix_core_test=0
-helix_api_test=0
-helix_core_clippy=101

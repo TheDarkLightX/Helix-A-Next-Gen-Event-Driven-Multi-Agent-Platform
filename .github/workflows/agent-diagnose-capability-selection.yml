@@ -23,11 +23,29 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Format and capture bounded diagnostics
+      - name: Apply narrow lint fix and capture bounded diagnostics
         shell: bash
         run: |
           set -uo pipefail
           mkdir -p .agent-ci-diagnostics
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("crates/helix-core/src/deterministic_capability_selection.rs")
+          source = path.read_text()
+          old = """fn validate_catalog<'a>(
+              catalog: &'a [CapabilityDescriptor],
+          ) -> Result<BTreeMap<String, &'a CapabilityDescriptor>, CapabilitySelectionError> {
+          """
+          new = """fn validate_catalog(
+              catalog: &[CapabilityDescriptor],
+          ) -> Result<BTreeMap<String, &CapabilityDescriptor>, CapabilitySelectionError> {
+          """
+          if old not in source:
+              raise SystemExit("expected validate_catalog signature not found")
+          path.write_text(source.replace(old, new, 1))
+          PY
 
           cargo fmt --manifest-path crates/helix-core/Cargo.toml
 

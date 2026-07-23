@@ -392,7 +392,9 @@ mod tests {
     #[test]
     fn unknown_host_capability_fails_closed() {
         let mut config = WasmRuntimeConfig::default();
-        config.allowed_host_functions.push("host_everything".to_string());
+        config
+            .allowed_host_functions
+            .push("host_everything".to_string());
         assert!(validate_host_function_policy(&config).is_err());
     }
 

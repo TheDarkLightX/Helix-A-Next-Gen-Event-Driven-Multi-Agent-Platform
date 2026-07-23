@@ -190,9 +190,7 @@ impl WasmRuntime {
         })?;
         let max_table_size =
             usize::try_from(self.config.resource_limits.max_table_size).map_err(|_| {
-                WasmError::ConfigurationError(
-                    "max_table_size exceeds platform limits".to_string(),
-                )
+                WasmError::ConfigurationError("max_table_size exceeds platform limits".to_string())
             })?;
         let store_limits = StoreLimitsBuilder::new()
             .memory_size(max_memory)

@@ -1,0 +1,320 @@
+[1m[92m   Compiling[0m target-lexicon v0.13.5
+[1m[92m   Compiling[0m cranelift-codegen-meta v0.123.12
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m rand_chacha v0.3.1
+[1m[92m   Compiling[0m cranelift-entity v0.123.12
+[1m[92m   Compiling[0m cranelift-assembler-x64 v0.123.12
+[1m[92m   Compiling[0m icu_normalizer v2.2.0
+[1m[92m   Compiling[0m either v1.16.0
+[1m[92m   Compiling[0m io-lifetimes v2.0.4
+[1m[92m   Compiling[0m idna_adapter v1.2.2
+[1m[92m   Compiling[0m cranelift-codegen v0.123.12
+[1m[92m   Compiling[0m wasmtime-internal-math v36.0.12
+[1m[92m   Compiling[0m concurrent-queue v2.5.0
+[1m[92m   Compiling[0m form_urlencoded v1.2.2
+[1m[92m   Compiling[0m wasmtime-internal-versioned-export-macros v36.0.12
+[1m[92m   Compiling[0m gimli v0.32.3
+[1m[92m   Compiling[0m rustc-hash v2.1.3
+[1m[92m   Compiling[0m ipnet v2.12.0
+[1m[92m   Compiling[0m cpufeatures v0.2.17
+[1m[92m   Compiling[0m leb128fmt v0.1.0
+[1m[92m   Compiling[0m arbitrary v1.4.2
+[1m[92m   Compiling[0m parking v2.2.1
+[1m[92m   Compiling[0m crc-catalog v2.5.0
+[1m[92m   Compiling[0m tinyvec_macros v0.1.1
+[1m[92m   Compiling[0m crc32fast v1.5.0
+[1m[92m   Compiling[0m cranelift-control v0.123.12
+[1m[92m   Compiling[0m tinyvec v1.12.0
+[1m[92m   Compiling[0m crc v3.4.0
+[1m[92m   Compiling[0m event-listener v5.4.1
+[1m[92m   Compiling[0m sha2 v0.10.9
+[1m[92m   Compiling[0m regalloc2 v0.12.2
+[1m[92m   Compiling[0m idna v1.1.0
+[1m[92m   Compiling[0m cranelift-bforest v0.123.12
+[1m[92m   Compiling[0m webpki-roots v0.26.11
+[1m[92m   Compiling[0m crossbeam-queue v0.3.13
+[1m[92m   Compiling[0m hashlink v0.10.0
+[1m[92m   Compiling[0m wasmparser v0.236.1
+[1m[92m   Compiling[0m io-extras v0.18.4
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m   Compiling[0m object v0.37.3
+[1m[92m   Compiling[0m url v2.5.8
+[1m[92m   Compiling[0m unicode-normalization v0.1.25
+[1m[92m   Compiling[0m hmac v0.12.1
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m unicode-properties v0.1.4
+[1m[92m   Compiling[0m cap-primitives v3.4.5
+[1m[92m   Compiling[0m wasm-encoder v0.236.1
+[1m[92m   Compiling[0m base64 v0.22.1
+[1m[92m   Compiling[0m ambient-authority v0.0.2
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m unicode-bidi v0.3.18
+[1m[92m   Compiling[0m stringprep v0.1.5
+[1m[92m   Compiling[0m tokio-stream v0.1.19
+[1m[92m   Compiling[0m hkdf v0.12.4
+[1m[92m   Compiling[0m futures-intrusive v0.5.0
+[1m[92m   Compiling[0m fs-set-times v0.20.3
+[1m[92m   Compiling[0m chrono v0.4.45
+[1m[92m   Compiling[0m rustix-linux-procfs v0.1.1
+[1m[92m   Compiling[0m md-5 v0.10.6
+[1m[92m   Compiling[0m atoi v2.0.0
+[1m[92m   Compiling[0m cobs v0.3.0
+[1m[92m   Compiling[0m http v1.4.2
+[1m[92m   Compiling[0m id-arena v2.3.0
+[1m[92m   Compiling[0m termcolor v1.4.1
+[1m[92m   Compiling[0m byteorder v1.5.0
+[1m[92m   Compiling[0m maybe-owned v0.3.4
+[1m[92m   Compiling[0m wasmtime-internal-component-util v36.0.12
+[1m[92m   Compiling[0m whoami v1.6.1
+[1m[92m   Compiling[0m home v0.5.12
+[1m[92m   Compiling[0m unicode-xid v0.2.6
+[1m[92m   Compiling[0m hex v0.4.3
+[1m[92m   Compiling[0m uuid v1.24.0
+[1m[92m   Compiling[0m dotenvy v0.15.7
+[1m[92m   Compiling[0m sqlx-core v0.8.6
+[1m[92m   Compiling[0m wit-parser v0.236.1
+[1m[92m   Compiling[0m http-body v1.1.0
+[1m[92m   Compiling[0m wasmprinter v0.236.1
+[1m[92m   Compiling[0m postcard v1.1.3
+[1m[92m   Compiling[0m wasm-encoder v0.254.0
+[1m[92m   Compiling[0m wasmtime-internal-fiber v36.0.12
+[1m[92m   Compiling[0m rand v0.8.7
+[1m[92m   Compiling[0m async-trait v0.1.91
+[1m[92m   Compiling[0m leb128 v0.2.7
+[1m[92m   Compiling[0m httparse v1.10.1
+[1m[92m   Compiling[0m wasmtime-internal-unwinder v36.0.12
+[1m[92m   Compiling[0m unicode-width v0.2.2
+[1m[92m   Compiling[0m cap-std v3.4.5
+[1m[92m   Compiling[0m wasmtime-internal-component-macro v36.0.12
+[1m[92m   Compiling[0m wast v254.0.0
+[1m[92m   Compiling[0m wast v35.0.2
+[1m[92m   Compiling[0m sqlx-postgres v0.8.6
+[1m[92m   Compiling[0m wasmtime-environ v36.0.12
+[1m[92m   Compiling[0m cranelift-native v0.123.12
+[1m[92m   Compiling[0m cranelift-frontend v0.123.12
+[1m[92m   Compiling[0m wasmtime-internal-wit-bindgen v36.0.12
+[1m[92m   Compiling[0m wasmtime v36.0.12
+[1m[92m   Compiling[0m itertools v0.14.0
+[1m[92m   Compiling[0m wasmtime-internal-asm-macros v36.0.12
+[1m[92m   Compiling[0m tower-service v0.3.3
+[1m[92m   Compiling[0m try-lock v0.2.5
+[1m[92m   Compiling[0m want v0.3.1
+[1m[92m   Compiling[0m wasmtime-internal-cranelift v36.0.12
+[1m[92m   Compiling[0m wat v1.254.0
+[1m[92m   Compiling[0m sqlx-macros-core v0.8.6
+[1m[92m   Compiling[0m witx v0.9.1
+[1m[92m   Compiling[0m memfd v0.6.5
+[1m[92m   Compiling[0m wasmtime-internal-jit-icache-coherence v36.0.12
+[1m[92m   Compiling[0m encoding_rs v0.8.35
+[1m[92m   Compiling[0m atomic-waker v1.1.2
+[1m[92m   Compiling[0m rustix v0.38.44
+[1m[92m   Compiling[0m linkme-impl v0.3.37
+[1m[92m   Compiling[0m wiggle-macro v36.0.12
+[1m[92m   Compiling[0m wasmtime-internal-slab v36.0.12
+[1m[92m   Compiling[0m hyper v1.11.0
+[1m[92m   Compiling[0m wiggle-generate v36.0.12
+[1m[92m   Compiling[0m sqlx-macros v0.8.6
+[1m[92m   Compiling[0m futures-executor v0.3.33
+[1m[92m   Compiling[0m sync_wrapper v1.0.2
+[1m[92m   Compiling[0m tower-layer v0.3.3
+[1m[92m   Compiling[0m system-interface v0.27.3
+[1m[92m   Compiling[0m cap-fs-ext v3.4.5
+[1m[92m   Compiling[0m linkme v0.3.37
+[1m[92m   Compiling[0m linux-raw-sys v0.4.15
+[1m[92m   Compiling[0m tower v0.5.3
+[1m[92m   Compiling[0m futures v0.3.33
+[1m[92m   Compiling[0m hyper-util v0.1.20
+[1m[92m   Compiling[0m sqlx v0.8.6
+[1m[92m   Compiling[0m tokio-rustls v0.26.4
+[1m[92m   Compiling[0m rmp v0.8.15
+[1m[92m   Compiling[0m ryu v1.0.23
+[1m[92m   Compiling[0m serde_urlencoded v0.7.1
+[1m[92m   Compiling[0m rmp-serde v1.3.1
+[1m[92m   Compiling[0m hyper-rustls v0.27.9
+[1m[92m   Compiling[0m helix-core v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-core)
+[1m[92m   Compiling[0m wiggle v36.0.12
+[1m[92m   Compiling[0m wasmtime-wasi-io v36.0.12
+[1m[92m   Compiling[0m tower-http v0.6.11
+[1m[92m   Compiling[0m cap-net-ext v3.4.5
+[1m[92m   Compiling[0m cap-rand v3.4.5
+[1m[92m   Compiling[0m http-body-util v0.1.4
+[1m[92m   Compiling[0m cap-time-ext v3.4.5
+[1m[92m   Compiling[0m wasmtime-wasi v36.0.12
+[1m[92m   Compiling[0m reqwest v0.12.28
+[1m[92m   Compiling[0m tokio-test v0.4.5
+[1m[92m   Compiling[0m helix-agent-sdk v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-agent-sdk)
+[1m[92m   Compiling[0m helix-wasm v0.1.0 (/home/runner/work/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/Helix-A-Next-Gen-Event-Driven-Multi-Agent-Platform/crates/helix-wasm)
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:36:1
+   [1m[94m|[0m
+[1m[94m36[0m [1m[94m|[0m pub const HOST_LOG_MESSAGE: &str = "helix_log_message";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+[1m[92mnote[0m: the lint level is defined here
+  [1m[94m--> [0mcrates/helix-wasm/src/lib.rs:14:9
+   [1m[94m|[0m
+[1m[94m14[0m [1m[94m|[0m #![warn(missing_docs)]
+   [1m[94m|[0m         [1m[92m^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:37:1
+   [1m[94m|[0m
+[1m[94m37[0m [1m[94m|[0m pub const HOST_EMIT_EVENT: &str = "helix_emit_event";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:38:1
+   [1m[94m|[0m
+[1m[94m38[0m [1m[94m|[0m pub const HOST_GET_CONFIG_VALUE: &str = "helix_get_config_value";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:39:1
+   [1m[94m|[0m
+[1m[94m39[0m [1m[94m|[0m pub const HOST_GET_STATE: &str = "helix_get_state";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:40:1
+   [1m[94m|[0m
+[1m[94m40[0m [1m[94m|[0m pub const HOST_SET_STATE: &str = "helix_set_state";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:41:1
+   [1m[94m|[0m
+[1m[94m41[0m [1m[94m|[0m pub const HOST_GET_CREDENTIAL: &str = "helix_get_credential";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:42:1
+   [1m[94m|[0m
+[1m[94m42[0m [1m[94m|[0m pub const HOST_GET_TIME: &str = "helix_get_time";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a constant[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:43:1
+   [1m[94m|[0m
+[1m[94m43[0m [1m[94m|[0m pub const HOST_RANDOM: &str = "helix_random";
+   [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:58:5
+   [1m[94m|[0m
+[1m[94m58[0m [1m[94m|[0m     pub agent_config: Arc<AgentConfig>,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:59:5
+   [1m[94m|[0m
+[1m[94m59[0m [1m[94m|[0m     pub event_publisher: Arc<dyn EventPublisher>,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:60:5
+   [1m[94m|[0m
+[1m[94m60[0m [1m[94m|[0m     pub credential_provider: Arc<dyn CredentialProvider>,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:61:5
+   [1m[94m|[0m
+[1m[94m61[0m [1m[94m|[0m     pub state_store: Arc<dyn StateStore>,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/host_functions.rs:62:5
+   [1m[94m|[0m
+[1m[94m62[0m [1m[94m|[0m     pub store_limits: StoreLimits,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for an associated function[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:37:5
+   [1m[94m|[0m
+[1m[94m37[0m [1m[94m|[0m     pub fn new() -> Self {
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for an associated function[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:66:5
+   [1m[94m|[0m
+[1m[94m66[0m [1m[94m|[0m [1m[33m/[0m     pub fn new(
+[1m[94m67[0m [1m[94m|[0m [1m[33m|[0m         name: String,
+[1m[94m68[0m [1m[94m|[0m [1m[33m|[0m         version: String,
+[1m[94m69[0m [1m[94m|[0m [1m[33m|[0m         description: String,
+[1m[94m70[0m [1m[94m|[0m [1m[33m|[0m         module_source: ModuleSource,
+[1m[94m71[0m [1m[94m|[0m [1m[33m|[0m     ) -> Self {
+   [1m[94m|[0m [1m[33m|_____________^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:96:5
+   [1m[94m|[0m
+[1m[94m96[0m [1m[94m|[0m     pub config: Arc<PluginConfig>,
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a struct field[0m
+  [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:97:5
+   [1m[94m|[0m
+[1m[94m97[0m [1m[94m|[0m     pub module: Arc<WasmModule>, // Compiled module, shared
+   [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for an associated function[0m
+   [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:120:5
+    [1m[94m|[0m
+[1m[94m120[0m [1m[94m|[0m     pub fn new(runtime: Arc<WasmRuntime>) -> Self {
+    [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a method[0m
+   [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:285:5
+    [1m[94m|[0m
+[1m[94m285[0m [1m[94m|[0m     pub fn get_plugin_config(&self, plugin_id: PluginId) -> Option<Arc<PluginConfig>> {
+    [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: missing documentation for a method[0m
+   [1m[94m--> [0mcrates/helix-wasm/src/plugins.rs:289:5
+    [1m[94m|[0m
+[1m[94m289[0m [1m[94m|[0m     pub fn list_plugins(&self) -> Vec<Arc<PluginConfig>> {
+    [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `helix-wasm` (lib) generated 20 warnings
+[1m[33mwarning[0m: `helix-wasm` (lib test) generated 20 warnings (20 duplicates)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1m 22s
+[1m[92m     Running[0m unittests src/lib.rs (target/debug/deps/helix_wasm-2e0bd8109c968186)
+
+running 13 tests
+test host_functions::tests::default_host_capabilities_are_read_only ... ok
+test host_functions::tests::duplicate_host_capability_fails_closed ... ok
+test host_functions::tests::unknown_host_capability_fails_closed ... ok
+test sandbox::tests::default_runtime_configuration_is_enforceable ... ok
+test sandbox::tests::unsupported_network_configuration_fails_closed ... ok
+test sandbox::tests::unsupported_wasi_configuration_fails_closed ... ok
+test sandbox::tests::zero_wall_clock_budget_fails_closed ... ok
+test utils::tests::test_estimate_execution_cost_placeholder ... ok
+test utils::tests::test_deserialize_invalid_msgpack ... ok
+test utils::tests::test_extract_function_names_placeholder ... ok
+test utils::tests::test_is_safe_module_placeholder ... ok
+test utils::tests::test_msgpack_serialization_deserialization ... ok
+test utils::tests::test_wasm_validation ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/host_functions.rs (target/debug/deps/host_functions-8297f6c791f3ae64)
+
+running 1 test
+test helix_get_time_returns_timestamp ... FAILED
+
+failures:
+
+---- helix_get_time_returns_timestamp stdout ----
+
+thread 'helix_get_time_returns_timestamp' (6433) panicked at crates/helix-wasm/tests/host_functions.rs:65:10:
+called `Result::unwrap()` on an `Err` value: InstantiationError("failed to instantiate module: unknown import: `env::helix_get_time` has not been defined")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    helix_get_time_returns_timestamp
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+[1m[91merror[0m: test failed, to rerun pass `--test host_functions`

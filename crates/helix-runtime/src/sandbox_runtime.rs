@@ -402,9 +402,7 @@ where
                 .resolver
                 .resolve_read_only(artifact)
                 .await
-                .map_err(|error| {
-                    SandboxRuntimeError::ArtifactResolution(error.to_string())
-                })?;
+                .map_err(|error| SandboxRuntimeError::ArtifactResolution(error.to_string()))?;
             let source = verify_regular_file_with_size(
                 "input",
                 &source,
@@ -512,8 +510,9 @@ where
         )
         .await
         {
-            Ok(result) => result
-                .map_err(|error| SandboxRuntimeError::io("wait for trusted runner", error))?,
+            Ok(result) => {
+                result.map_err(|error| SandboxRuntimeError::io("wait for trusted runner", error))?
+            }
             Err(_) => {
                 let _ = child.kill().await;
                 return Err(SandboxRuntimeError::RunnerTimedOut(
@@ -525,14 +524,11 @@ where
             return Err(SandboxRuntimeError::RunnerFailed(status.code()));
         }
 
-        let receipt_bytes = read_bounded_file(
-            &receipt_path,
-            self.profile.max_protocol_bytes,
-            "receipt",
-        )
-        .await?;
+        let receipt_bytes =
+            read_bounded_file(&receipt_path, self.profile.max_protocol_bytes, "receipt").await?;
         let mut receipt: SandboxExecutionReceipt = serde_json::from_slice(&receipt_bytes)?;
-        let observed_wall_time_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let observed_wall_time_ms =
+            u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         // The runner cannot reduce the host-observed wall time by under-reporting it.
         receipt.wall_time_ms = receipt.wall_time_ms.max(observed_wall_time_ms);
         validate_sandbox_receipt(admitted, receipt).map_err(SandboxRuntimeError::from)
@@ -563,9 +559,7 @@ where
             Err(error) => return Err(SandboxRuntimeError::io("create run directory", error)),
         }
 
-        let result = self
-            .execute_in_run_dir(admitted, &profile, &run_dir)
-            .await;
+        let result = self.execute_in_run_dir(admitted, &profile, &run_dir).await;
         let cleanup = fs::remove_dir_all(&run_dir).await;
         match (result, cleanup) {
             (Ok(receipt), Ok(())) => Ok(receipt),
@@ -628,13 +622,13 @@ async fn verify_regular_file(
             reason: "path must be absolute".to_string(),
         });
     }
-    let metadata = fs::symlink_metadata(path)
-        .await
-        .map_err(|error| SandboxRuntimeError::InvalidProfileFile {
+    let metadata = fs::symlink_metadata(path).await.map_err(|error| {
+        SandboxRuntimeError::InvalidProfileFile {
             label,
             path: path.to_path_buf(),
             reason: error.to_string(),
-        })?;
+        }
+    })?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(SandboxRuntimeError::InvalidProfileFile {
             label,
@@ -860,7 +854,10 @@ mod tests {
         let left = profile();
         let mut right = left.clone();
         right.runner_digest = digest(99);
-        assert_ne!(left.computed_runtime_digest(), right.computed_runtime_digest());
+        assert_ne!(
+            left.computed_runtime_digest(),
+            right.computed_runtime_digest()
+        );
     }
 
     #[test]
@@ -914,13 +911,13 @@ mod tests {
         let profile = profile();
         let runtime = FirecrackerSandboxRuntime::new(profile.clone(), Arc::new(RejectingResolver));
         let mut request = admitted(&profile).request().clone();
-        request.secret_leases.push(
-            helix_core::sandbox_execution::SandboxSecretLeaseRef {
+        request
+            .secret_leases
+            .push(helix_core::sandbox_execution::SandboxSecretLeaseRef {
                 provider_id: "github".to_string(),
                 purpose: "read".to_string(),
                 lease_hash: digest(7),
-            },
-        );
+            });
         // The pure core would need a policy that permits the lease. The runtime
         // boundary itself remains independently fail-closed.
         let result = runtime.validate_admitted_boundary(

@@ -28,7 +28,7 @@ pub mod sandbox_runtime;
 
 pub use messaging::{InMemoryEventCollector, MessagingError, NatsClient, NatsConfig, StreamConfig};
 pub use sandbox_runtime::{
-    FirecrackerRuntimeProfile, FirecrackerRunnerCommand, FirecrackerSandboxRuntime,
+    FirecrackerRunnerCommand, FirecrackerRuntimeProfile, FirecrackerSandboxRuntime,
     SandboxArtifactResolver, SandboxExecutionRuntime, SandboxRuntimeError,
 };
 

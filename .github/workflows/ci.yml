@@ -12,53 +12,7 @@ env:
   HELIX_FORMAL_MODULE: ESSO
   HELIX_FORMAL_PYTHONPATH: external/ESSO
 
-permissions:
-  contents: write
-
 jobs:
-  firecracker-runtime-diagnostics:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/firecracker-sandbox-runtime'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          persist-credentials: true
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Validate Firecracker adapter and restore CI
-        shell: bash
-        run: |
-          set -uo pipefail
-          mkdir -p .agent-firecracker-diagnostics
-          cargo fmt --manifest-path crates/helix-runtime/Cargo.toml
-
-          set +e
-          cargo test --manifest-path crates/helix-runtime/Cargo.toml sandbox_runtime \
-            > .agent-firecracker-diagnostics/test.full.txt 2>&1
-          test_status=$?
-          cargo clippy --manifest-path crates/helix-runtime/Cargo.toml --lib --no-deps -- -D clippy::all \
-            > .agent-firecracker-diagnostics/clippy.full.txt 2>&1
-          clippy_status=$?
-          set -e
-
-          tail -n 420 .agent-firecracker-diagnostics/test.full.txt \
-            > .agent-firecracker-diagnostics/test.txt
-          tail -n 420 .agent-firecracker-diagnostics/clippy.full.txt \
-            > .agent-firecracker-diagnostics/clippy.txt
-          rm .agent-firecracker-diagnostics/*.full.txt
-          printf 'test=%s\nclippy=%s\n' "$test_status" "$clippy_status" \
-            > .agent-firecracker-diagnostics/status.txt
-
-          git fetch origin agent/policy-bound-vm-sandbox --depth=1
-          git checkout origin/agent/policy-bound-vm-sandbox -- .github/workflows/ci.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add crates/helix-runtime .github/workflows/ci.yml .agent-firecracker-diagnostics
-          git commit -m "Validate Firecracker sandbox runtime"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
-
   release-gates:
     name: Release gates
     runs-on: ubuntu-latest

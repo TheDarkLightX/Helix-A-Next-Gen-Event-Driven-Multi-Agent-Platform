@@ -5,6 +5,7 @@ use helix_core::agent::AgentConfig;
 use helix_core::state::InMemoryStateStore;
 use helix_core::test_utils::NoopCredentialProvider;
 use helix_core::types::AgentId;
+use helix_wasm::host_functions::HOST_GET_TIME;
 use helix_wasm::{WasmRuntime, WasmRuntimeConfig};
 use serde_json::json;
 use uuid::Uuid;
@@ -31,8 +32,12 @@ impl EventPublisher for RecordingPublisher {
 }
 
 #[tokio::test]
-async fn helix_get_time_returns_timestamp() {
-    let runtime = WasmRuntime::new(WasmRuntimeConfig::default()).unwrap();
+async fn helix_get_time_returns_timestamp_when_explicitly_granted() {
+    let config = WasmRuntimeConfig {
+        allowed_host_functions: vec![HOST_GET_TIME.to_string()],
+        ..WasmRuntimeConfig::default()
+    };
+    let runtime = WasmRuntime::new(config).unwrap();
 
     let wat = r#"(module
         (import "env" "helix_get_time" (func $ht (result i64)))

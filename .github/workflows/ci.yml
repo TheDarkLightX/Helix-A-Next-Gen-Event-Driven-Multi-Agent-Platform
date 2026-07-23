@@ -12,51 +12,7 @@ env:
   HELIX_FORMAL_MODULE: ESSO
   HELIX_FORMAL_PYTHONPATH: external/ESSO
 
-permissions:
-  contents: write
-
 jobs:
-  wasm-sandbox-diagnostics:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/wasm-sandbox-enforcement'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          persist-credentials: true
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Capture focused WASM diagnostics and restore CI
-        shell: bash
-        run: |
-          set -uo pipefail
-          mkdir -p .agent-wasm-focused
-          cargo fmt --manifest-path crates/helix-wasm/Cargo.toml
-
-          set +e
-          cargo test --manifest-path crates/helix-wasm/Cargo.toml \
-            > .agent-wasm-focused/test.full.txt 2>&1
-          test_status=$?
-          cargo clippy --manifest-path crates/helix-wasm/Cargo.toml --lib --no-deps -- -D warnings -A missing-docs \
-            > .agent-wasm-focused/clippy.full.txt 2>&1
-          clippy_status=$?
-          set -e
-
-          tail -n 360 .agent-wasm-focused/test.full.txt > .agent-wasm-focused/test.txt
-          tail -n 360 .agent-wasm-focused/clippy.full.txt > .agent-wasm-focused/clippy.txt
-          rm .agent-wasm-focused/*.full.txt
-          printf 'test=%s\nclippy=%s\n' "$test_status" "$clippy_status" \
-            > .agent-wasm-focused/status.txt
-
-          git fetch origin main --depth=1
-          git checkout origin/main -- .github/workflows/ci.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add crates/helix-wasm .github/workflows/ci.yml .agent-wasm-focused
-          git commit -m "Capture focused WASM sandbox diagnostics"
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
-
   release-gates:
     name: Release gates
     runs-on: ubuntu-latest

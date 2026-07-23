@@ -1,2 +1,0 @@
-test=101
-clippy=101

@@ -24,8 +24,13 @@ pub mod agent_registry;
 pub mod agent_runner;
 pub mod imperative_shell;
 pub mod messaging;
+pub mod sandbox_runtime;
 
 pub use messaging::{InMemoryEventCollector, MessagingError, NatsClient, NatsConfig, StreamConfig};
+pub use sandbox_runtime::{
+    FirecrackerRuntimeProfile, FirecrackerRunnerCommand, FirecrackerSandboxRuntime,
+    SandboxArtifactResolver, SandboxExecutionRuntime, SandboxRuntimeError,
+};
 
 /// Lifecycle status for a managed agent instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

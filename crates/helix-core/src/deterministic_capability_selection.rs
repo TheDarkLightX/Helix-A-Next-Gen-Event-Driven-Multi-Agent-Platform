@@ -141,9 +141,7 @@ pub fn deterministic_agent_capabilities() -> Vec<CapabilityDescriptor> {
         .map(|agent| {
             let risk = match agent.id.as_str() {
                 "onchain_tx_intent" | "fee_bidding" | "nonce_manager" => CapabilityRisk::High,
-                "allowlist_guard" | "finality_guard" | "approval_gate" => {
-                    CapabilityRisk::Moderate
-                }
+                "allowlist_guard" | "finality_guard" | "approval_gate" => CapabilityRisk::Moderate,
                 _ => CapabilityRisk::Low,
             };
             CapabilityDescriptor {
@@ -183,12 +181,10 @@ pub fn select_capabilities(
     let by_id = validate_catalog(catalog)?;
     let required_ids = normalize_required_ids(&request.required_ids)?;
     if required_ids.len() > request.max_selected {
-        return Err(
-            CapabilitySelectionError::RequiredCapabilitiesExceedBudget {
-                required: required_ids.len(),
-                max_selected: request.max_selected,
-            },
-        );
+        return Err(CapabilitySelectionError::RequiredCapabilitiesExceedBudget {
+            required: required_ids.len(),
+            max_selected: request.max_selected,
+        });
     }
 
     for id in &required_ids {
@@ -301,10 +297,7 @@ fn validate_catalog<'a>(
                 capability.id.clone(),
             ));
         }
-        if by_id
-            .insert(capability.id.clone(), capability)
-            .is_some()
-        {
+        if by_id.insert(capability.id.clone(), capability).is_some() {
             return Err(CapabilitySelectionError::DuplicateCapabilityId(
                 capability.id.clone(),
             ));
@@ -445,8 +438,7 @@ mod tests {
         );
         let left = select_capabilities(&[a.clone(), b.clone()], &request("case evidence", 2))
             .expect("selection");
-        let right = select_capabilities(&[b, a], &request("evidence case", 2))
-            .expect("selection");
+        let right = select_capabilities(&[b, a], &request("evidence case", 2)).expect("selection");
         assert_eq!(left, right);
     }
 

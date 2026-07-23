@@ -34,6 +34,7 @@ pub mod policy;
 pub mod profile;
 pub mod reasoning;
 pub mod recipe;
+pub mod sandbox_execution;
 pub mod state;
 pub mod types;
 
